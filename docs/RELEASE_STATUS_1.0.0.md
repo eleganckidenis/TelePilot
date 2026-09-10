@@ -20,6 +20,7 @@ Repozytorium: https://github.com/eleganckidenis/TelePilot.
 | Sprawdzenie | Wynik |
 |---|---|
 | Pełna seria testów Release | 269 łącznie: 266 zaliczonych, 0 błędów, 3 pominięte |
+| GitHub Actions, commit `ee07354` | 269 łącznie: 265 zaliczonych, 0 błędów, 4 pominięte; dodatkowo pominięto test wymagający lokalnego FFmpeg |
 | Rzeczywisty FFmpeg na lokalnej sztucznej próbce | Zapis TS, MP3, ponowne użycie usługi i zatrzymanie strumienia HTTP zaliczone |
 | Instalator win-x64 | Zbudowany, 63,05 MiB, samodzielny |
 | Instalator win-arm64 | Zbudowany na Windows x64, 55,57 MiB, samodzielny |
@@ -37,16 +38,23 @@ oraz niewłączony test rejestracji rzeczywistego zadania Harmonogramu Windows.
 Nie używano prywatnego źródła IPTV.
 
 Nie wykonywano instalacji na czystym systemie, odsłuchu NVDA, kontroli drzewa UIA
-ani uruchomienia na komputerze ARM64. Przygotowanego workflow nie uruchomiono
-jeszcze na GitHubie. Utworzono publiczne repozytorium `eleganckidenis/TelePilot`;
-przesłanie przygotowanych źródeł i uruchomienie CI jest kolejnym krokiem.
+ani uruchomienia na komputerze ARM64. Kod i dokumentację przesłano do publicznego
+repozytorium `eleganckidenis/TelePilot`; lokalna gałąź `main` śledzi `origin/main`.
+[Pierwszy przebieg GitHub Actions](https://github.com/eleganckidenis/TelePilot/actions/runs/34504639596)
+zakończył się powodzeniem. Wariant ARM64 pozostaje lokalną paczką do testów i nie
+jest przewidziany do pierwszego publicznego wydania bez sprawdzenia na urządzeniu.
+
+Pobrano oficjalne źródła VLC 3.0.23 i zweryfikowano SHA-256:
+`e891cae6aa3ccda69bf94173d5105cbc55c7a7d9b1d21b9b21666e69eff3e7e0`.
+Archiwum zawiera reguły budowania i poprawki `contrib`; pełne źródła zależności
+tych komponentów nadal wymagają skompletowania i dopasowania do binariów NuGet.
 
 ## Pozostało przed publikacją
 
 1. Wykonać ręczne testy instalacji, odtwarzania i dostępności oraz Harmonogramu Windows. Wariant ARM64 sprawdzić na sprzęcie ARM64 albo pominąć go w pierwszym wydaniu.
 2. Podpisać aplikację i instalatory Authenticode zgodnie z listą kontrolną projektu, a następnie obliczyć końcowe sumy.
 3. Zapewnić odpowiadające źródła komponentów GPL/LGPL, łącznie z zależnościami i skryptami budowania. Dołączone informacje prawne i wykazy nie stanowią pełnego archiwum tych źródeł.
-4. Przesłać źródła do `eleganckidenis/TelePilot`, uruchomić CI i przygotować tag oraz szkic Release według `GITHUB_RELEASE.md`.
+4. Uzupełnić szkic Release `v1.0.0` końcowymi plikami, wskazać sprawdzony commit i dopiero po spełnieniu powyższych warunków opublikować wydanie.
 
 Paczki lokalne znajdują się w `artifacts/release/1.0.0`. Logi testów i pakowania
 oraz kopia zmienionych plików sprzed przygotowania wydania są w ignorowanym
