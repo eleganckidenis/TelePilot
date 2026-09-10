@@ -25,6 +25,7 @@ Kod TelePilot: **GPL-3.0-or-later**, pełny tekst w `LICENSE`, informacja o auto
 - licencję i notices rzeczywiście dołączanego pakietu runtime .NET;
 - `licenses/nuget-inventory.json`: wersje, autorów, licencje, repozytoria i commity pakietów użytych przy budowie, również zależności pomocniczych;
 - `licenses/vlc-binaries.json`: listę rzeczywiście dołączonych bibliotek i pluginów VLC z sumami SHA-256.
+- `licenses/VLC-CONTRIB-NOTICES.zip`: 362 oryginalne pliki licencji, informacji o autorach i notices z dołączonej paczki źródeł, z wykazem ich pochodzenia. Zawiera także notices opcjonalnych komponentów źródeł VLC.
 
 Wykaz pakietów NuGet nie jest wykazem samych plików instalatora. O licencji pojedynczego pluginu VLC decydują jego źródła oraz dołączone biblioteki; sam numer licencji pakietu NuGet nie rozstrzyga tego dla całej paczki.
 
@@ -44,4 +45,6 @@ Instalator zachowuje pełną paczkę FFmpeg, w tym `LICENSE`, `README.txt` i dok
 - [VLC 3.0.23 — źródła wydania](https://download.videolan.org/pub/videolan/vlc/3.0.23/), [pakowanie LibVLC do NuGet](https://code.videolan.org/videolan/libvlc-nuget).
 - [FFmpeg — dostawca binariów, konfiguracja i biblioteki](https://www.gyan.dev/ffmpeg/builds/), [źródła kompilacji 9.0.1](https://github.com/FFmpeg/FFmpeg/commit/bf1b838f2a), [warunki dystrybucji FFmpeg](https://ffmpeg.org/legal.html).
 
-Przed publiczną dystrybucją binariów trzeba zapewnić dostęp do odpowiadających im źródeł objętych GPL/LGPL, wraz z wymaganymi skryptami budowania, zmianami i źródłami komponentów zależnych. Same nazwy licencji, ogólny link do projektu i archiwum kodu TelePilot nie zastępują pełnych odpowiadających źródeł VLC/FFmpeg. Dostępność tych źródeł jest osobnym punktem listy kontrolnej wydania.
+Dla wydania Windows x64 1.0.0 odpowiadające źródła VLC/LibVLC, LibVLCSharp i zależności VLC są dostępne obok instalatora jako `TelePilot-1.0.0-third-party-sources.zip` w [Release v1.0.0](https://github.com/eleganckidenis/TelePilot/releases/tag/v1.0.0). Archiwum zachowuje reguły budowania, poprawki dostawców i oryginalne licencje. [Wykaz źródeł i instrukcja budowania](https://github.com/eleganckidenis/TelePilot/blob/v1.0.0/docs/THIRD_PARTY_SOURCES_1.0.0.md) opisują zgodność z binariami i odrębne pobieranie FFmpeg 9.0.1 od jego dostawcy.
+
+Przy rozpowszechnianiu własnych paczek trzeba zachować licencje i notices oraz udostępnić odpowiadające im źródła GPL/LGPL wraz z wymaganymi skryptami budowania i zmianami. Sam kod TelePilot nie zastępuje źródeł dołączanych bibliotek.

@@ -11,13 +11,17 @@ Pierwsze publiczne wydanie TelePilota dla Windows.
 
 ## Pobieranie
 
-Wybierz instalator zgodny z komputerem:
+Instalator dla Windows x64:
 
 - `TelePilot-1.0.0-win-x64-setup.exe` — komputery Intel/AMD.
 
 Wymagany Windows 10 22H2 lub Windows 11. Instalator zawiera .NET i LibVLC; jeśli nie wykryje FFmpeg, pobierze go podczas instalacji. Instalacja wymaga uprawnień administratora.
 
 Pliki `.sha256` służą do sprawdzenia integralności pobranego instalatora. Kod źródłowy odpowiadający tej wersji znajduje się w archiwum `TelePilot-1.0.0-source.zip`.
+
+Instalator nie jest podpisany cyfrowo; Windows może wyświetlić informację o nieznanym wydawcy.
+
+`TelePilot-1.0.0-third-party-sources.zip` zawiera odpowiadające źródła VLC/LibVLC, LibVLCSharp i zależności VLC, instrukcje budowania oraz oryginalne licencje. FFmpeg do nagrywania jest pobierany bezpośrednio od gyan.dev i zachowuje własną licencję oraz informacje o źródłach.
 
 ## Przed rozpoczęciem
 

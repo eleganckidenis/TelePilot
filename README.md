@@ -6,12 +6,12 @@ TelePilot nie zawiera gotowych list ani abonamentu IPTV. Do oglądania potrzebuj
 
 ## Wymagania i instalacja
 
-- Windows 10 22H2 lub Windows 11; warianty instalatora: x64 i ARM64.
+- Windows 10 22H2 lub Windows 11, komputer x64 (Intel/AMD).
 - Instalator zawiera .NET oraz LibVLC — nie trzeba osobno instalować VLC.
 - Nagrywanie wymaga FFmpeg. Instalator wykrywa go w systemie lub pobiera zweryfikowaną paczkę; do pobrania potrzebny jest internet.
 - Instalacja wymaga uprawnień administratora i udostępnia program wszystkim użytkownikom komputera. Sam TelePilot działa ze zwykłymi uprawnieniami.
 
-Wydanie 1.0.0 jest przygotowywane. Gotowe instalatory pojawią się w sekcji [Releases](https://github.com/eleganckidenis/TelePilot/releases).
+Pobierz instalator z sekcji [Releases](https://github.com/eleganckidenis/TelePilot/releases/latest). Pierwsze wydanie ma numer **1.0.0** i jest niepodpisane cyfrowo.
 
 ## Pierwsze uruchomienie
 

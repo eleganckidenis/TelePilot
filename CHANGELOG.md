@@ -1,6 +1,6 @@
 # Historia zmian
 
-## 1.0.0 — przygotowanie pierwszego wydania publicznego
+## 1.0.0 — 2026-09-10
 
 - Playlisty M3U/M3U8 z pliku i adresu URL, wiele źródeł i własne kopie lokalnych playlist.
 - Wyszukiwanie, filtrowanie, sortowanie kanałów i trwałe ulubione.

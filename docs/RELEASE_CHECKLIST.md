@@ -57,7 +57,7 @@
 12. Wykonaj rzeczywiste nagranie wideo TS i audio w każdym formacie, zatrzymaj je przyciskiem i zamknij program podczas nagrywania po potwierdzeniu; każdy plik musi być niepusty i odtwarzalny.
 13. Utwórz odległe zadanie nagrywania w Harmonogramie Windows, sprawdź tryb bez okna, chroniony zapis URL, początek/koniec, opcję wybudzania, anulowanie i automatyczne wygaśnięcie zadania.
 14. Sprawdź ulubione po restarcie aplikacji, filtr przyciskiem, menu kontekstowe i dynamiczne kanały w menu Alt+U.
-15. Podpisz Authenticode program i instalator certyfikatem wydawcy przed publicznym udostępnieniem.
+15. Jeśli wydanie jest podpisywane, zweryfikuj podpis Authenticode programu i instalatora. Pierwsze publiczne wydanie 1.0.0 jest niepodpisane zgodnie z decyzją właściciela; opis Release informuje o braku podpisu.
 16. Opublikuj instalator razem z plikiem `.sha256`.
 
 Instalator 2.0.1 jest instalacją per-machine, wymaga uprawnień administratora i domyślnie instaluje aplikację w `C:\Program Files\TelePilot`. Dane użytkownika pozostają po odinstalowaniu, aby przypadkowo nie usunąć ustawień, źródeł, ulubionych i harmonogramu nagrań.

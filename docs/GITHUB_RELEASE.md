@@ -1,7 +1,7 @@
 # Publikacja TelePilot 1.0.0 na GitHubie
 
 Pierwsze publiczne wydanie ma numer **1.0.0**, tag **v1.0.0** i dotyczy Windows.
-Nie jest jeszcze opublikowane. Poprzednia numeracja 1.0–2.0.1 była robocza;
+Pakiet publiczny obejmuje Windows x64. Poprzednia numeracja 1.0–2.0.1 była robocza;
 historię zachowano w `development/CHANGELOG_INTERNAL.md`.
 
 ## Przygotowane pliki
@@ -56,12 +56,18 @@ buduje niepodpisane artefakty do przeglądu.
 - [ ] Zaplanowane zadanie sprawdzone przy zamkniętym oknie aplikacji, z anulowaniem i wybudzaniem.
 - [ ] Instalacja i odinstalowanie sprawdzone na czystym systemie oraz aktualizacja dotychczasowej wersji testowej.
 - [ ] ARM64 sprawdzone na sprzęcie ARM64 przed dołączeniem tego instalatora. Kompilacja na x64 nie zastępuje tego testu.
-- [ ] Podpisy aplikacji i instalatora zweryfikowane; sumy SHA-256 odpowiadają podpisanym plikom.
+- [ ] Jeśli używany jest podpis, podpisy aplikacji i instalatora są zweryfikowane. Wydanie 1.0.0 ma zgodę właściciela na publikację bez podpisu; opis Release podaje ten fakt. Sumy SHA-256 zawsze dotyczą końcowych plików.
 - [ ] Udostępnione odpowiadające źródła komponentów GPL/LGPL, w tym użytych pluginów i zależności VLC/FFmpeg; zachowane licencje i notices. Szczegóły: `THIRD_PARTY_LICENSES.md`.
 - [ ] Brak prywatnych źródeł, danych, logów, kluczy i plików roboczych w repozytorium i paczkach.
 
 Pełna techniczna lista testów: `RELEASE_CHECKLIST.md`. Zawarte w niej numery
 1.1.x/2.0.x opisują wcześniejsze lokalne wersje i regresje.
+
+Wyniki i rzeczywisty zakres sprawdzeń 1.0.0 zapisano w
+`RELEASE_TESTS_1.0.0.md`. Właściciel potwierdził działanie instalatora i aplikacji
+z NVDA oraz zaakceptował poprawki ewentualnych dalszych usterek w kolejnych
+wydaniach. Brak sprawdzenia czystego systemu, wybudzania i drzewa UIA pozostaje
+odnotowany; nie oznaczamy tych punktów jako zaliczonych.
 
 ## Utworzenie wydania
 
@@ -69,8 +75,8 @@ Pełna techniczna lista testów: `RELEASE_CHECKLIST.md`. Zawarte w niej numery
 2. Poczekaj na zaliczenie zadania **Windows build and tests** dla dokładnego commita wydania.
 3. Po wykonaniu warunków powyżej utwórz tag `v1.0.0` na tym commicie i szkic Release **TelePilot 1.0.0**.
 4. Wklej opis z `RELEASE_NOTES_1.0.0.md`; usuń pozycję ARM64, jeżeli ten wariant nie został sprawdzony.
-5. Dołącz sprawdzone instalatory, ich pliki `.sha256`, `TelePilot-1.0.0-source.zip` i jego sumę. Umieść obok binariów informacje o odpowiadających źródłach zależności.
-6. Upewnij się, że źródła oraz binaria odpowiadają tagowanemu commitowi. Po każdej zmianie kodu lub dołączanej dokumentacji przebuduj paczki i ponów właściwe sprawdzenia.
+5. Dołącz sprawdzony instalator x64 i jego `.sha256`, `TelePilot-1.0.0-source.zip` oraz `TelePilot-1.0.0-third-party-sources.zip`, każde z sumą SHA-256. Wariant ARM64 dołącz dopiero po osobnych testach sprzętowych.
+6. Upewnij się, że źródła oraz binaria odpowiadają tagowanemu commitowi. Po zmianie dołączanej dokumentacji można przepakować tę samą, sprawdzoną publikację aplikacji: porównaj sumy wszystkich EXE/DLL przed i po oraz sprawdź pakowanie. Zmiana kodu wymaga ponownego budowania i właściwych testów działania.
 7. Opublikuj przygotowany szkic po końcowym sprawdzeniu plików i opisu.
 
 ## Wcześniejsze instalacje testowe
