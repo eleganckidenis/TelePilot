@@ -1,0 +1,144 @@
+<Window
+    x:Class="TelePilot.App.Views.SettingsWindow"
+    x:DataType="vm:SettingsWindowViewModel"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:automation="using:Avalonia.Automation"
+    xmlns:controls="using:TelePilot.App.Controls"
+    xmlns:vm="using:TelePilot.App.ViewModels"
+    Width="720"
+    Height="700"
+    MinWidth="600"
+    MinHeight="520"
+    Title="Ustawienia — TelePilot"
+    WindowStartupLocation="CenterOwner"
+    automation:AutomationProperties.Name="Ustawienia TelePilot"
+    automation:AutomationProperties.AutomationId="settings-window">
+  <Grid Margin="20" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="12" KeyboardNavigation.TabNavigation="Cycle">
+    <TextBlock Classes="section-heading" Text="Ustawienia" automation:AutomationProperties.HeadingLevel="1" />
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+      <StackPanel Spacing="14">
+        <TextBlock Classes="section-heading" Text="Lista kanałów" automation:AutomationProperties.HeadingLevel="2" />
+        <StackPanel>
+          <Label Classes="field-label" Content="_Sortowanie kanałów" Target="SortPicker" />
+          <controls:AccessibleComboBox
+              x:Name="SortPicker"
+              ItemsSource="{Binding SortOptions}"
+              SelectedItem="{Binding SelectedSort}"
+              DisplayMemberPath="Name"
+              automation:AutomationProperties.Name="Domyślne sortowanie kanałów"
+              automation:AutomationProperties.AutomationId="settings-channel-sort" />
+        </StackPanel>
+
+        <TextBlock Classes="section-heading" Text="Nagrywanie" automation:AutomationProperties.HeadingLevel="2" />
+        <TextBlock
+            Text="Nagrania wideo są zapisywane bez ponownej kompresji jako oryginalny strumień MPEG-TS (.ts)."
+            TextWrapping="Wrap"
+            automation:AutomationProperties.Name="Format nagrań wideo: oryginalny strumień MPEG-TS, rozszerzenie TS" />
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <StackPanel>
+            <Label Classes="field-label" Content="_Folder nagrań" Target="RecordingDirectoryBox" />
+            <controls:AccessibleTextBox
+                x:Name="RecordingDirectoryBox"
+                Text="{Binding RecordingDirectory}"
+                automation:AutomationProperties.Name="Folder nagrań"
+                automation:AutomationProperties.AutomationId="settings-recording-directory" />
+          </StackPanel>
+          <Button
+              x:Name="BrowseRecordingDirectoryButton"
+              Grid.Column="1"
+              VerticalAlignment="Bottom"
+              Content="Przeglądaj…"
+              Click="OnBrowseRecordingDirectory"
+              automation:AutomationProperties.Name="Wybierz folder nagrań"
+              automation:AutomationProperties.AutomationId="settings-browse-recording-directory" />
+        </Grid>
+
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <StackPanel>
+            <Label Classes="field-label" Content="Plik _FFmpeg, opcjonalnie" Target="FfmpegPathBox" />
+            <controls:AccessibleTextBox
+                x:Name="FfmpegPathBox"
+                Text="{Binding FfmpegPath}"
+                Watermark="Pozostaw puste, aby wykryć automatycznie"
+                automation:AutomationProperties.Name="Opcjonalna ścieżka do ffmpeg.exe"
+                automation:AutomationProperties.AutomationId="settings-ffmpeg-path" />
+          </StackPanel>
+          <Button
+              Grid.Column="1"
+              VerticalAlignment="Bottom"
+              Content="Przeglądaj…"
+              Click="OnBrowseFfmpeg"
+              automation:AutomationProperties.Name="Wybierz plik ffmpeg.exe"
+              automation:AutomationProperties.AutomationId="settings-browse-ffmpeg" />
+        </Grid>
+
+        <Grid ColumnDefinitions="1.2*,1*" ColumnSpacing="10">
+          <StackPanel>
+            <Label Classes="field-label" Content="Format nagrania _audio" Target="AudioFormatPicker" />
+            <controls:AccessibleComboBox
+                x:Name="AudioFormatPicker"
+                ItemsSource="{Binding AudioFormats}"
+                SelectedItem="{Binding SelectedAudioFormat}"
+                DisplayMemberPath="Name"
+                automation:AutomationProperties.Name="Format nagrania audio"
+                automation:AutomationProperties.AutomationId="settings-audio-format" />
+          </StackPanel>
+          <StackPanel Grid.Column="1">
+            <Label Classes="field-label" Content="_Bitrate audio w kb/s" Target="AudioBitratePicker" />
+            <controls:AccessibleComboBox
+                x:Name="AudioBitratePicker"
+                ItemsSource="{Binding AudioBitrates}"
+                SelectedItem="{Binding SelectedAudioBitrate}"
+                automation:AutomationProperties.Name="Bitrate nagrania audio w kilobitach na sekundę"
+                automation:AutomationProperties.AutomationId="settings-audio-bitrate" />
+          </StackPanel>
+        </Grid>
+
+        <StackPanel>
+          <Label Classes="field-label" Content="Format _nazwy pliku" Target="FileNameTemplateBox" />
+          <controls:AccessibleTextBox
+              x:Name="FileNameTemplateBox"
+              Text="{Binding FileNameTemplate}"
+              automation:AutomationProperties.Name="Format nazwy pliku nagrania"
+              automation:AutomationProperties.HelpText="Dostępne pola: nawias klamrowy date, time, channel, programme i mode. Rozszerzenie jest dodawane automatycznie."
+              automation:AutomationProperties.AutomationId="settings-filename-template" />
+          <TextBlock
+              Text="Pola: {date}, {time}, {channel}, {programme}, {mode}. Rozszerzenie jest dodawane automatycznie."
+              TextWrapping="Wrap"
+              automation:AutomationProperties.AccessibilityView="Raw" />
+        </StackPanel>
+
+        <CheckBox
+            Content="Wybudzaj komputer przed zaplanowanym nagraniem"
+            IsChecked="{Binding WakeComputer}"
+            automation:AutomationProperties.Name="Wybudzaj komputer przed zaplanowanym nagraniem"
+            automation:AutomationProperties.AutomationId="settings-wake-computer" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <TextBlock
+        Grid.Row="2"
+        Text="{Binding ValidationMessage}"
+        TextWrapping="Wrap"
+        automation:AutomationProperties.Name="Błąd ustawień"
+        automation:AutomationProperties.LiveSetting="Assertive"
+        automation:AutomationProperties.AutomationId="settings-validation" />
+
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button
+          x:Name="CancelButton"
+          Content="Anuluj"
+          Command="{Binding CancelCommand}"
+          automation:AutomationProperties.Name="Anuluj zmiany ustawień"
+          automation:AutomationProperties.AutomationId="settings-cancel" />
+      <Button
+          x:Name="SaveButton"
+          Classes="primary-action"
+          Content="Zapisz"
+          Command="{Binding SaveCommand}"
+          automation:AutomationProperties.Name="Zapisz ustawienia"
+          automation:AutomationProperties.AutomationId="settings-save" />
+    </StackPanel>
+  </Grid>
+</Window>

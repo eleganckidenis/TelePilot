@@ -1,0 +1,52 @@
+# Build output
+**/bin/
+**/obj/
+artifacts/
+.artifacts/
+.test-output/
+macos-handoff/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Local SDK and helper downloads
+.dotnet/
+.tools/
+
+# Local development snapshots
+.baseline-before-*/
+.target-backups/
+
+# Signing material and local secrets
+*.pfx
+*.p12
+*.key
+.env
+.env.*
+!.env.example
+
+# IDE and operating-system files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+
+# TelePilot runtime data and diagnostics
+logs/
+app-data/
+recordings/
+*.log
+settings*.json
+
+# Private IPTV sources placed at repository root
+/*.m3u
+/*.m3u8
+/url.txt
+
+# Synthetic samples are intentionally versioned
+!samples/*.m3u
+!samples/*.m3u8

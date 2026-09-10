@@ -1,0 +1,7 @@
+#EXTM3U x-tvg-url="demo.xml" url-tvg="demo.xml"
+#EXTINF:-1 tvg-id="demo.news" tvg-name="Demo Wiadomości" tvg-logo="https://example.invalid/logos/news.png" group-title="Informacyjne" language="pl",Demo Wiadomości
+https://example.invalid/live/news.m3u8?demo=1
+#EXTINF:-1 tvg-id="demo.music" tvg-name="Demo Muzyka" group-title="Muzyka" radio="true",Demo Muzyka
+streams/music.m3u8
+#EXTINF:-1 tvg-id="demo.culture" tvg-name="Demo Kultura" group-title="Kultura" audio-track="pol,eng",Demo Kultura
+https://example.invalid/live/culture.m3u8

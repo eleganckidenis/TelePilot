@@ -1,0 +1,60 @@
+<Window
+    x:Class="TelePilot.App.Views.KeyboardShortcutsWindow"
+    x:DataType="vm:KeyboardShortcutsViewModel"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:automation="using:Avalonia.Automation"
+    xmlns:vm="using:TelePilot.App.ViewModels"
+    Width="640"
+    Height="600"
+    MinWidth="460"
+    MinHeight="360"
+    ShowInTaskbar="False"
+    Title="Skróty klawiszowe — TelePilot"
+    WindowStartupLocation="CenterOwner"
+    automation:AutomationProperties.Name="Skróty klawiszowe TelePilot"
+    automation:AutomationProperties.AutomationId="keyboard-shortcuts-window">
+
+  <Grid
+      Margin="20"
+      RowDefinitions="Auto,Auto,*,Auto"
+      RowSpacing="12"
+      KeyboardNavigation.TabNavigation="Cycle">
+    <TextBlock
+        Classes="section-heading"
+        Text="Skróty klawiszowe"
+        automation:AutomationProperties.HeadingLevel="1" />
+    <TextBlock
+        Grid.Row="1"
+        Text="Wszystkie podstawowe operacje programu są dostępne bez użycia myszy."
+        TextWrapping="Wrap" />
+    <ListBox
+        x:Name="ShortcutList"
+        Grid.Row="2"
+        ItemsSource="{Binding Shortcuts}"
+        SelectionMode="Single"
+        automation:AutomationProperties.Name="Lista skrótów klawiszowych"
+        automation:AutomationProperties.AutomationId="keyboard-shortcuts-list">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:KeyboardShortcutItem">
+          <Grid
+              ColumnDefinitions="190,*"
+              Margin="8,6"
+              automation:AutomationProperties.Name="{Binding AccessibleName}"
+              automation:AutomationProperties.AutomationId="{Binding AutomationId}">
+            <TextBlock FontWeight="SemiBold" Text="{Binding Keys}" />
+            <TextBlock Grid.Column="1" Text="{Binding Action}" TextWrapping="Wrap" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+    <Button
+        Grid.Row="3"
+        Classes="primary-action"
+        HorizontalAlignment="Right"
+        Content="Zamknij"
+        Click="OnCloseClick"
+        automation:AutomationProperties.Name="Zamknij okno skrótów klawiszowych"
+        automation:AutomationProperties.AutomationId="keyboard-shortcuts-close" />
+  </Grid>
+</Window>

@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>TelePilot</AssemblyName>
+    <RootNamespace>TelePilot.App</RootNamespace>
+    <AssemblyTitle>TelePilot</AssemblyTitle>
+    <Product>TelePilot</Product>
+    <Description>Odtwarzacz telewizji IPTV z EPG i nagrywaniem.</Description>
+    <Company>TelePilot</Company>
+    <Authors>TelePilot contributors</Authors>
+    <Version>1.0.0</Version>
+    <ApplicationIcon
+        Condition="('$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))) Or $([System.Text.RegularExpressions.Regex]::IsMatch('$(RuntimeIdentifier)', '^win-'))">Assets\TelePilot.ico</ApplicationIcon>
+    <ApplicationManifest
+        Condition="('$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))) Or $([System.Text.RegularExpressions.Regex]::IsMatch('$(RuntimeIdentifier)', '^win-'))">app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TelePilot.Core\TelePilot.Core.csproj" />
+    <ProjectReference Include="..\TelePilot.Playlists\TelePilot.Playlists.csproj" />
+    <ProjectReference Include="..\TelePilot.Epg\TelePilot.Epg.csproj" />
+    <ProjectReference Include="..\TelePilot.Playback\TelePilot.Playback.csproj" />
+    <ProjectReference Include="..\TelePilot.Recording\TelePilot.Recording.csproj" />
+    <ProjectReference Include="..\TelePilot.Infrastructure\TelePilot.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="LibVLCSharp.Avalonia" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference
+        Include="VideoLAN.LibVLC.Windows"
+        Condition="('$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))) Or $([System.Text.RegularExpressions.Regex]::IsMatch('$(RuntimeIdentifier)', '^win-'))" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TelePilot.Tests" />
+  </ItemGroup>
+
+</Project>

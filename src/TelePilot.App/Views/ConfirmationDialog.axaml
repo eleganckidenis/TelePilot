@@ -1,0 +1,57 @@
+<Window
+    x:Class="TelePilot.App.Views.ConfirmationDialog"
+    x:DataType="vm:ConfirmationDialogViewModel"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:automation="using:Avalonia.Automation"
+    xmlns:vm="using:TelePilot.App.ViewModels"
+    Width="560"
+    Height="300"
+    MinWidth="400"
+    MinHeight="240"
+    CanResize="False"
+    ShowInTaskbar="False"
+    Title="{Binding Title}"
+    WindowStartupLocation="CenterOwner"
+    automation:AutomationProperties.Name="{Binding Title}"
+    automation:AutomationProperties.AutomationId="confirmation-dialog">
+  <Grid
+      Margin="20"
+      RowDefinitions="Auto,*,Auto"
+      RowSpacing="16"
+      KeyboardNavigation.TabNavigation="Cycle">
+    <TextBlock
+        Classes="section-heading"
+        Text="{Binding Title}"
+        automation:AutomationProperties.HeadingLevel="1" />
+    <TextBlock
+        x:Name="ConfirmationMessage"
+        Grid.Row="1"
+        Text="{Binding Message}"
+        TextWrapping="Wrap"
+        Focusable="True"
+        automation:AutomationProperties.Name="{Binding Message}"
+        automation:AutomationProperties.AutomationId="confirmation-dialog-content"
+        automation:AutomationProperties.LiveSetting="Assertive" />
+    <StackPanel
+        Grid.Row="2"
+        HorizontalAlignment="Right"
+        Orientation="Horizontal"
+        Spacing="10">
+      <Button
+          x:Name="CancelButton"
+          Content="{Binding CancelButtonText}"
+          Click="OnCancelClick"
+          IsCancel="True"
+          automation:AutomationProperties.Name="{Binding CancelButtonText}"
+          automation:AutomationProperties.AutomationId="confirmation-dialog-cancel" />
+      <Button
+          x:Name="ConfirmButton"
+          Content="{Binding ConfirmButtonText}"
+          Click="OnConfirmClick"
+          automation:AutomationProperties.Name="{Binding ConfirmButtonText}"
+          automation:AutomationProperties.HelpText="Ta operacja usuwa wyłącznie wpis źródła z aplikacji."
+          automation:AutomationProperties.AutomationId="confirmation-dialog-confirm" />
+    </StackPanel>
+  </Grid>
+</Window>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tv generator-info-name="TelePilot synthetic sample">
+  <channel id="demo.news">
+    <display-name lang="pl">Demo Wiadomości</display-name>
+    <icon src="https://example.invalid/logos/news.png" />
+  </channel>
+  <channel id="demo.music">
+    <display-name lang="pl">Demo Muzyka</display-name>
+  </channel>
+  <channel id="demo.culture">
+    <display-name lang="pl">Demo Kultura</display-name>
+  </channel>
+  <programme start="20260730233000 +0200" stop="20260731001500 +0200" channel="demo.news">
+    <title lang="pl">Wieczorny serwis demonstracyjny</title>
+    <desc lang="pl">Pierwszy wiersz sztucznego opisu.
+Drugi wiersz sprawdza obsługę opisów wielowierszowych.</desc>
+    <category lang="pl">Informacje</category>
+    <episode-num system="xmltv_ns">0.4.</episode-num>
+    <date>2026</date>
+    <icon src="https://example.invalid/programmes/news.png" />
+  </programme>
+  <programme start="20260731001500 +0200" stop="20260731010000 +0200" channel="demo.news">
+    <title lang="pl">Serwis nocny</title>
+    <category lang="pl">Informacje</category>
+  </programme>
+  <programme start="20260730220000 +0200" channel="demo.music">
+    <title lang="pl">Muzyka bez określonej godziny zakończenia</title>
+    <category lang="pl">Muzyka</category>
+  </programme>
+  <programme start="20261025023000 +0200" stop="20261025033000 +0100" channel="demo.culture">
+    <title lang="pl">Audycja podczas zmiany czasu</title>
+    <category lang="pl">Kultura</category>
+    <date>2025</date>
+  </programme>
+</tv>

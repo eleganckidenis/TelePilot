@@ -1,0 +1,46 @@
+<Window
+    x:Class="TelePilot.App.Views.MessageDialog"
+    x:DataType="vm:MessageDialogViewModel"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:automation="using:Avalonia.Automation"
+    xmlns:vm="using:TelePilot.App.ViewModels"
+    Width="520"
+    Height="280"
+    MinWidth="380"
+    MinHeight="220"
+    CanResize="False"
+    ShowInTaskbar="False"
+    Title="{Binding Title}"
+    WindowStartupLocation="CenterOwner"
+    automation:AutomationProperties.Name="{Binding Title}"
+    automation:AutomationProperties.AutomationId="message-dialog">
+  <Grid
+      Margin="20"
+      RowDefinitions="Auto,*,Auto"
+      RowSpacing="16"
+      KeyboardNavigation.TabNavigation="Cycle">
+    <TextBlock
+        Classes="section-heading"
+        Text="{Binding Title}"
+        automation:AutomationProperties.HeadingLevel="1" />
+    <TextBlock
+        x:Name="MessageText"
+        Grid.Row="1"
+        Text="{Binding Message}"
+        TextWrapping="Wrap"
+        Focusable="True"
+        automation:AutomationProperties.Name="{Binding Message}"
+        automation:AutomationProperties.AutomationId="message-dialog-content"
+        automation:AutomationProperties.LiveSetting="Assertive" />
+    <Button
+        x:Name="PrimaryButton"
+        Grid.Row="2"
+        Classes="primary-action"
+        HorizontalAlignment="Right"
+        Content="{Binding ButtonText}"
+        Click="OnCloseClick"
+        automation:AutomationProperties.Name="{Binding ButtonText}"
+        automation:AutomationProperties.AutomationId="message-dialog-primary" />
+  </Grid>
+</Window>

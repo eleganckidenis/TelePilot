@@ -1,0 +1,115 @@
+<Window
+    x:Class="TelePilot.App.Views.ScheduleRecordingWindow"
+    x:DataType="vm:ScheduleRecordingViewModel"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:automation="using:Avalonia.Automation"
+    xmlns:controls="using:TelePilot.App.Controls"
+    xmlns:vm="using:TelePilot.App.ViewModels"
+    Width="680"
+    Height="610"
+    MinWidth="580"
+    MinHeight="520"
+    Title="Zaplanuj nagrywanie — TelePilot"
+    WindowStartupLocation="CenterOwner"
+    automation:AutomationProperties.Name="Zaplanuj nagrywanie"
+    automation:AutomationProperties.AutomationId="schedule-recording-window">
+  <Grid Margin="20" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="14" KeyboardNavigation.TabNavigation="Cycle">
+    <TextBlock Classes="section-heading" Text="Zaplanuj nagrywanie" automation:AutomationProperties.HeadingLevel="1" />
+    <StackPanel Grid.Row="1" Spacing="14">
+      <StackPanel>
+        <Label Classes="field-label" Content="_Kanał" Target="ChannelPicker" />
+        <controls:AccessibleComboBox
+            x:Name="ChannelPicker"
+            ItemsSource="{Binding Channels}"
+            SelectedItem="{Binding SelectedChannel}"
+            DisplayMemberPath="Name"
+            automation:AutomationProperties.Name="Kanał do nagrania"
+            automation:AutomationProperties.AutomationId="schedule-channel" />
+      </StackPanel>
+
+      <TextBlock
+          Text="{Binding ProgrammeLabel}"
+          TextWrapping="Wrap"
+          automation:AutomationProperties.Name="Audycja wybrana do nagrania"
+          automation:AutomationProperties.AutomationId="schedule-programme" />
+
+      <Grid ColumnDefinitions="1.2*,1*" ColumnSpacing="10">
+        <StackPanel>
+          <Label Classes="field-label" Content="Data _rozpoczęcia" Target="StartDatePicker" />
+          <controls:AccessibleDatePicker
+              x:Name="StartDatePicker"
+              SelectedDate="{Binding StartDate}"
+              Watermark="RRRR-MM-DD"
+              automation:AutomationProperties.Name="Data rozpoczęcia nagrania"
+              automation:AutomationProperties.AutomationId="schedule-start-date" />
+        </StackPanel>
+        <StackPanel Grid.Column="1">
+          <Label Classes="field-label" Content="Godzina rozpoczęcia" Target="StartTimeBox" />
+          <controls:AccessibleTextBox
+              x:Name="StartTimeBox"
+              Text="{Binding StartTime}"
+              Watermark="GG:mm"
+              automation:AutomationProperties.Name="Godzina rozpoczęcia nagrania w formacie GG dwukropek mm"
+              automation:AutomationProperties.AutomationId="schedule-start-time" />
+        </StackPanel>
+      </Grid>
+
+      <Grid ColumnDefinitions="1.2*,1*" ColumnSpacing="10">
+        <StackPanel>
+          <Label Classes="field-label" Content="Data _zakończenia" Target="EndDatePicker" />
+          <controls:AccessibleDatePicker
+              x:Name="EndDatePicker"
+              SelectedDate="{Binding EndDate}"
+              Watermark="RRRR-MM-DD"
+              automation:AutomationProperties.Name="Data zakończenia nagrania"
+              automation:AutomationProperties.AutomationId="schedule-end-date" />
+        </StackPanel>
+        <StackPanel Grid.Column="1">
+          <Label Classes="field-label" Content="Godzina zakończenia" Target="EndTimeBox" />
+          <controls:AccessibleTextBox
+              x:Name="EndTimeBox"
+              Text="{Binding EndTime}"
+              Watermark="GG:mm"
+              automation:AutomationProperties.Name="Godzina zakończenia nagrania w formacie GG dwukropek mm"
+              automation:AutomationProperties.AutomationId="schedule-end-time" />
+        </StackPanel>
+      </Grid>
+
+      <StackPanel>
+        <Label Classes="field-label" Content="_Tryb nagrywania" Target="ModePicker" />
+        <controls:AccessibleComboBox
+            x:Name="ModePicker"
+            ItemsSource="{Binding Modes}"
+            SelectedItem="{Binding SelectedMode}"
+            DisplayMemberPath="Name"
+            automation:AutomationProperties.Name="Tryb nagrywania"
+            automation:AutomationProperties.AutomationId="schedule-mode" />
+      </StackPanel>
+    </StackPanel>
+
+    <TextBlock
+        Grid.Row="2"
+        Text="{Binding ValidationMessage}"
+        TextWrapping="Wrap"
+        automation:AutomationProperties.Name="Błąd planowania nagrania"
+        automation:AutomationProperties.LiveSetting="Assertive"
+        automation:AutomationProperties.AutomationId="schedule-validation" />
+
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button
+          x:Name="CancelButton"
+          Content="Anuluj"
+          Command="{Binding CancelCommand}"
+          automation:AutomationProperties.Name="Anuluj planowanie nagrania"
+          automation:AutomationProperties.AutomationId="schedule-cancel" />
+      <Button
+          x:Name="SaveButton"
+          Classes="primary-action"
+          Content="Zaplanuj"
+          Command="{Binding SaveCommand}"
+          automation:AutomationProperties.Name="Zaplanuj nagrywanie"
+          automation:AutomationProperties.AutomationId="schedule-save" />
+    </StackPanel>
+  </Grid>
+</Window>

@@ -1,0 +1,92 @@
+<Window
+    x:Class="TelePilot.App.Views.UrlSourceDialog"
+    x:DataType="vm:UrlSourceDialogViewModel"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:automation="using:Avalonia.Automation"
+    xmlns:controls="using:TelePilot.App.Controls"
+    xmlns:vm="using:TelePilot.App.ViewModels"
+    Width="560"
+    Height="390"
+    MinWidth="440"
+    MinHeight="350"
+    CanResize="False"
+    ShowInTaskbar="False"
+    Title="Dodaj playlistę z adresu URL"
+    WindowStartupLocation="CenterOwner"
+    automation:AutomationProperties.Name="Dodaj playlistę z adresu URL"
+    automation:AutomationProperties.AutomationId="url-source-dialog">
+
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
+    <KeyBinding Gesture="Enter" Command="{Binding SubmitCommand}" />
+  </Window.KeyBindings>
+
+  <Grid
+      Margin="20"
+      RowDefinitions="Auto,Auto,Auto,Auto,*,Auto"
+      RowSpacing="12"
+      KeyboardNavigation.TabNavigation="Cycle">
+    <TextBlock
+        Classes="section-heading"
+        Text="Dodaj playlistę z adresu URL"
+        automation:AutomationProperties.HeadingLevel="1" />
+
+    <StackPanel Grid.Row="1">
+      <Label Classes="field-label" Content="_Nazwa źródła (opcjonalna)" Target="SourceNameTextBox" />
+      <controls:AccessibleTextBox
+          x:Name="SourceNameTextBox"
+          Text="{Binding SourceName}"
+          Watermark="Na przykład Telewizja domowa"
+          automation:AutomationProperties.Name="Nazwa źródła"
+          automation:AutomationProperties.HelpText="Własna nazwa ułatwiająca rozpoznanie playlisty."
+          automation:AutomationProperties.AutomationId="url-source-name" />
+    </StackPanel>
+
+    <StackPanel Grid.Row="2">
+      <Label Classes="field-label" Content="_Adres playlisty" Target="AddressTextBox" />
+      <controls:AccessibleTextBox
+          x:Name="AddressTextBox"
+          Text="{Binding Address}"
+          Watermark="https://example.org/playlist.m3u8"
+          automation:AutomationProperties.Name="Adres playlisty"
+          automation:AutomationProperties.HelpText="Pełny adres HTTP lub HTTPS do pliku M3U albo M3U8."
+          automation:AutomationProperties.AutomationId="url-source-address" />
+    </StackPanel>
+
+    <CheckBox
+        x:Name="RefreshOnStartupCheckBox"
+        Grid.Row="3"
+        Content="Odświeżaj to źródło przy uruchomieniu programu"
+        IsChecked="{Binding RefreshOnStartup}"
+        automation:AutomationProperties.Name="Odświeżaj źródło przy uruchomieniu"
+        automation:AutomationProperties.AutomationId="url-source-refresh-on-startup" />
+
+    <TextBlock
+        Grid.Row="4"
+        Text="{Binding ValidationMessage}"
+        TextWrapping="Wrap"
+        Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"
+        automation:AutomationProperties.Name="Błąd formularza źródła"
+        automation:AutomationProperties.AutomationId="url-source-validation"
+        automation:AutomationProperties.LiveSetting="Assertive" />
+
+    <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button
+          x:Name="CancelButton"
+          Classes="primary-action"
+          Content="Anuluj"
+          Command="{Binding CancelCommand}"
+          automation:AutomationProperties.Name="Anuluj dodawanie źródła"
+          automation:AutomationProperties.AutomationId="url-source-cancel" />
+      <Button
+          x:Name="SubmitButton"
+          Classes="primary-action"
+          Content="Dodaj"
+          Command="{Binding SubmitCommand}"
+          automation:AutomationProperties.Name="Dodaj źródło URL"
+          automation:AutomationProperties.HelpText="Sprawdza adres i dodaje playlistę."
+          automation:AutomationProperties.AutomationId="url-source-submit" />
+    </StackPanel>
+  </Grid>
+</Window>

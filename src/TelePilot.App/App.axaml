@@ -1,0 +1,30 @@
+<Application
+    x:Class="TelePilot.App.App"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    RequestedThemeVariant="Default">
+  <Application.Styles>
+    <FluentTheme />
+
+    <Style Selector="TextBlock.section-heading">
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,4,0,8" />
+    </Style>
+
+    <Style Selector="TextBlock.field-label">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+
+    <Style Selector="Button.primary-action">
+      <Setter Property="MinWidth" Value="112" />
+      <Setter Property="MinHeight" Value="36" />
+    </Style>
+
+    <Style Selector="ListBoxItem.channel-item">
+      <Setter Property="Padding" Value="10,8" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+  </Application.Styles>
+</Application>

@@ -1,0 +1,198 @@
+<Window
+    x:Class="TelePilot.App.Views.ProgramGuideWindow"
+    x:DataType="vm:ProgramGuideViewModel"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:automation="using:Avalonia.Automation"
+    xmlns:controls="using:TelePilot.App.Controls"
+    xmlns:vm="using:TelePilot.App.ViewModels"
+    Width="940"
+    Height="700"
+    MinWidth="660"
+    MinHeight="500"
+    ShowInTaskbar="True"
+    Title="Program telewizyjny — TelePilot"
+    WindowStartupLocation="CenterOwner"
+    automation:AutomationProperties.Name="Program telewizyjny"
+    automation:AutomationProperties.AutomationId="program-guide-window">
+
+  <Window.KeyBindings>
+    <KeyBinding Gesture="F5" Command="{Binding RefreshCommand}" />
+  </Window.KeyBindings>
+
+  <Grid
+      Margin="20"
+      RowDefinitions="Auto,Auto,Auto,*,Auto,Auto"
+      RowSpacing="12"
+      KeyboardNavigation.TabNavigation="Cycle">
+    <TextBlock
+        Classes="section-heading"
+        Text="Program telewizyjny"
+        automation:AutomationProperties.HeadingLevel="1" />
+
+    <Grid Grid.Row="1" RowDefinitions="Auto,Auto" RowSpacing="10">
+      <Grid ColumnDefinitions="2*,1.2*,Auto" ColumnSpacing="10">
+        <StackPanel>
+          <Label Classes="field-label" Content="_Kanał" Target="ChannelPicker" />
+          <controls:AccessibleComboBox
+              x:Name="ChannelPicker"
+              ItemsSource="{Binding Channels}"
+              SelectedItem="{Binding SelectedChannel}"
+              DisplayMemberPath="Name"
+              automation:AutomationProperties.Name="{Binding ChannelSelectorAccessibleName}"
+              automation:AutomationProperties.HelpText="Strzałką w górę lub w dół wybierz kanał, dla którego chcesz sprawdzić program."
+              automation:AutomationProperties.AutomationId="program-guide-channel" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="1">
+          <Label Classes="field-label" Content="_Data" Target="ProgramDatePicker" />
+          <controls:AccessibleDatePicker
+              x:Name="ProgramDatePicker"
+              SelectedDate="{Binding SelectedDate}"
+              Watermark="RRRR-MM-DD"
+              automation:AutomationProperties.Name="{Binding DateSelectorAccessibleName}"
+              automation:AutomationProperties.HelpText="Strzałkami w lewo i w prawo wybierz część daty, a strzałkami w górę i w dół zmień jej wartość. F4 otwiera kalendarz. Następnie wybierz Pokaż dzień."
+              automation:AutomationProperties.AutomationId="program-guide-date" />
+        </StackPanel>
+
+        <Button
+            x:Name="ShowDayButton"
+            Grid.Column="2"
+            VerticalAlignment="Bottom"
+            Content="Pokaż dzień"
+            Command="{Binding LoadCommand}"
+            automation:AutomationProperties.Name="Pokaż program dla wpisanej daty"
+            automation:AutomationProperties.AutomationId="program-guide-show-date" />
+      </Grid>
+
+      <WrapPanel Grid.Row="1" HorizontalAlignment="Left">
+        <Button
+            x:Name="PreviousDayButton"
+            Margin="0,0,8,0"
+            Content="Poprzedni dzień"
+            Command="{Binding PreviousDayCommand}"
+            automation:AutomationProperties.Name="Poprzedni dzień"
+            automation:AutomationProperties.AutomationId="program-guide-previous-day" />
+        <Button
+            x:Name="TodayButton"
+            Margin="0,0,8,0"
+            Content="Dzisiaj / teraz"
+            Command="{Binding GoToNowCommand}"
+            automation:AutomationProperties.Name="Przejdź do aktualnie emitowanej audycji"
+            automation:AutomationProperties.AutomationId="program-guide-now" />
+        <Button
+            x:Name="NextDayButton"
+            Content="Następny dzień"
+            Command="{Binding NextDayCommand}"
+            automation:AutomationProperties.Name="Następny dzień"
+            automation:AutomationProperties.AutomationId="program-guide-next-day" />
+      </WrapPanel>
+    </Grid>
+
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+      <controls:AccessibleSearchBox
+          x:Name="ProgramSearchBox"
+          Text="{Binding SearchText, Mode=OneWayToSource}"
+          Watermark="Tytuł audycji"
+          automation:AutomationProperties.Name="Wyszukaj audycję po tytule"
+          automation:AutomationProperties.AutomationId="program-guide-search" />
+      <Button
+          x:Name="ProgramSearchButton"
+          Grid.Column="1"
+          Content="Szukaj"
+          Command="{Binding LoadCommand}"
+          automation:AutomationProperties.Name="Wyszukaj audycję"
+          automation:AutomationProperties.AutomationId="program-guide-search-submit" />
+    </Grid>
+
+    <Grid Grid.Row="3" ColumnDefinitions="1.2*,1*" ColumnSpacing="12">
+      <Grid RowDefinitions="Auto,*">
+        <Label Classes="field-label" Content="_Audycje" Target="ProgramList" />
+        <ListBox
+            x:Name="ProgramList"
+            Grid.Row="1"
+            ItemsSource="{Binding Programs}"
+            SelectedItem="{Binding SelectedProgram}"
+            ContainerPrepared="OnProgramContainerPrepared"
+            automation:AutomationProperties.Name="Audycje dla wybranego kanału i dnia"
+            automation:AutomationProperties.HelpText="Strzałkami wybierz audycję. Szczegóły są w następnym polu."
+            automation:AutomationProperties.AutomationId="program-guide-programs">
+          <ListBox.ContextMenu>
+            <ContextMenu>
+              <MenuItem
+                  Header="Zaplanuj nagranie audycji…"
+                  Command="{Binding ScheduleProgrammeCommand}"
+                  automation:AutomationProperties.Name="Zaplanuj nagranie wybranej audycji"
+                  automation:AutomationProperties.AutomationId="program-context-schedule" />
+              <MenuItem
+                  Header="Zaplanuj nagranie kanału…"
+                  Command="{Binding ScheduleChannelCommand}"
+                  automation:AutomationProperties.Name="Zaplanuj nagranie wybranego kanału"
+                  automation:AutomationProperties.AutomationId="program-context-schedule-channel" />
+            </ContextMenu>
+          </ListBox.ContextMenu>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ProgramItemViewModel">
+              <TextBlock
+                  Padding="8,6"
+                  Text="{Binding AccessibleName}"
+                  TextWrapping="Wrap"
+                  automation:AutomationProperties.AccessibilityView="Raw" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+
+      <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" RowSpacing="8">
+        <Label Classes="field-label" Content="Szczegóły audycji" Target="ProgramDetails" />
+        <controls:AccessibleTextBox
+            x:Name="ProgramDetails"
+            Grid.Row="1"
+            Text="{Binding SelectedProgramDetails, Mode=OneWay}"
+            IsReadOnly="True"
+            AcceptsReturn="True"
+            TextWrapping="Wrap"
+            automation:AutomationProperties.Name="Szczegóły wybranej audycji"
+            automation:AutomationProperties.HelpText="Pole tylko do odczytu. Strzałkami przeglądaj szczegóły wybranej audycji."
+            automation:AutomationProperties.AutomationId="program-guide-details" />
+        <Button
+            x:Name="ScheduleProgrammeButton"
+            Grid.Row="2"
+            HorizontalAlignment="Left"
+            Content="Zaplanuj nagranie…"
+            Command="{Binding ScheduleProgrammeCommand}"
+            automation:AutomationProperties.Name="Zaplanuj nagranie wybranej audycji"
+            automation:AutomationProperties.AutomationId="program-guide-schedule-recording" />
+      </Grid>
+    </Grid>
+
+    <TextBlock
+        Grid.Row="4"
+        Text="{Binding StatusMessage}"
+        TextWrapping="Wrap"
+        automation:AutomationProperties.Name="Stan programu telewizyjnego"
+        automation:AutomationProperties.AutomationId="program-guide-status"
+        automation:AutomationProperties.LiveSetting="Polite" />
+
+    <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button
+          x:Name="RefreshGuideButton"
+          Content="Odśwież EPG"
+          Command="{Binding RefreshCommand}"
+          automation:AutomationProperties.Name="Odśwież dane programu telewizyjnego"
+          automation:AutomationProperties.AutomationId="program-guide-refresh" />
+      <Button
+          Content="Odtwórz kanał"
+          Command="{Binding PlayChannelCommand}"
+          automation:AutomationProperties.Name="Odtwórz wybrany kanał"
+          automation:AutomationProperties.AutomationId="program-guide-play-channel" />
+      <Button
+          x:Name="CloseGuideButton"
+          Classes="primary-action"
+          Content="Zamknij"
+          Click="OnCloseClick"
+          automation:AutomationProperties.Name="Zamknij program telewizyjny"
+          automation:AutomationProperties.AutomationId="program-guide-close" />
+    </StackPanel>
+  </Grid>
+</Window>

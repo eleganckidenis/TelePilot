@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <NoWarn>$(NoWarn);CA1707;xUnit1051</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Headless.XUnit" />
+    <PackageReference Include="coverlet.MTP" PrivateAssets="all" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\TelePilot.App\TelePilot.App.csproj" />
+    <ProjectReference Include="..\..\src\TelePilot.Core\TelePilot.Core.csproj" />
+    <ProjectReference Include="..\..\src\TelePilot.Epg\TelePilot.Epg.csproj" />
+    <ProjectReference Include="..\..\src\TelePilot.Infrastructure\TelePilot.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\TelePilot.Playback\TelePilot.Playback.csproj" />
+    <ProjectReference Include="..\..\src\TelePilot.Playlists\TelePilot.Playlists.csproj" />
+    <ProjectReference Include="..\..\src\TelePilot.Recording\TelePilot.Recording.csproj" />
+  </ItemGroup>
+
+</Project>

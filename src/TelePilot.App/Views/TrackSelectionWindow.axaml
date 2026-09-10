@@ -1,0 +1,75 @@
+<Window
+    x:Class="TelePilot.App.Views.TrackSelectionWindow"
+    x:DataType="vm:TrackSelectionViewModel"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:automation="using:Avalonia.Automation"
+    xmlns:vm="using:TelePilot.App.ViewModels"
+    Width="560"
+    Height="460"
+    MinWidth="430"
+    MinHeight="350"
+    ShowInTaskbar="False"
+    Title="{Binding Title}"
+    WindowStartupLocation="CenterOwner"
+    automation:AutomationProperties.Name="{Binding Title}"
+    automation:AutomationProperties.AutomationId="track-selection-window">
+
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
+  </Window.KeyBindings>
+
+  <Grid
+      Margin="20"
+      RowDefinitions="Auto,Auto,*,Auto"
+      RowSpacing="12"
+      KeyboardNavigation.TabNavigation="Cycle">
+    <TextBlock
+        Classes="section-heading"
+        Text="{Binding Title}"
+        automation:AutomationProperties.HeadingLevel="1" />
+    <TextBlock
+        Grid.Row="1"
+        Text="{Binding Description}"
+        TextWrapping="Wrap" />
+
+    <ListBox
+        x:Name="TrackList"
+        Grid.Row="2"
+        ItemsSource="{Binding Tracks}"
+        SelectedItem="{Binding SelectedTrack}"
+        ContainerPrepared="OnTrackContainerPrepared"
+        automation:AutomationProperties.Name="Dostępne ścieżki"
+        automation:AutomationProperties.HelpText="Strzałkami wybierz ścieżkę, a następnie naciśnij Enter."
+        automation:AutomationProperties.AutomationId="track-selection-list">
+      <ListBox.KeyBindings>
+        <KeyBinding Gesture="Enter" Command="{Binding ApplyCommand}" />
+      </ListBox.KeyBindings>
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:TrackOptionViewModel">
+          <TextBlock
+              Padding="8"
+              Text="{Binding AccessibleName}"
+              TextWrapping="Wrap"
+              automation:AutomationProperties.AccessibilityView="Raw" />
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button
+          x:Name="CancelButton"
+          Classes="primary-action"
+          Content="Anuluj"
+          Command="{Binding CancelCommand}"
+          automation:AutomationProperties.Name="Anuluj wybór ścieżki"
+          automation:AutomationProperties.AutomationId="track-selection-cancel" />
+      <Button
+          Classes="primary-action"
+          Content="Zastosuj"
+          Command="{Binding ApplyCommand}"
+          automation:AutomationProperties.Name="Zastosuj wybraną ścieżkę"
+          automation:AutomationProperties.AutomationId="track-selection-apply" />
+    </StackPanel>
+  </Grid>
+</Window>
