@@ -4,6 +4,10 @@ Oto **TelePilot** — pilot, który zamieszkał w komputerze i nie domaga się w
 
 Kanały przynosisz własne: TelePilot nie zawiera playlist ani abonamentu IPTV. Herbatę też organizujesz we własnym zakresie.
 
+## Wesprzyj TelePilota
+
+TelePilot jest darmowy. Jeśli chcesz dorzucić się do jego rozwoju, **[wesprzyj projekt przez Revolut](https://revolut.me/michao077)**. Pilot nie potrzebuje baterii, ale autor czasem potrzebuje kawy.
+
 ## Pobranie i instalacja
 
 Pobierz **TelePilot-1.0.0-win-x64-setup.exe** z [najnowszego wydania](https://github.com/eleganckidenis/TelePilot/releases/latest) i uruchom instalator. Potrzebujesz Windows 10 22H2 lub Windows 11 na komputerze Intel/AMD oraz uprawnień administratora do instalacji.

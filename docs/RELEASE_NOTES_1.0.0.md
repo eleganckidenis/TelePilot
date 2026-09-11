@@ -2,6 +2,10 @@
 
 **TelePilot 1.0.0** to pierwsze publiczne wydanie programu do oglądania telewizji IPTV na Windows. Dodajesz własną listę kanałów, oglądasz, sprawdzasz program i nagrywasz na później. Pilot mieszka w komputerze, więc przynajmniej jego nie trzeba szukać pod kanapą.
 
+## Wesprzyj TelePilota
+
+TelePilot jest darmowy. Jeśli chcesz dorzucić się do jego rozwoju, **[wesprzyj projekt przez Revolut](https://revolut.me/michao077)**. Pilot nie potrzebuje baterii, ale autor czasem potrzebuje kawy.
+
 ## Pobierz i zainstaluj
 
 **[Pobierz instalator TelePilot 1.0.0 dla Windows](https://github.com/eleganckidenis/TelePilot/releases/download/v1.0.0/TelePilot-1.0.0-win-x64-setup.exe)** i uruchom go.
