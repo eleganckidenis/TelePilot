@@ -1,123 +1,219 @@
-# TelePilot
+# No dzień dobry ugółem
 
-Odtwarzacz telewizji IPTV dla Windows. Odtwarza kanały z własnych playlist, wyświetla program telewizyjny i nagrywa wideo lub dźwięk.
+Oto **TelePilot** — pilot, który zamieszkał w komputerze i nie domaga się wymiany baterii. Ogląda telewizję z Twoich playlist IPTV, pokazuje program i nagrywa audycje na później. Możesz więc zaplanować nagranie, zrobić herbatę i wrócić, kiedy skończy się życie poza telewizorem.
 
-TelePilot nie zawiera gotowych list ani abonamentu IPTV. Do oglądania potrzebujesz własnego źródła kanałów.
+Kanały przynosisz własne: TelePilot nie zawiera playlist ani abonamentu IPTV. Herbatę też organizujesz we własnym zakresie.
 
-## Wymagania i instalacja
+## Pobranie i instalacja
 
-- Windows 10 22H2 lub Windows 11, komputer x64 (Intel/AMD).
-- Instalator zawiera .NET oraz LibVLC — nie trzeba osobno instalować VLC.
-- Nagrywanie wymaga FFmpeg. Instalator wykrywa go w systemie lub pobiera zweryfikowaną paczkę; do pobrania potrzebny jest internet.
-- Instalacja wymaga uprawnień administratora i udostępnia program wszystkim użytkownikom komputera. Sam TelePilot działa ze zwykłymi uprawnieniami.
+Pobierz **TelePilot-1.0.0-win-x64-setup.exe** z [najnowszego wydania](https://github.com/eleganckidenis/TelePilot/releases/latest) i uruchom instalator. Potrzebujesz Windows 10 22H2 lub Windows 11 na komputerze Intel/AMD oraz uprawnień administratora do instalacji.
 
-Pobierz instalator z sekcji [Releases](https://github.com/eleganckidenis/TelePilot/releases/latest). Pierwsze wydanie ma numer **1.0.0** i jest niepodpisane cyfrowo.
+Instalator przygotowuje potrzebne składniki. Jeśli brakuje FFmpeg do nagrywania, pobierze go z internetu. Wersja 1.0.0 nie ma podpisu cyfrowego, więc Windows może pokazać informację o nieznanym wydawcy.
 
-## Pierwsze uruchomienie
+## Pierwsze oglądanie
 
-1. Dodaj playlistę z pliku (`Ctrl+O`) lub adresu HTTP/HTTPS (`Ctrl+U`).
-2. Wybierz źródło i kanał. Możesz użyć wyszukiwarki lub filtra grupy.
-3. Naciśnij `Enter`, aby rozpocząć odtwarzanie.
-4. Otwórz EPG przez `Ctrl+E`, a nagrywanie przez menu **Nagrywanie**.
+Naciśnij `Ctrl+O`, aby dodać plik playlisty, albo `Ctrl+U`, aby wkleić jej adres. Na liście wybierz kanał i naciśnij `Enter`. Pilot gotowy, można sprawdzić, czy znowu leci ten sam film.
 
-## Funkcje
+## Okno odtwarzania
 
-### Playlisty i kanały
+Po uruchomieniu kanału odtwarzacz zajmuje miejsce listy. Pokazuje obraz, nazwę kanału, bieżącą audycję, stan połączenia i informacje o nagrywaniu.
 
-- Wiele źródeł M3U/M3U8; import jednego lub kilku plików oraz dodawanie adresów URL z własną nazwą.
-- Przełączanie źródeł, odświeżanie, usuwanie i anulowanie wczytywania. Błędne wpisy są pomijane z podsumowaniem ostrzeżeń.
-- Własna kopia zaimportowanej playlisty: działa po przeniesieniu lub usunięciu oryginału. `F5` aktualizuje ją z oryginału, jeśli jest dostępny. Usunięcie źródła nie kasuje pliku użytkownika.
-- Wyszukiwanie po nazwie, grupie lub identyfikatorze kanału; filtrowanie według grupy.
-- Sortowanie według kolejności playlisty, nazwy albo grupy i nazwy.
-- Ulubione zapisywane między uruchomieniami: dodawanie i usuwanie z menu kanału, filtr listy oraz uruchamianie kanałów z menu **Ulubione**.
+Zaznaczony jest przycisk **Pauza / Wznów**. `Tab` przechodzi przez kolejne przyciski do suwaka głośności, a `Shift+Tab` wraca w przeciwną stronę. `Enter` uruchamia wybrany przycisk. Opisy poniżej zachowują kolejność przycisków w odtwarzaczu.
 
-### Odtwarzanie
+### Pauza i wznowienie
 
-- Odtwarzanie, zatrzymywanie, pauza i wznowienie, regulacja głośności oraz wyciszenie.
-- Pełny ekran i możliwość pokazania listy obok odtwarzacza bez przerywania transmisji.
-- Przełączanie poprzedniego i następnego kanału zgodnie z kolejnością aktualnie przefiltrowanej listy.
-- Wybór ścieżek dźwiękowych i napisów dostępnych w strumieniu, bez ponownego otwierania kanału.
-- Nazwa kanału, bieżąca audycja i stan połączenia w odtwarzaczu; automatyczne próby ponownego połączenia po błędzie.
-- Jedno okno aplikacji: ponowne uruchomienie aktywuje już działający TelePilot.
+Użyj **Pauza / Wznów**, aby zatrzymać obraz lub kontynuować oglądanie. Pauza działa tylko wtedy, gdy pozwala na nią transmisja; TelePilot nie oferuje cofania telewizji na żywo.
 
-### Program telewizyjny — EPG
+Skrót pauzy to `Spacja`, ale na przyciskach uruchamia ona wybrany przycisk. Aby mieć pewność, przejdź na **Pauza / Wznów** i naciśnij `Enter`.
 
-- Automatyczne wczytywanie XMLTV lub XMLTV gzip ze źródeł wskazanych w playliście, także kilku dla jednej listy.
-- Dopasowanie kanałów według identyfikatora lub nazwy; obsługa stref czasowych i audycji przechodzących przez północ.
-- Bieżący program na liście kanałów.
-- Wybór kanału i daty, poprzedni i następny dzień, powrót do bieżącej audycji oraz wyszukiwanie po tytule.
-- Godziny emisji, opis, kategoria, odcinek i rok, jeśli dostawca je udostępnia.
-- Odświeżanie EPG, odtwarzanie wybranego kanału i planowanie nagrania audycji z okna programu.
+### Zatrzymanie odtwarzania
 
-### Nagrywanie
+Naciśnij `Ctrl+S` lub wybierz **Zatrzymaj**. Odtwarzanie się kończy, wraca lista z zaznaczonym kanałem. Wybierz inny kanał i naciśnij `Enter`, aby go uruchomić. Zatrzymywanie nagrania ma osobne polecenie w menu **Nagrywanie**.
 
-- Zapis obrazu, dźwięku i napisów bez ponownej kompresji do MPEG-TS (`.ts`), o ile format źródła na to pozwala.
-- Nagrywanie samego audio do MP3, M4A/AAC, Opus, FLAC lub WAV. Formaty stratne mają wybór bitrate; plik otrzymuje metadane kanału, audycji i daty.
-- Nagrywanie aktualnie odtwarzanego kanału, a gdy nic nie jest odtwarzane — zaznaczonego na liście.
-- Zatrzymywanie nagrania z zapisaniem pliku i potwierdzenie zamknięcia programu podczas nagrywania. Istniejące pliki nie są nadpisywane.
-- Planowanie daty i godziny początku oraz końca, kanału i trybu wideo/audio — ręcznie lub z EPG.
-- Lista zaplanowanych nagrań i anulowanie zadań przed rozpoczęciem.
-- Uruchamianie nagrań przez Harmonogram zadań Windows także przy zamkniętym oknie TelePilota; opcjonalne wybudzanie komputera.
+### Wyciszenie
 
-Zaplanowane nagrania wymagają pozostawienia użytkownika zalogowanego. Komputer musi działać lub móc się wybudzić i mieć dostęp do źródła transmisji.
+`Ctrl+M` lub przycisk **Wycisz** wyłącza dźwięk. Ponowne użycie przywraca dźwięk — przydatne, kiedy reklama postanowi przemówić za wszystkich domowników.
 
-### Ustawienia
+### Wybór ścieżki dźwiękowej
 
-W **Plik → Ustawienia** zmienisz sortowanie kanałów, folder nagrań, format i bitrate audio, ścieżkę FFmpeg oraz zgodę na wybudzanie. Domyślnie nagrania trafiają do folderu **Wideo/TelePilot** w profilu użytkownika.
+Naciśnij `Ctrl+T` lub wybierz **Ścieżka dźwiękowa…**. Strzałkami wybierz dostępny język lub ścieżkę i zatwierdź `Enter`. `Escape` anuluje wybór. Dostępne ścieżki zależą od kanału; ich zmiana nie wymaga ponownego uruchamiania transmisji.
 
-Nazwy nagrań można układać z pól `{date}`, `{time}`, `{channel}`, `{programme}` i `{mode}`. Domyślny wzór: `{date}_{time} - {channel} - {programme}`. Rozszerzenie jest dodawane automatycznie.
+### Włączanie i wyłączanie napisów
 
-## Skróty klawiszowe
+`Ctrl+Shift+T` lub **Napisy…** otwiera listę napisów. Wybierz pozycję strzałkami i zatwierdź `Enter`. Pozycja **Wyłączone**, jeśli jest dostępna, wyłącza napisy. Program może wyświetlić tylko napisy dostarczane przez transmisję.
 
-| Skrót | Działanie |
-|---|---|
-| `Ctrl+O` | Dodaj playlistę z pliku |
-| `Ctrl+U` | Dodaj playlistę z URL |
-| `Ctrl+Delete` | Usuń wybrane źródło |
-| `F5` | Odśwież źródło lub EPG w aktywnym oknie |
-| `Enter` na liście | Odtwórz zaznaczony kanał |
-| `Spacja` | Pauza lub wznowienie |
-| `Ctrl+S` | Zatrzymaj odtwarzanie |
-| `Ctrl+L` | Pokaż lub ukryj listę podczas odtwarzania |
-| `Ctrl+E` | Otwórz program telewizyjny |
-| `Ctrl+M` | Wycisz lub przywróć dźwięk |
-| `Ctrl+↑` / `Ctrl+↓` | Zwiększ / zmniejsz głośność |
-| `Home` / `End` w odtwarzaczu | Zwiększ / zmniejsz głośność |
-| `Page Up` / `Page Down` w odtwarzaczu | Poprzedni / następny kanał |
-| `Ctrl+T` | Wybierz ścieżkę dźwiękową |
-| `Ctrl+Shift+T` | Wybierz napisy |
-| `F11` | Włącz lub wyłącz pełny ekran |
-| `Escape` | Wyjdź z pełnego ekranu lub zamknij okno pomocnicze |
-| `Shift+F10` / klawisz menu | Otwórz menu kontekstowe kanału |
-| `Alt` / `F10` | Przejdź do menu głównego |
+### Menu nagrywania w odtwarzaczu
 
-Lista skrótów jest też dostępna w **Pomoc → Skróty klawiszowe**.
+Przycisk **Nagrywanie…** otwiera menu: nagranie wideo, nagranie audio, zatrzymanie nagrania i planowanie. Otwórz je `Enter`, wybierz polecenie strzałkami i zatwierdź `Enter`. Te same polecenia znajdziesz w górnym menu **Nagrywanie** (`Alt+N`).
 
-## Ograniczenia i dane użytkownika
+### Pełny ekran
 
-- Pauza zależy od możliwości transmisji. Brak timeshiftu, czyli lokalnego bufora do cofania telewizji na żywo.
-- EPG, języki audio i napisy zależą od danych udostępnianych przez dostawcę. TelePilot nie obchodzi DRM ani zabezpieczeń źródła.
-- Adresy playlist rozpoznane jako zawierające dane logowania są dostępne tylko w bieżącej sesji i wymagają ponownego dodania po restarcie.
-- Pełne adresy źródeł i dane logowania są maskowane w diagnostyce. Adresy używane przez zaplanowane nagrania są zapisywane z ochroną konta Windows.
-- Ustawienia, źródła i kopie playlist znajdują się w `%LOCALAPPDATA%\TelePilot`. Odinstalowanie programu pozostawia dane użytkownika.
+Naciśnij `F11` lub wybierz **Pełny ekran**. Ponowne `F11` albo `Escape` przywraca zwykłe okno. Skróty odtwarzacza działają również na pełnym ekranie.
 
-## Budowanie ze źródeł
+### Lista kanałów podczas oglądania
 
-Projekt używa C#, .NET 10, Avalonia UI, LibVLCSharp i FFmpeg. Wymagane: Git i .NET SDK 10.0.302 lub zgodna wersja poprawkowa dopuszczona przez [`global.json`](global.json).
+`Ctrl+L` lub **Przejdź do listy kanałów** pokazuje listę obok odtwarzacza i przenosi na nią zaznaczenie. Transmisja gra dalej. Możesz wyszukać kanał i uruchomić go `Enter`.
 
-```powershell
-dotnet restore TelePilot.sln
-dotnet build TelePilot.sln --configuration Debug --no-restore
-dotnet test TelePilot.sln --configuration Debug --no-build
-dotnet run --project src/TelePilot.App/TelePilot.App.csproj
-```
+Ponowne `Ctrl+L` chowa listę i przenosi Cię do kontrolek odtwarzacza. Jeśli chcesz zakończyć oglądanie i wrócić do samej listy, użyj `Ctrl+S`.
 
-Na Windows projekt pobiera natywne LibVLC przez NuGet. Do nagrywania podczas pracy nad kodem udostępnij FFmpeg w `PATH`, w `tools/ffmpeg` obok aplikacji albo wskaż go w ustawieniach. Instalator buduje skrypt [`build-windows-installer.ps1`](scripts/build-windows-installer.ps1), wymagający Inno Setup 6 z obsługą ZIP.
+### Głośność
 
-Dokumentacja projektu: [historia zmian](CHANGELOG.md), [przygotowanie wydania na GitHubie](docs/GITHUB_RELEASE.md), [plan implementacji](IMPLEMENTATION_PLAN.md).
+- `Ctrl+↑` zwiększa, a `Ctrl+↓` zmniejsza głośność.
+- Na kontrolkach odtwarzacza działa też `Home` — głośniej, `End` — ciszej, po 5 punktów procentowych.
+- Do suwaka **Głośność** przejdziesz `Tab` za ostatnim przyciskiem. Strzałkami ustawisz poziom od 0 do 100%.
 
-## Licencje
+### Poprzedni i następny kanał
 
-TelePilot jest udostępniany na licencji [GNU GPL w wersji 3 lub nowszej](LICENSE). Możesz go używać, zmieniać i rozpowszechniać; rozpowszechniane modyfikacje wymagają udostępnienia odpowiadającego im kodu źródłowego na warunkach GPL.
+Na kontrolkach odtwarzacza użyj `Page Up` dla poprzedniego kanału lub `Page Down` dla następnego. Przełączanie uwzględnia wyszukiwanie, wybraną grupę i filtr ulubionych.
 
-Biblioteki i narzędzia zachowują własne licencje: [Zależności natywne i licencje](docs/THIRD_PARTY_LICENSES.md).
+Gdy jesteś na liście kanałów, te klawisze przewijają listę. Aby przełączać nimi transmisję, wróć do odtwarzacza przez `Ctrl+L`.
+
+### Ponowne łączenie po przerwie
+
+Po utracie transmisji TelePilot sam próbuje połączyć się ponownie i pokazuje stan połączenia. Jeśli kanał nadal nie działa, użyj `Ctrl+S`, a następnie `Enter`, aby uruchomić go jeszcze raz.
+
+## Playlisty i kanały
+
+### Dodawanie playlisty z pliku
+
+Naciśnij `Ctrl+O` lub **Dodaj plik…** i wybierz jeden albo kilka plików M3U/M3U8. TelePilot zachowuje własną kopię, więc playlista będzie działać także po przeniesieniu oryginału.
+
+### Dodawanie playlisty z adresu
+
+Naciśnij `Ctrl+U` lub **Dodaj URL…**, wklej adres playlisty, opcjonalnie wpisz własną nazwę źródła i wybierz **Dodaj**. Adresy rozpoznane jako zawierające dane logowania trzeba dodać ponownie po restarcie programu.
+
+### Przełączanie źródła
+
+Na liście **Źródło playlisty** wybierz źródło, a następnie naciśnij `F5` lub **Odśwież źródło**, aby wczytać jego kanały. Możesz przechowywać kilka playlist.
+
+### Odświeżanie playlisty
+
+`F5` w głównym oknie wczytuje ponownie wybrane źródło. Dla playlisty z pliku aktualizuje też kopię na podstawie oryginału, jeśli oryginał jest nadal dostępny.
+
+### Anulowanie wczytywania
+
+Wybierz **Źródło → Anuluj wczytywanie**, aby przerwać pobieranie playlisty.
+
+### Usuwanie źródła
+
+Wybierz źródło i naciśnij `Ctrl+Delete` lub **Usuń źródło…**, a następnie potwierdź. Zniknie z TelePilota wraz z jego kopią; oryginalny plik playlisty pozostanie na dysku.
+
+### Wyszukiwanie kanałów
+
+W polu **Szukaj kanałów** wpisz fragment nazwy, grupy lub identyfikatora. Lista filtruje się podczas pisania. Usuń wpisany tekst, aby wyłączyć wyszukiwanie.
+
+### Filtrowanie według grupy
+
+W polu **Grupa** wybierz kategorię z playlisty, np. sport. Wybór **Wszystkie grupy** przywraca pozostałe grupy. Filtr działa razem z wyszukiwaniem.
+
+### Sortowanie kanałów
+
+Otwórz **Plik → Ustawienia**, ustaw **Sortowanie kanałów** i wybierz **Zapisz**. Dostępna jest kolejność z playlisty, alfabetyczna oraz według grupy i nazwy.
+
+### Ulubione kanały
+
+Na kanale naciśnij `Shift+F10` i wybierz dodanie do ulubionych. To samo menu pozwala kanał usunąć z ulubionych. Aktualnie oglądany kanał dodasz też przez menu **Ulubione** (`Alt+U`).
+
+Przycisk **Ulubione** przełącza filtr listy. W menu **Ulubione** możesz również od razu uruchomić zapisany kanał. Ulubione pozostają po zamknięciu programu.
+
+## Program telewizyjny — EPG
+
+### Sprawdzanie programu kanału
+
+Naciśnij `Ctrl+E` lub wybierz **Program telewizyjny** z menu kanału. W oknie wybierz kanał i audycję; obok listy przeczytasz jej godziny, opis i pozostałe informacje od dostawcy. `Escape` zamyka okno.
+
+EPG wczytuje się z informacji zapisanych w playliście. Jeśli dostawca nie udostępnia programu, TelePilot nie będzie zgadywać, który odcinek właśnie leci.
+
+### Zmiana dnia
+
+Użyj **Poprzedni dzień**, **Następny dzień** albo ustaw **Datę** i wybierz **Pokaż dzień**. W polu daty `F4` otwiera kalendarz. **Dzisiaj / teraz** wraca do bieżącej audycji.
+
+### Wyszukiwanie audycji
+
+W oknie EPG naciśnij `Ctrl+F`, wpisz tytuł lub jego fragment i wybierz **Szukaj**. Wyszukiwanie dotyczy wybranego kanału i dnia.
+
+### Odświeżanie EPG
+
+Naciśnij `F5` w oknie programu telewizyjnego lub wybierz **Odśwież EPG**, aby pobrać aktualne dane.
+
+### Włączenie kanału z EPG
+
+Po wybraniu kanału w oknie programu użyj **Odtwórz kanał**. Uruchomi się bieżąca transmisja — zaznaczenie starej audycji nie odtworzy jej z archiwum.
+
+## Nagrywanie
+
+Nagrywanie dotyczy oglądanego kanału, a jeśli nic nie gra — kanału zaznaczonego na liście. Polecenia są w menu **Nagrywanie** (`Alt+N`) i pod przyciskiem **Nagrywanie…** w odtwarzaczu.
+
+### Nagranie wideo
+
+Wybierz **Nagraj wideo w formacie TS**. Program zapisze transmisję do pliku `.ts`, bez ponownej kompresji. Informacja o nagrywaniu pojawi się w oknie odtwarzacza.
+
+### Nagranie samego dźwięku
+
+Wybierz **Nagraj audio**. Format ustaw wcześniej w **Plik → Ustawienia → Format nagrania audio**: MP3, M4A/AAC, Opus, FLAC lub WAV.
+
+### Zatrzymanie nagrania
+
+W menu **Nagrywanie** wybierz **Zatrzymaj nagrywanie**. Program zakończy zapis pliku. Przy zamykaniu TelePilota przez `Alt+F4` podczas nagrywania pojawi się pytanie o jego zakończenie.
+
+### Planowanie nagrania ręcznie
+
+Wybierz **Nagrywanie → Zaplanuj nagrywanie…** albo tę samą opcję z menu kanału (`Shift+F10`). Ustaw kanał, datę i godzinę początku oraz końca, wybierz wideo lub audio i zatwierdź przyciskiem **Zaplanuj**.
+
+### Planowanie nagrania z EPG
+
+W oknie EPG wybierz audycję i **Zaplanuj nagranie…**. Możesz też nacisnąć `Shift+F10` na audycji i wybrać **Zaplanuj nagranie audycji…**. Program uzupełni kanał oraz godziny; sprawdź je i zatwierdź.
+
+### Przeglądanie zaplanowanych nagrań
+
+Otwórz **Nagrywanie → Zaplanowane nagrania…**, aby sprawdzić kanały, terminy i tryby zapisanych zadań.
+
+### Anulowanie zaplanowanego nagrania
+
+W oknie **Zaplanowane nagrania** zaznacz przyszłe nagranie i wybierz **Anuluj wybrane zadanie**.
+
+### Nagrywanie przy zamkniętej aplikacji
+
+Zapisane zadanie uruchomi się również po zamknięciu okna TelePilota. Pozostaw konto Windows zalogowane; komputer musi być włączony lub móc się wybudzić i mieć dostęp do transmisji.
+
+### Wybudzanie komputera
+
+W **Plik → Ustawienia** zaznacz **Wybudzaj komputer przed zaplanowanym nagraniem** i wybierz **Zapisz** przed planowaniem zadania. Wybudzanie zależy także od ustawień zasilania Windows — całkowicie wyłączonego komputera program nie uruchomi.
+
+## Ustawienia nagrań
+
+Poniższe opcje znajdziesz w **Plik → Ustawienia**. Po zmianach wybierz **Zapisz**; **Anuluj** odrzuca zmiany.
+
+### Folder nagrań
+
+W polu **Folder nagrań** wpisz ścieżkę lub użyj **Przeglądaj…**. Domyślna lokalizacja to **Wideo/TelePilot** w Twoim profilu użytkownika.
+
+### Jakość nagrań audio
+
+Ustaw **Format nagrania audio** i **Bitrate audio w kb/s**. Wyższy bitrate oznacza większy plik i może poprawić jakość formatów stratnych, takich jak MP3. Nie wpływa na zapis wideo TS ani bezstratne FLAC i WAV.
+
+### Nazwy plików nagrań
+
+W polu **Format nazwy pliku** ułóż nazwę z pól `{date}` — data, `{time}` — godzina, `{channel}` — kanał, `{programme}` — audycja i `{mode}` — tryb nagrania.
+
+Przykład: `{date}_{time} - {channel} - {programme}`. Rozszerzenie jest dodawane automatycznie; istniejące nagrania nie są nadpisywane.
+
+### Wskazanie własnego FFmpeg
+
+Jeśli program nie wykrywa FFmpeg lub chcesz użyć własnej kopii, wskaż `ffmpeg.exe` w polu **Plik FFmpeg, opcjonalnie**. Puste pole oznacza automatyczne wykrywanie.
+
+## Menu i lista skrótów
+
+`Alt` lub `F10` otwiera menu główne. Strzałkami wybierasz pozycje, `Enter` je uruchamia, a `Escape` zamyka menu. Ściągę znajdziesz w **Pomoc → Skróty klawiszowe**.
+
+## Ponowne uruchomienie programu
+
+Jeśli TelePilot już działa, ponowne uruchomienie skrótu przywoła jego otwarte okno. Ustawienia i ulubione są zapamiętywane. Odinstalowanie programu pozostawia dane użytkownika.
+
+[Historia zmian](CHANGELOG.md) · [Licencja GPL-3.0-or-later](LICENSE) · [Licencje bibliotek](docs/THIRD_PARTY_LICENSES.md)
+
+## Jak by natala była, to by działało lepiej
+
+Natali chwilowo brak, więc jeśli coś się wykrzaczy, daj znać. Błąd możesz zgłosić w [Issues na GitHubie](https://github.com/eleganckidenis/TelePilot/issues), a jeśli wolisz poza GitHubem — napisz do mnie na [Telegramie: @djdenismusic](https://t.me/djdenismusic).
+
+Napisz, co robiłeś, co miało się wydarzyć i co zrobił TelePilot. Jeśli pojawił się komunikat błędu, dołącz jego treść. „Nie działa” też przeczytam, ale z instrukcją odtworzenia problemu pójdzie nam szybciej.
