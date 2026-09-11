@@ -4,7 +4,7 @@
 
 ## Wesprzyj TelePilota
 
-TelePilot jest darmowy. Jeśli chcesz dorzucić się do jego rozwoju, **[wesprzyj projekt przez Revolut](https://revolut.me/michao077)**. Pilot nie potrzebuje baterii, ale autor czasem potrzebuje kawy.
+TelePilot jest darmowy. Jeśli chcesz dorzucić się do jego rozwoju, **[wesprzyj projekt przez Revolut](https://revolut.me/michao077)**. Pilot zawsze działa. Ale denisek czasem potrzebuje dodatkowej pizzy, żeby mieć siłę na tworzenie. 🍕
 
 ## Pobierz i zainstaluj
 
