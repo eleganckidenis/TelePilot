@@ -138,6 +138,23 @@ TelePilot.Tests -> wszystkie warstwy bez uruchamiania prawdziwych płatnych źr�
 
 Timeshift pozostaje późniejszym, niezależnym modułem; nie jest symulowany zwykłą pauzą.
 
+### Wersja 1.1 — archiwum dostawcy i zakładki
+
+Archiwum catch-up jest osobną funkcją od lokalnego timeshift. Deklaracje M3U
+dziedziczą ustawienia catch-up z nagłówka, z pierwszeństwem ustawień kanału.
+Warstwa Core buduje adres odtwarzania tylko dla rozpoznanego formatu, jawnego
+limitu dni i zakończonego przedziału audycji. Nie pobiera danych z sieci ani nie
+zapisuje wygenerowanych adresów. Czas jest obliczany w UTC, a korekta dostawcy
+pochodzi z deklaracji playlisty.
+
+ArchiveViewModel korzysta z istniejącego EPG oraz wspólnego odtwarzacza. Zmiana
+kanału, daty, źródła, Stop i przejście do transmisji na żywo anulują oczekującą
+aktywację archiwum. Zakładki zachowują zamontowaną listę kanałów i host obrazu;
+nie tworzą kolejnych silników odtwarzania. Okno zarządzania ulubionymi zwraca
+pozostałe identyfikatory, a zapis zachowuje inne preferencje i zmiany wykonane
+w międzyczasie. Bramki obejmują testy ograniczeń archiwum, anulowania, przejść
+między archiwum a transmisją na żywo oraz dostępnych pól wyboru i zakładek.
+
 ## 5. Zależności
 
 Wersje są przypięte centralnie i aktualizowane dopiero po kompilacyjnym teście zgodności:

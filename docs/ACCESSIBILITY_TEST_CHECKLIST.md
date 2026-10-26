@@ -132,6 +132,12 @@ Każdy punkt ma wynik: **zaliczony**, **niezaliczony**, **nie dotyczy**. Dla wyn
 
 ## Ulubione, ustawienia i nagrywanie
 
+- [ ] Zakładki TV na żywo, Ulubione i Archiwum mają standardową rolę zakładki, nazwę i stan zaznaczenia. Działają strzałki, Ctrl+Tab, Ctrl+Shift+Tab oraz Ctrl+1/2/3, także przy fokusie w natywnym polu edycji, liście rozwijanej i polu daty.
+- [ ] Tab i Shift+Tab obejmują nagłówek wybranej zakładki. Zmiana zakładki nie niszczy listy kanałów ani nie przerywa odtwarzania. Ctrl+L i Stop wracają do właściwej zakładki.
+- [ ] W oknie Zarządzaj ulubionymi czytnik odczytuje nazwę i stan każdego pola wyboru. Strzałki/Home/End nawigują, Spacja zaznacza, Usuń zaznaczone usuwa wiele pozycji, Escape nie zapisuje zmian i przywraca fokus.
+- [ ] Archiwum wyjaśnia brak obsługi lub danych EPG. Kanał, data, audycje i przycisk odtwarzania są obsługiwalne z klawiatury. Enter odtwarza zakończoną audycję, tytuł odtwarzacza wskazuje archiwum, a Stop przywraca użyteczny fokus w archiwum.
+- [ ] Przy wolnym łączeniu archiwum zmień kanał/datę/źródło albo naciśnij Stop. Stare żądanie nie uruchamia audycji i nie ogłasza sukcesu. Odtworzenie na żywo z EPG przywraca opis transmisji na żywo.
+
 - [ ] Menu kontekstowe kanału dodaje i usuwa ulubiony kanał, a zmiana jest ogłoszona tylko raz.
 - [ ] Przycisk „Ulubione”, pozycja „Lista ulubionych” i dynamiczne kanały w menu „Ulubione” prowadzą do tej samej, poprawnie odczytywanej listy.
 - [ ] Okno Ustawienia ma logiczną kolejność Tab/Shift+Tab i poprawnie odczytuje sortowanie, folder, FFmpeg, format audio, bitrate, szablon nazwy i wybudzanie.
@@ -151,6 +157,11 @@ Każdy punkt ma wynik: **zaliczony**, **niezaliczony**, **nie dotyczy**. Dla wyn
 
 ## Kontrola hałasu czytnika
 
+- [ ] W archiwum Up/Down wybiera dzień ze zwykłej listy dat; audycje wczytują się automatycznie, a Tab opuszcza selektor bez resetowania daty lub fokusu.
+- [ ] Archiwum domyślnie pokazuje tylko kanały z archiwum. Opcjonalny filtr pozostałych kanałów zachowuje przewidywalne zaznaczenie. W pustej liście daty i audycje są wyczyszczone.
+- [ ] W Ulubionych i Archiwum Tab nie trafia do wyboru źródła ani przycisków playlisty. Czytnik podaje właściwą nazwę pola: Szukaj kanałów lub Szukaj ulubionych. Archiwum nie ma wyszukiwarki; nawigacja zaczyna się od wyboru kanału, a Tab i Shift+Tab cyklicznie przechodzą po dostępnych kontrolkach.
+- [ ] W odtwarzaczu archiwum Ctrl+Left/Right przewija o 30 s, także podczas pauzy i na pełnym ekranie. Fokus pozostaje w kontrolkach, czytnik ogłasza pozycję; Ctrl+Up/Down zmienia głośność.
+- [ ] Ctrl+Left/Right w edytorze lub selektorze daty nie przewija odtwarzania; Stop i przejście na żywo wyłączają przewijanie archiwum.
 - [ ] Czas odtwarzania/nagrania nie jest ogłaszany co sekundę.
 - [ ] Bufor, bitrate i postęp pobierania nie przerywają bieżącej mowy.
 - [ ] Szybkie ponowienia połączenia są scalane w czytelne komunikaty.

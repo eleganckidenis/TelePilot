@@ -10,13 +10,21 @@ TelePilot jest darmowy. Jeśli chcesz dorzucić się do jego rozwoju, **[wesprzy
 
 ## Pobranie i instalacja
 
-Pobierz **TelePilot-1.0.0-win-x64-setup.exe** z [najnowszego wydania](https://github.com/eleganckidenis/TelePilot/releases/latest) i uruchom instalator. Potrzebujesz Windows 10 22H2 lub Windows 11 na komputerze Intel/AMD oraz uprawnień administratora do instalacji.
+Pobierz **TelePilot-1.1.0-win-x64-setup.exe** z [najnowszego wydania](https://github.com/eleganckidenis/TelePilot/releases/latest) i uruchom instalator. Potrzebujesz Windows 10 22H2 lub Windows 11 na komputerze Intel/AMD oraz uprawnień administratora do instalacji.
 
-Instalator przygotowuje potrzebne składniki. Jeśli brakuje FFmpeg do nagrywania, pobierze go z internetu. Wersja 1.0.0 nie ma podpisu cyfrowego, więc Windows może pokazać informację o nieznanym wydawcy.
+Instalator przygotowuje potrzebne składniki. Jeśli brakuje FFmpeg do nagrywania, pobierze go z internetu. Wersja 1.1.0 nie ma podpisu cyfrowego, więc Windows może pokazać informację o nieznanym wydawcy.
 
 ## Pierwsze oglądanie
 
 Naciśnij `Ctrl+O`, aby dodać plik playlisty, albo `Ctrl+U`, aby wkleić jej adres. Na liście wybierz kanał i naciśnij `Enter`. Pilot gotowy, można sprawdzić, czy znowu leci ten sam film.
+
+## Zakładki w wersji 1.1
+
+Główne okno ma trzy zakładki: **TV na żywo** ze wszystkimi kanałami wybranego źródła, **Ulubione** z zapisanymi kanałami ze wszystkich źródeł oraz **Archiwum** z audycjami udostępnianymi przez dostawcę. `Ctrl+Tab` przechodzi do następnej zakładki, `Ctrl+Shift+Tab` do poprzedniej, a `Ctrl+1`, `Ctrl+2` i `Ctrl+3` wybierają je bezpośrednio. Na nagłówkach zakładek działają również strzałki.
+
+Wybór źródła i przyciski dodawania, odświeżania oraz usuwania playlisty znajdują się w **TV na żywo**. Pola wyszukiwania mają nazwy odpowiednie do zakładki: **Szukaj kanałów** i **Szukaj ulubionych**. W **Archiwum** nawigacja zaczyna się od wyboru kanału, a następnie daty; nie ma pola wyszukiwania.
+
+Podczas odtwarzania nagłówki są schowane. `Ctrl+L` pokazuje bieżącą listę albo archiwum obok odtwarzacza; ponowne użycie wraca do kontrolek. Skróty zakładek też pokazują wybrany widok, zachowując transmisję.
 
 ## Okno odtwarzania
 
@@ -118,7 +126,25 @@ Otwórz **Plik → Ustawienia**, ustaw **Sortowanie kanałów** i wybierz **Zapi
 
 Na kanale naciśnij `Shift+F10` i wybierz dodanie do ulubionych. To samo menu pozwala kanał usunąć z ulubionych. Aktualnie oglądany kanał dodasz też przez menu **Ulubione** (`Alt+U`).
 
-Przycisk **Ulubione** przełącza filtr listy. W menu **Ulubione** możesz również od razu uruchomić zapisany kanał. Ulubione pozostają po zamknięciu programu.
+Zakładka **Ulubione** pokazuje zapisane kanały ze wszystkich źródeł. Wybranie kanału z innej playlisty wczytuje odpowiednie źródło. W menu **Ulubione** możesz również od razu uruchomić zapisany kanał. Ulubione pozostają po zamknięciu programu.
+
+W zakładce **Ulubione** wybierz **Zarządzaj ulubionymi…**. W osobnym oknie zaznacz pola wyboru przy kanałach, które chcesz usunąć z ulubionych. Strzałki przechodzą między kanałami, a `Spacja` zaznacza lub odznacza pole. **Usuń zaznaczone** zapisuje zmianę i zamyka okno. **Anuluj** lub `Escape` pozostawia listę bez zmian. Usuwanie z ulubionych nie usuwa kanałów z playlisty.
+
+## Archiwum TV — catch-up
+
+W zakładce **Archiwum** wybierz kanał, a następnie strzałkami dzień ze zwykłej listy dat. Audycje wczytują się automatycznie; **Pokaż dzień** wczytuje je ponownie. Wybierz zakończoną audycję i naciśnij `Enter` lub **Odtwórz z archiwum**. **Poprzedni dzień**, **Następny dzień** i **Odśwież EPG** pomagają znaleźć audycję. Odtwarzacz pokazuje, że oglądasz archiwum, oraz tytuł wybranej audycji. Stop wraca do archiwum.
+
+Widok domyślnie pokazuje tylko kanały ze skonfigurowanym archiwum. Opcjonalne zaznaczenie **Pokaż także kanały bez informacji o archiwum** ujawnia pozostałe kanały. Przy nich aplikacja wyjaśnia, czy brakuje deklaracji lub liczby dni, archiwum jest wyłączone, czy format jest nieobsługiwany albo nieprawidłowy. Ręczna konfiguracja jest oznaczona jako ręczna. Samo istnienie EPG nie potwierdza nagrań na serwerze. Jeżeli serwer kończy połączenie przed rozpoczęciem odtwarzania, aplikacja zgłasza błąd zamiast potwierdzenia uruchomienia.
+
+Podczas oglądania archiwum, z fokusem w kontrolkach odtwarzacza, `Ctrl+strzałka w lewo` cofa o 30 sekund, a `Ctrl+strzałka w prawo` przesuwa o 30 sekund do przodu. Skróty działają również podczas pauzy i na pełnym ekranie, jeżeli strumień obsługuje przewijanie. Czytnik otrzymuje komunikat z pozycją od początku audycji. `Ctrl+góra/dół` nadal zmienia głośność; pola edycji i selektor daty zachowują własne skróty.
+
+W **Ustawieniach**, w części archiwum, można wybrać playlistę i ustawić tryb **Automatycznie**, **Wyłączone**, **Flussonic HLS**, **Flussonic TS**, **Shift** lub **Xtream Codes**. Dla trybu ręcznego podaj liczbę dni archiwum zgodną z ofertą dostawcy i ewentualną korektę godzin. Domyślnie profil uzupełnia brakujące informacje. Opcja **Zastąp ustawienia archiwum zapisane w playliście** pozwala świadomie wymusić wybrany format także na kanałach mających własne dane. Ustawienia dotyczą wyłącznie wybranej playlisty i odtwarzania archiwum.
+
+Jeżeli VLC nie obsługuje bezpośredniego przewijania, TelePilot próbuje otworzyć archiwum ponownie od wskazanego czasu, zachowując pauzę i widok. Wymaga to dostępnej pozycji odtwarzania oraz obsługi takiego żądania przez serwer.
+
+Ta funkcja wymaga archiwum po stronie dostawcy, informacji w playliście lub ręcznego profilu oraz danych o wcześniejszych audycjach w EPG. Sama obecność EPG nie oznacza dostępu do archiwum. Podanie większej liczby dni nie rozszerza archiwum przechowywanego przez serwer.
+
+TelePilot odczytuje tryb z pola M3U `catchup` lub `catchup-type`, także z nagłówka listy. Ustawienia kanału mają pierwszeństwo. Obsługuje `default`, `append`, `shift`/`timeshift`, jawny tryb Nimble oraz rozpoznawane adresy Flussonic i Xtream, z jawnym limitem dni `catchup-days` lub legacy `timeshift`. Flussonic otrzymuje czas początku i długość zakończonej audycji, z zachowaniem wariantu video/mono oraz parametrów dostępu. Nietypowe formaty dostawców mogą wymagać osobnego dostosowania. To odtwarzanie wcześniejszych audycji u dostawcy; aplikacja nie tworzy lokalnego bufora do cofania bieżącej transmisji.
 
 ## Program telewizyjny — EPG
 
@@ -126,7 +152,9 @@ Przycisk **Ulubione** przełącza filtr listy. W menu **Ulubione** możesz równ
 
 Naciśnij `Ctrl+E` lub wybierz **Program telewizyjny** z menu kanału. W oknie wybierz kanał i audycję; obok listy przeczytasz jej godziny, opis i pozostałe informacje od dostawcy. `Escape` zamyka okno.
 
-EPG wczytuje się z informacji zapisanych w playliście. Jeśli dostawca nie udostępnia programu, TelePilot nie będzie zgadywać, który odcinek właśnie leci.
+EPG domyślnie wczytuje się z informacji zapisanych w playliście. W wersji 1.1.0 możesz podać własne źródło w **Plik → Ustawienia → Zewnętrzny adres EPG, opcjonalnie**. Wpisz adres HTTP lub HTTPS do XMLTV (także gzip) i wybierz **Zapisz**. To źródło zastąpi EPG playlisty i działa również wtedy, gdy playlista nie zawiera własnego programu. Wyczyszczenie pola przywróci EPG playlisty. Zmiana działa bez restartu aplikacji.
+
+Identyfikatory lub nazwy kanałów w XMLTV muszą pasować do playlisty. Adresy rozpoznane jako zawierające dane logowania lub tokeny działają tylko w bieżącej sesji i trzeba je podać ponownie po restarcie; nie są zapisywane w pliku ustawień.
 
 ### Zmiana dnia
 

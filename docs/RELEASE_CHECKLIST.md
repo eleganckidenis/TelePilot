@@ -7,7 +7,7 @@
 3. Zbuduj samodzielny instalator:
 
    ```powershell
-   .\scripts\build-windows-installer.ps1 -Runtime win-x64 -Version 2.0.1
+   .\scripts\build-windows-installer.ps1 -Runtime win-x64 -Version 1.1.0
    ```
 
 4. Zainstaluj wynik na czystym komputerze Windows bez zainstalowanego .NET i VLC; potwierdź monit UAC i sprawdź katalog `C:\Program Files\TelePilot`.
@@ -20,7 +20,7 @@
    ma na zmianę pokazywać i ukrywać listę bez restartu odtwarzania oraz
    przywracać fokus do aktualnego widoku.
 9. Potwierdź, że zmiana głośności ogłasza poziom głośności tylko raz i nie powtarza komunikatu „Odtwarzanie”.
-10. Sprawdź regresje od 1.1.2 do 2.0.1:
+10. Sprawdź regresje odziedziczone po wersjach roboczych 1.1.2–2.0.1 (numery sprzed publicznej wersji 1.0.0):
     - dodaj playlistę z pliku, usuń albo przenieś oryginał, uruchom program ponownie i potwierdź działanie kopii;
     - uruchom 1.1.2 z lokalnym źródłem zapisanym przez 1.1.0 i potwierdź jednorazową migrację;
     - usuń źródło i potwierdź, że oryginał pozostał, a właściwa kopia w `%LOCALAPPDATA%\TelePilot\playlists` zniknęła;
@@ -60,18 +60,20 @@
 15. Jeśli wydanie jest podpisywane, zweryfikuj podpis Authenticode programu i instalatora. Pierwsze publiczne wydanie 1.0.0 jest niepodpisane zgodnie z decyzją właściciela; opis Release informuje o braku podpisu.
 16. Opublikuj instalator razem z plikiem `.sha256`.
 
-Instalator 2.0.1 jest instalacją per-machine, wymaga uprawnień administratora i domyślnie instaluje aplikację w `C:\Program Files\TelePilot`. Dane użytkownika pozostają po odinstalowaniu, aby przypadkowo nie usunąć ustawień, źródeł, ulubionych i harmonogramu nagrań.
+Instalator 1.1.0 jest instalacją per-machine, wymaga uprawnień administratora i domyślnie instaluje aplikację w `C:\Program Files\TelePilot`. Dane użytkownika pozostają po odinstalowaniu, aby przypadkowo nie usunąć ustawień, źródeł, ulubionych i harmonogramu nagrań.
 
-### Jednorazowa migracja z 1.0.0
+### Jednorazowa migracja ze starej instalacji testowej per-user
 
-1. Na koncie z zainstalowaną wersją 1.0.0 odinstaluj TelePilot w ustawieniach „Zainstalowane aplikacje”.
+Publiczne wersje 1.0.0 i 1.1.0 mają ten sam zakres instalacji per-machine. Poniższa procedura dotyczy wyłącznie starszych wersji roboczych per-user.
+
+1. Na koncie z zainstalowaną wersją testową per-user odinstaluj TelePilot w ustawieniach „Zainstalowane aplikacje”.
 2. Potwierdź usunięcie starego katalogu `%LOCALAPPDATA%\Programs\TelePilot`, bez usuwania danych TelePilot z profilu użytkownika.
-3. Uruchom instalator 2.0.1 i potwierdź instalację w `C:\Program Files\TelePilot`.
-4. Sprawdź, że zapisane źródła i ustawienia są dostępne po pierwszym uruchomieniu 2.0.1.
-5. Zainstaluj ponownie ten sam build 2.0.1 i potwierdź, że aktualizuje istniejącą instalację zamiast tworzyć drugą pozycję na liście programów.
-6. Na koncie z pozostawioną wersją 1.0.0 uruchom instalator 2.0.1 i potwierdź, że instalacja zostaje przerwana z instrukcją odinstalowania starej kopii.
+3. Uruchom instalator 1.1.0 i potwierdź instalację w `C:\Program Files\TelePilot`.
+4. Sprawdź, że zapisane źródła i ustawienia są dostępne po pierwszym uruchomieniu 1.1.0.
+5. Zainstaluj ponownie ten sam build 1.1.0 i potwierdź, że aktualizuje istniejącą instalację zamiast tworzyć drugą pozycję na liście programów.
+6. Na koncie z pozostawioną starszą wersją testową per-user uruchom instalator 1.1.0 i potwierdź, że instalacja zostaje przerwana z instrukcją odinstalowania starej kopii.
 
-Zmiana trybu z per-user w 1.0.0 na per-machine w 1.1.0 oznacza, że Inno Setup nie może automatycznie połączyć obu dzienników deinstalacji mimo zachowanego AppId. Nie uruchamiaj starego, zapisywalnego przez użytkownika deinstalatora z podniesionymi uprawnieniami; ręczna jednorazowa migracja unika tego ryzyka. Kolejne wydania per-machine zachowują ten sam AppId i aktualizują instalację 1.1.0 w miejscu.
+Historyczna zmiana trybu z per-user na per-machine w wersjach roboczych oznacza, że Inno Setup nie może automatycznie połączyć obu dzienników deinstalacji mimo zachowanego AppId. Nie uruchamiaj starego, zapisywalnego przez użytkownika deinstalatora z podniesionymi uprawnieniami; ręczna jednorazowa migracja unika tego ryzyka. Kolejne wydania per-machine zachowują ten sam AppId i aktualizują instalację 1.1.0 w miejscu.
 
 ## macOS
 

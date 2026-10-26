@@ -2,7 +2,7 @@
 #define AppExeName "TelePilot.exe"
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.1.0"
 #endif
 
 #ifndef Runtime
@@ -10,11 +10,11 @@
 #endif
 
 #ifndef PublishDir
-  #define PublishDir "..\..\artifacts\release\1.0.0\win-x64\publish"
+  #define PublishDir "..\..\artifacts\release\1.1.0\win-x64\publish"
 #endif
 
 #ifndef OutputDir
-  #define OutputDir "..\..\artifacts\release\1.0.0\win-x64"
+  #define OutputDir "..\..\artifacts\release\1.1.0\win-x64"
 #endif
 
 #if Runtime == "win-x64"
