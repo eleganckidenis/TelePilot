@@ -3,18 +3,30 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using System.ComponentModel;
 using TelePilot.App.ViewModels;
 
 namespace TelePilot.App.Views;
 
 public sealed partial class SettingsWindow : Window
 {
+    private SettingsWindowViewModel? observedViewModel;
+
     public SettingsWindow()
     {
         InitializeComponent();
         SortPicker.PreviousTabTarget = SaveButton;
-        SortPicker.NextTabTarget = RecordingDirectoryBox;
-        RecordingDirectoryBox.PreviousTabTarget = SortPicker;
+        SortPicker.NextTabTarget = ExternalEpgUrlBox;
+        ExternalEpgUrlBox.PreviousTabTarget = SortPicker;
+        ExternalEpgUrlBox.NextTabTarget = RecordingDirectoryBox;
+        RecordingDirectoryBox.PreviousTabTarget = ExternalEpgUrlBox;
+        ArchiveSourcePicker.PreviousTabTarget = ExternalEpgUrlBox;
+        ArchiveSourcePicker.NextTabTarget = ArchiveModePicker;
+        ArchiveModePicker.PreviousTabTarget = ArchiveSourcePicker;
+        ArchiveDaysBox.PreviousTabTarget = ArchiveModePicker;
+        ArchiveDaysBox.NextTabTarget = ArchiveCorrectionBox;
+        ArchiveCorrectionBox.PreviousTabTarget = ArchiveDaysBox;
+        ArchiveCorrectionBox.NextTabTarget = ArchiveOverrideCheckBox;
         RecordingDirectoryBox.NextTabTarget = BrowseRecordingDirectoryButton;
         FfmpegPathBox.PreviousTabTarget = BrowseRecordingDirectoryButton;
         AudioFormatPicker.NextTabTarget = AudioBitratePicker;
@@ -32,6 +44,8 @@ public sealed partial class SettingsWindow : Window
             RoutingStrategies.Tunnel,
             handledEventsToo: true);
         Opened += OnOpened;
+        DataContextChanged += OnDataContextChanged;
+        Closed += (_, _) => ObserveViewModel(null);
     }
 
     private void OnSaveButtonKeyDown(object? sender, KeyEventArgs e)
@@ -48,6 +62,45 @@ public sealed partial class SettingsWindow : Window
     private void OnOpened(object? sender, EventArgs e)
     {
         SortPicker.FocusSelector();
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e) =>
+        ObserveViewModel(DataContext as SettingsWindowViewModel);
+
+    private void ObserveViewModel(SettingsWindowViewModel? viewModel)
+    {
+        if (observedViewModel is not null)
+        {
+            observedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        }
+
+        observedViewModel = viewModel;
+        if (observedViewModel is not null)
+        {
+            observedViewModel.PropertyChanged += OnViewModelPropertyChanged;
+        }
+
+        UpdateArchiveTabTargets();
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(SettingsWindowViewModel.IsArchiveManual)
+            or nameof(SettingsWindowViewModel.SelectedArchiveSource))
+        {
+            UpdateArchiveTabTargets();
+        }
+    }
+
+    private void UpdateArchiveTabTargets()
+    {
+        var hasSource = observedViewModel?.HasArchiveSources == true;
+        var manual = observedViewModel?.IsArchiveManual == true;
+        ExternalEpgUrlBox.NextTabTarget = hasSource ? ArchiveSourcePicker : RecordingDirectoryBox;
+        ArchiveModePicker.NextTabTarget = manual ? ArchiveDaysBox : RecordingDirectoryBox;
+        RecordingDirectoryBox.PreviousTabTarget = manual
+            ? ArchiveOverrideCheckBox
+            : hasSource ? ArchiveModePicker : ExternalEpgUrlBox;
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)

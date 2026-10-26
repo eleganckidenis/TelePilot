@@ -8,6 +8,7 @@ public enum FocusTarget
     PlayerControls,
     PrimaryDialogAction,
     ProgramList,
+    Archive,
 }
 
 public sealed record FocusRequest(

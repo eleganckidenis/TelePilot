@@ -1,0 +1,102 @@
+<UserControl
+    x:Class="TelePilot.App.Views.ArchiveView"
+    x:DataType="vm:ArchiveViewModel"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:automation="using:Avalonia.Automation"
+    xmlns:controls="using:TelePilot.App.Controls"
+    xmlns:vm="using:TelePilot.App.ViewModels"
+    automation:AutomationProperties.Name="Archiwum telewizyjne"
+    automation:AutomationProperties.AutomationId="archive-view">
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" RowSpacing="10"
+        KeyboardNavigation.TabNavigation="Cycle">
+    <TextBlock Text="Archiwum" Classes="section-heading"
+               automation:AutomationProperties.HeadingLevel="1" />
+    <Grid Grid.Row="1" ColumnDefinitions="2*,1.2*,Auto" ColumnSpacing="10">
+      <StackPanel>
+        <Label Classes="field-label" Content="_Kanał" Target="ChannelPicker" />
+        <controls:AccessibleComboBox
+            x:Name="ChannelPicker" ItemsSource="{Binding VisibleChannels}"
+            SelectedItem="{Binding SelectedChannel}" DisplayMemberPath="Name"
+            automation:AutomationProperties.Name="{Binding ChannelSelectorAccessibleName}"
+            automation:AutomationProperties.HelpText="Strzałkami wybierz kanał, aby sprawdzić informacje o jego archiwum. Obecność kanału na liście nie potwierdza dostępności nagrań."
+            automation:AutomationProperties.AutomationId="archive-channel" />
+      </StackPanel>
+      <StackPanel Grid.Column="1">
+        <Label Classes="field-label" Content="_Data" Target="ArchiveDatePicker" />
+        <controls:AccessibleComboBox
+            x:Name="ArchiveDatePicker" ItemsSource="{Binding AvailableDates}"
+            SelectedItem="{Binding SelectedDateOption}" DisplayMemberPath="DisplayName"
+            automation:AutomationProperties.Name="{Binding DateSelectorAccessibleName}"
+            automation:AutomationProperties.HelpText="Strzałkami wybierz dzień archiwum. Audycje wczytują się automatycznie."
+            automation:AutomationProperties.AutomationId="archive-date" />
+      </StackPanel>
+      <Button x:Name="ShowDayButton" Grid.Column="2" VerticalAlignment="Bottom"
+              Content="Pokaż dzień" Command="{Binding LoadCommand}"
+              automation:AutomationProperties.Name="Wczytaj ponownie archiwum dla wybranej daty"
+              automation:AutomationProperties.AutomationId="archive-show-date" />
+    </Grid>
+    <StackPanel Grid.Row="2" Spacing="8">
+      <TextBlock Text="{Binding ChannelSummary}" TextWrapping="Wrap"
+                 automation:AutomationProperties.Name="Informacje o kanałach archiwum"
+                 automation:AutomationProperties.AutomationId="archive-channel-summary" />
+      <WrapPanel>
+        <Button x:Name="PreviousDayButton" Margin="0,0,8,0" Content="Poprzedni dzień"
+                Command="{Binding PreviousDayCommand}"
+                automation:AutomationProperties.Name="Poprzedni dzień archiwum"
+                automation:AutomationProperties.AutomationId="archive-previous-day" />
+        <Button x:Name="NextDayButton" Content="Następny dzień" Command="{Binding NextDayCommand}"
+                automation:AutomationProperties.Name="Następny dzień archiwum"
+                automation:AutomationProperties.AutomationId="archive-next-day" />
+      </WrapPanel>
+      <TextBlock Text="{Binding AvailabilityMessage}" TextWrapping="Wrap"
+                 automation:AutomationProperties.Name="Dostępność archiwum"
+                 automation:AutomationProperties.AutomationId="archive-availability" />
+      <CheckBox x:Name="ShowAllChannelsCheckBox"
+                Content="Pokaż także kanały bez informacji o archiwum"
+                IsChecked="{Binding ShowChannelsWithoutArchive}"
+                automation:AutomationProperties.Name="Pokaż także kanały bez informacji o archiwum"
+                automation:AutomationProperties.HelpText="Domyślnie lista pokazuje tylko kanały ze skonfigurowanym archiwum. Zaznacz, aby uwzględnić także pozostałe kanały playlisty."
+                automation:AutomationProperties.AutomationId="archive-show-all-channels" />
+    </StackPanel>
+    <Grid Grid.Row="3" ColumnDefinitions="1.2*,1*" ColumnSpacing="12">
+      <Grid RowDefinitions="Auto,*">
+        <Label Classes="field-label" Content="_Audycje" Target="ProgramList" />
+        <ListBox x:Name="ProgramList" Grid.Row="1" ItemsSource="{Binding Programs}"
+                 SelectedItem="{Binding SelectedProgram}" ContainerPrepared="OnProgramContainerPrepared"
+                 automation:AutomationProperties.Name="Zakończone audycje dostępne w archiwum"
+                 automation:AutomationProperties.HelpText="Strzałkami wybierz audycję. Enter odtwarza ją z archiwum."
+                 automation:AutomationProperties.AutomationId="archive-programs">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ArchiveProgramItemViewModel">
+              <TextBlock Padding="8,6" Text="{Binding AccessibleName}" TextWrapping="Wrap"
+                         automation:AutomationProperties.AccessibilityView="Raw" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+      <Grid Grid.Column="1" RowDefinitions="Auto,*">
+        <Label Classes="field-label" Content="Szczegóły audycji" Target="ProgramDetails" />
+        <controls:AccessibleTextBox
+            x:Name="ProgramDetails" Grid.Row="1" Text="{Binding SelectedProgramDetails, Mode=OneWay}"
+            IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+            automation:AutomationProperties.Name="Szczegóły wybranej audycji archiwalnej"
+            automation:AutomationProperties.HelpText="Pole tylko do odczytu. Strzałkami przeglądaj opis audycji."
+            automation:AutomationProperties.AutomationId="archive-details" />
+      </Grid>
+    </Grid>
+    <TextBlock Grid.Row="4" Text="{Binding StatusMessage}" TextWrapping="Wrap"
+               automation:AutomationProperties.Name="Stan archiwum"
+               automation:AutomationProperties.AutomationId="archive-status"
+               automation:AutomationProperties.LiveSetting="Polite" />
+    <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="8">
+      <Button x:Name="PlayArchiveButton" Classes="primary-action" Content="Odtwórz z archiwum"
+              Command="{Binding PlayCommand}"
+              automation:AutomationProperties.Name="Odtwórz wybraną audycję z archiwum"
+              automation:AutomationProperties.AutomationId="archive-play" />
+      <Button x:Name="RefreshGuideButton" Content="Odśwież EPG" Command="{Binding RefreshCommand}"
+              automation:AutomationProperties.Name="Odśwież EPG archiwum"
+              automation:AutomationProperties.AutomationId="archive-refresh" />
+    </StackPanel>
+  </Grid>
+</UserControl>

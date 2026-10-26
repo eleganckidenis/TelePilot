@@ -217,9 +217,13 @@ public sealed class MainWindowFocusRegressionTests
 
             Assert.True(playButton.Focus());
             PressTab(window);
+            Assert.True(window.FindControl<TabControl>("SectionTabs")!.IsKeyboardFocusWithin);
+            PressTab(window);
             Assert.True(sourceSelector.IsKeyboardFocusWithin);
 
             Assert.True(sourceSelector.FocusSelector());
+            PressTab(window, moveBackward: true);
+            Assert.True(window.FindControl<TabControl>("SectionTabs")!.IsKeyboardFocusWithin);
             PressTab(window, moveBackward: true);
             Assert.True(playButton.IsKeyboardFocusWithin);
         }
@@ -264,6 +268,8 @@ public sealed class MainWindowFocusRegressionTests
 
             Assert.Same(playButton, window.FocusManager?.GetFocusedElement());
 
+            PressTab(window);
+            Assert.True(window.FindControl<TabControl>("SectionTabs")!.IsKeyboardFocusWithin);
             PressTab(window);
             Assert.True(sourceSelector.IsKeyboardFocusWithin);
         }
@@ -353,6 +359,7 @@ public sealed class MainWindowFocusRegressionTests
             channelListToolbar.IsVisible = false;
             channelListView.IsVisible = true;
             channelListView.IsEnabled = false;
+            window.FindControl<TabControl>("SectionTabs")!.IsVisible = false;
             playerView.IsVisible = true;
 
             window.Show();
@@ -417,8 +424,12 @@ public sealed class MainWindowFocusRegressionTests
 
             Assert.True(volumeSlider.Focus());
             PressTab(window);
+            Assert.True(window.FindControl<TabControl>("SectionTabs")!.IsKeyboardFocusWithin);
+            PressTab(window);
             Assert.True(sourceSelector.IsKeyboardFocusWithin);
 
+            PressTab(window, moveBackward: true);
+            Assert.True(window.FindControl<TabControl>("SectionTabs")!.IsKeyboardFocusWithin);
             PressTab(window, moveBackward: true);
             Assert.True(volumeSlider.IsKeyboardFocusWithin);
         }

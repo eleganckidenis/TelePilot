@@ -9,6 +9,8 @@ using TelePilot.App.Controls;
 using TelePilot.App.Services;
 using TelePilot.App.ViewModels;
 using TelePilot.App.Views;
+using TelePilot.Core.CatchUp;
+using TelePilot.Core.Models;
 
 namespace TelePilot.Tests.App;
 
@@ -277,6 +279,10 @@ public sealed class DialogFocusRegressionTests
             AccessibleComboBox firstControl = Assert.IsType<AccessibleComboBox>(
                 window.FindControl<AccessibleComboBox>("SortPicker"));
             Button lastControl = Assert.IsType<Button>(window.FindControl<Button>("SaveButton"));
+            AccessibleTextBox epgUrl = Assert.IsType<AccessibleTextBox>(
+                window.FindControl<AccessibleTextBox>("ExternalEpgUrlBox"));
+            AccessibleTextBox recordingDirectory = Assert.IsType<AccessibleTextBox>(
+                window.FindControl<AccessibleTextBox>("RecordingDirectoryBox"));
 
             window.Show();
             window.Activate();
@@ -285,9 +291,108 @@ public sealed class DialogFocusRegressionTests
 
             Assert.Equal(KeyboardNavigationMode.Cycle, KeyboardNavigation.GetTabNavigation(root));
             Assert.Same(lastControl, firstControl.PreviousTabTarget);
+            Assert.Same(epgUrl, firstControl.NextTabTarget);
+            Assert.Same(firstControl, epgUrl.PreviousTabTarget);
+            Assert.Same(recordingDirectory, epgUrl.NextTabTarget);
+            Assert.Same(epgUrl, recordingDirectory.PreviousTabTarget);
+            Assert.Equal("settings-external-epg-url", AutomationProperties.GetAutomationId(epgUrl));
+            Assert.Contains("EPG", AutomationProperties.GetName(epgUrl));
+            Assert.True(epgUrl.FocusEditor());
+            PressTab(window);
+            Assert.True(recordingDirectory.IsKeyboardFocusWithin);
+            PressTab(window, moveBackward: true);
+            Assert.True(epgUrl.IsKeyboardFocusWithin);
             Assert.True(lastControl.Focus());
             PressTab(window);
             Assert.True(firstControl.IsKeyboardFocusWithin);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public void SettingsWindow_ArchiveControlsHaveNamesAndNativeTabTargets()
+    {
+        var source = new PlaylistSourceItemViewModel(new PlaylistSource(
+            PlaylistSourceId.New(), "Testowa playlista", PlaylistSourceKind.Url,
+            "https://playlist.example.test/list.m3u?token=synthetic"));
+        var viewModel = new SettingsWindowViewModel(TelePilot.App.Models.AppPreferences.CreateDefault(), [source]);
+        SettingsWindow window = new() { DataContext = viewModel };
+
+        try
+        {
+            var epg = Assert.IsType<AccessibleTextBox>(window.FindControl<AccessibleTextBox>("ExternalEpgUrlBox"));
+            var sourcePicker = Assert.IsType<AccessibleComboBox>(window.FindControl<AccessibleComboBox>("ArchiveSourcePicker"));
+            var modePicker = Assert.IsType<AccessibleComboBox>(window.FindControl<AccessibleComboBox>("ArchiveModePicker"));
+            var days = Assert.IsType<AccessibleTextBox>(window.FindControl<AccessibleTextBox>("ArchiveDaysBox"));
+            var correction = Assert.IsType<AccessibleTextBox>(window.FindControl<AccessibleTextBox>("ArchiveCorrectionBox"));
+            var replace = Assert.IsType<CheckBox>(window.FindControl<CheckBox>("ArchiveOverrideCheckBox"));
+            var recording = Assert.IsType<AccessibleTextBox>(window.FindControl<AccessibleTextBox>("RecordingDirectoryBox"));
+            window.Show();
+            window.Activate();
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+
+            Assert.Same(sourcePicker, epg.NextTabTarget);
+            Assert.Same(epg, sourcePicker.PreviousTabTarget);
+            Assert.Same(modePicker, sourcePicker.NextTabTarget);
+            Assert.Same(sourcePicker, modePicker.PreviousTabTarget);
+            Assert.Same(recording, modePicker.NextTabTarget);
+            Assert.Same(modePicker, recording.PreviousTabTarget);
+            Assert.False(days.IsEffectivelyEnabled);
+            Assert.False(correction.IsEffectivelyEnabled);
+            Assert.False(replace.IsEffectivelyEnabled);
+            Assert.True(epg.FocusEditor());
+            PressTab(window);
+            Assert.True(sourcePicker.IsKeyboardFocusWithin);
+            PressTab(window);
+            Assert.True(modePicker.IsKeyboardFocusWithin);
+            PressTab(window);
+            Assert.True(recording.IsKeyboardFocusWithin);
+            PressTab(window, moveBackward: true);
+            Assert.True(modePicker.IsKeyboardFocusWithin);
+
+            viewModel.SelectedArchiveMode = viewModel.ArchiveModeOptions.Single(option => option.Mode == CatchUpSourceMode.FlussonicHls);
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+            Assert.Same(days, modePicker.NextTabTarget);
+            Assert.Same(modePicker, days.PreviousTabTarget);
+            Assert.Same(correction, days.NextTabTarget);
+            Assert.Same(days, correction.PreviousTabTarget);
+            Assert.Same(replace, correction.NextTabTarget);
+            Assert.Same(replace, recording.PreviousTabTarget);
+            Assert.True(days.IsEffectivelyEnabled);
+            Assert.True(modePicker.FocusSelector());
+            PressTab(window);
+            Assert.True(days.IsKeyboardFocusWithin);
+            PressTab(window);
+            Assert.True(correction.IsKeyboardFocusWithin);
+            PressTab(window);
+            Assert.True(replace.IsKeyboardFocusWithin);
+            PressTab(window);
+            Assert.True(recording.IsKeyboardFocusWithin);
+            PressTab(window, moveBackward: true);
+            Assert.True(replace.IsKeyboardFocusWithin);
+
+            foreach (var (control, id) in new (Control, string)[]
+            {
+                (sourcePicker, "settings-archive-source"),
+                (modePicker, "settings-archive-mode"),
+                (days, "settings-archive-days"),
+                (correction, "settings-archive-correction"),
+                (replace, "settings-archive-override"),
+            })
+            {
+                Assert.Equal(id, AutomationProperties.GetAutomationId(control));
+                Assert.False(string.IsNullOrWhiteSpace(AutomationProperties.GetName(control)));
+                Assert.DoesNotContain("synthetic", AutomationProperties.GetName(control), StringComparison.Ordinal);
+            }
+
+            viewModel.SelectedArchiveMode = viewModel.ArchiveModeOptions.Single(option => option.Mode == CatchUpSourceMode.Disabled);
+            Assert.Same(recording, modePicker.NextTabTarget);
+            Assert.Same(modePicker, recording.PreviousTabTarget);
         }
         finally
         {

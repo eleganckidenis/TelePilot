@@ -4,6 +4,8 @@ namespace TelePilot.Core.Contracts;
 
 public interface IPlaybackService : IAsyncDisposable
 {
+    Task PrepareAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
     PlaybackSnapshot Current { get; }
 
     event EventHandler<PlaybackStateChangedEventArgs>? StateChanged;
@@ -17,8 +19,19 @@ public interface IPlaybackService : IAsyncDisposable
 
     Task StopAsync(CancellationToken cancellationToken = default);
 
+    Task<TimeSpan?> GetPositionAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<TimeSpan?>(null);
+
     Task<PlaybackCommandResult> TogglePauseAsync(
         CancellationToken cancellationToken = default);
+
+    Task<PlaybackCommandResult> SeekRelativeAsync(
+        TimeSpan offset,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(PlaybackCommandResult.Unsupported("Ten odtwarzacz nie obsługuje przewijania."));
+    }
 
     Task SetVolumeAsync(
         int volume,

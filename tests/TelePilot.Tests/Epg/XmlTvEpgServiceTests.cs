@@ -229,6 +229,8 @@ public sealed class XmlTvEpgServiceTests
         Assert.Single(service.Channels);
         Assert.Equal(2, service.Channels[0].DisplayNames.Count);
         Assert.DoesNotContain("secret", service.Source, StringComparison.Ordinal);
+        Assert.DoesNotContain("epg.example.invalid", service.Source, StringComparison.Ordinal);
+        Assert.DoesNotContain("guides", service.Source, StringComparison.Ordinal);
 
         await service.SetSourcesAsync([], cancellationToken: TestContext.Current.CancellationToken);
 

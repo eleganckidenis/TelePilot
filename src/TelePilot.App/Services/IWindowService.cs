@@ -24,6 +24,9 @@ public interface IWindowService
     Task<AppPreferences?> ShowSettingsAsync(SettingsWindowViewModel viewModel) =>
         Task.FromResult<AppPreferences?>(null);
 
+    Task<IReadOnlyList<FavoriteChannelPreference>?> ShowFavoritesManagerAsync(FavoritesManagerViewModel viewModel) =>
+        Task.FromResult<IReadOnlyList<FavoriteChannelPreference>?>(null);
+
     Task<RecordingScheduleRequest?> ShowScheduleRecordingAsync(ScheduleRecordingViewModel viewModel) =>
         Task.FromResult<RecordingScheduleRequest?>(null);
 

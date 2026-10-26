@@ -51,7 +51,7 @@ public static class ApplicationBootstrapper
                 var mediaPlayerProvider = services.GetRequiredService<ILibVlcMediaPlayerProvider>();
                 var window = new MainWindow();
                 windowService.SetOwner(window);
-                window.Initialize(viewModel, focusCoordinator, mediaPlayerProvider.MediaPlayer);
+                window.Initialize(viewModel, focusCoordinator, mediaPlayerProvider);
                 return window;
             }
             catch

@@ -18,12 +18,290 @@ using TelePilot.Core.Models;
 using TelePilot.Epg.Models;
 using TelePilot.Epg.Services;
 using TelePilot.Infrastructure;
+using TelePilot.Playback;
 using TelePilot.Recording;
 
 namespace TelePilot.Tests.App;
 
 public sealed class MainWindowPlaybackNavigationTests
 {
+    [AvaloniaFact]
+    public async Task Startup_FocusesSearchBeforeSourcesOrPlaybackPreparationComplete()
+    {
+        using var fixture = new StartupFixture();
+        fixture.Window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(fixture.Window.IsActive);
+        Assert.True(fixture.Sources.Started.Task.IsCompletedSuccessfully);
+        Assert.True(fixture.Provider.Started.Task.IsCompletedSuccessfully);
+        Assert.False(fixture.Sources.Completion.Task.IsCompleted);
+        Assert.False(fixture.Provider.Completion.Task.IsCompleted);
+        var search = fixture.Window.FindControl<AccessibleSearchBox>("SearchBox")!;
+        Assert.True(search.IsKeyboardFocusWithin);
+        var focused = Assert.IsAssignableFrom<Control>(fixture.Window.FocusManager!.GetFocusedElement());
+        Assert.IsType<TextBox>(focused);
+        Assert.True(ControlAutomationPeer.CreatePeerForElement(focused).HasKeyboardFocus());
+
+        await fixture.CompleteStartupAsync();
+    }
+
+    [AvaloniaFact]
+    public async Task Startup_CompletingSourcesAndPlaybackPreservesTheControlChosenByTheUser()
+    {
+        using var fixture = new StartupFixture();
+        fixture.Window.Show();
+        Dispatcher.UIThread.RunJobs();
+        var chosen = fixture.Window.FindControl<Button>("AddUrlSourceButton")!;
+        Assert.True(chosen.Focus());
+
+        await fixture.CompleteStartupAsync();
+
+        Assert.Same(chosen, fixture.Window.FocusManager!.GetFocusedElement());
+        Assert.True(ControlAutomationPeer.CreatePeerForElement(chosen).HasKeyboardFocus());
+    }
+
+    [AvaloniaFact]
+    public async Task Startup_CompletingInTheBackgroundDoesNotReactivateTheMainWindow()
+    {
+        using var fixture = new StartupFixture();
+        fixture.Window.Show();
+        Dispatcher.UIThread.RunJobs();
+        var otherControl = new Button { Content = "Other application" };
+        var otherWindow = new Window { Content = otherControl };
+        try
+        {
+            otherWindow.Show();
+            otherWindow.Activate();
+            // Headless activation does not notify previously active windows.
+            // Deliver the platform notification that the desktop OS supplies.
+            var deactivated = Assert.IsType<Action>(typeof(Avalonia.Platform.IWindowBaseImpl)
+                .GetProperty("Deactivated", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!
+                .GetValue(fixture.Window.PlatformImpl));
+            deactivated();
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(otherControl.Focus());
+            Assert.False(fixture.Window.IsActive);
+
+            await fixture.CompleteStartupAsync();
+
+            Assert.False(fixture.Window.IsActive);
+            Assert.True(otherWindow.IsActive);
+            Assert.Same(otherControl, otherWindow.FocusManager!.GetFocusedElement());
+        }
+        finally
+        {
+            otherWindow.Close();
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Startup_CompletingAfterCloseDoesNotShowOrFocusTheClosedWindow()
+    {
+        using var fixture = new StartupFixture();
+        fixture.Window.Show();
+        Dispatcher.UIThread.RunJobs();
+        fixture.Sources.Release();
+        await WaitForStartupConditionAsync(() => fixture.Playlist.Started.Task.IsCompletedSuccessfully);
+        fixture.Window.Close();
+        var focusEventsAfterClose = 0;
+        fixture.Window.AddHandler(InputElement.GotFocusEvent, (_, _) => focusEventsAfterClose++);
+
+        fixture.Playlist.Release();
+        fixture.Provider.Completion.TrySetResult();
+        await WaitForStartupConditionAsync(() => fixture.Playlist.Completion.Task.IsCompletedSuccessfully);
+        await Task.Yield();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(fixture.Window.IsVisible);
+        Assert.Equal(0, focusEventsAfterClose);
+    }
+
+    private static async Task WaitForStartupConditionAsync(Func<bool> condition)
+    {
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
+        while (!condition() && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        Assert.True(condition(), "Startup did not reach the expected lifecycle checkpoint.");
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    private sealed class StartupFixture : IDisposable
+    {
+        public StartupFixture()
+        {
+            var coordinator = new FocusCoordinator();
+            Model = new MainWindowViewModel(
+                Playlist, Sources, new ImmediatePlaybackService(), new EmptyEpgSourceManager(),
+                new NoOpWindowService(), new RecordingAccessibleStatusService(), coordinator);
+            Window.Initialize(Model, coordinator, Provider);
+        }
+
+        public MainWindow Window { get; } = new();
+
+        public MainWindowViewModel Model { get; }
+
+        public GatedStartupSources Sources { get; } = new();
+
+        public GatedStartupPlaylist Playlist { get; } = new();
+
+        public GatedStartupProvider Provider { get; } = new();
+
+        public async Task CompleteStartupAsync()
+        {
+            Sources.Release();
+            await WaitForStartupConditionAsync(() => Playlist.Started.Task.IsCompletedSuccessfully);
+            Assert.True(Model.IsLoading);
+            Playlist.Release();
+            await WaitForStartupConditionAsync(() => !Model.IsLoading);
+            Provider.Completion.TrySetResult();
+            await Task.Yield();
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        public void Dispose()
+        {
+            Window.Close();
+            Sources.Release();
+            Playlist.Release();
+            Provider.Completion.TrySetResult();
+            Model.Dispose();
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
+
+    private sealed class GatedStartupSources : IPlaylistSourceStore
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<IReadOnlyList<PlaylistSource>> Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<IReadOnlyList<PlaylistSource>> GetAllAsync(CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult();
+            return Completion.Task;
+        }
+
+        public void Release() => Completion.TrySetResult(
+            [new PlaylistSource(PlaylistSourceId.New(), "Startup test", PlaylistSourceKind.File, "test.m3u")]);
+
+        public Task<PlaylistSource> ImportFileAsync(LocalPlaylistSourceImport import, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task RefreshFileAsync(PlaylistSource source, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task SaveAsync(PlaylistSource source, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<bool> RemoveAsync(PlaylistSourceId sourceId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+    }
+
+    private sealed class GatedStartupPlaylist : IPlaylistService
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<PlaylistLoadResult> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<PlaylistLoadResult> LoadAsync(PlaylistSource source, CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult();
+            return Completion.Task;
+        }
+
+        public void Release() => Completion.TrySetResult(
+            PlaylistLoadResult.Success(new PlaylistParseResult(new PlaylistHeader(), [], [], "UTF-8", 0)));
+    }
+
+    private sealed class GatedStartupProvider : ILibVlcMediaPlayerProvider
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task PrepareAsync(CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult();
+            return Completion.Task;
+        }
+
+        public LibVLCSharp.Shared.MediaPlayer MediaPlayer => throw new InvalidOperationException("Startup must not attach a player.");
+
+        public string LibVlcVersion => "Startup test";
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StopOrDisposeDuringPlayerPreparation_PreventsObsoletePlayAndPlayerViewActivation(bool close)
+    {
+        var sourceId = PlaylistSourceId.New();
+        var source = new PlaylistSource(sourceId, "Test", PlaylistSourceKind.File, "test.m3u");
+        var channel = new Channel(ChannelId.New(), sourceId, "Test", "https://example.test/live");
+        var playback = new ImmediatePlaybackService { Preparation = new TaskCompletionSource() };
+        using var model = new MainWindowViewModel(
+            new FixedPlaylistService(PlaylistLoadResult.Success(new PlaylistParseResult(new PlaylistHeader(), [channel], [], "UTF-8", 0))),
+            new FixedPlaylistSourceStore(source), playback, new EmptyEpgSourceManager(),
+            new NoOpWindowService(), new RecordingAccessibleStatusService(), new FocusCoordinator());
+        await model.InitializeAsync();
+
+        var play = model.PlaySelectedCommand.ExecuteAsync(null);
+        Assert.False(play.IsCompleted);
+        if (close)
+        {
+            model.Dispose();
+        }
+        else
+        {
+            await model.StopCommand.ExecuteAsync(null);
+        }
+        playback.Preparation.SetResult();
+        await play;
+
+        Assert.Empty(playback.PlayedChannelNames);
+        Assert.False(model.IsPlayerViewVisible);
+        Assert.True(model.IsChannelListViewVisible);
+    }
+
+    [AvaloniaFact]
+    public async Task FavoriteAndRecording_UseLoadedAndPlayingSourcesWhenSelectorAndLoadedListDiffer()
+    {
+        var first = new PlaylistSource(PlaylistSourceId.New(), "First", PlaylistSourceKind.File, "first.m3u");
+        var second = new PlaylistSource(PlaylistSourceId.New(), "Second", PlaylistSourceKind.File, "second.m3u");
+        var firstChannel = new Channel(ChannelId.New(), first.Id, "First channel", "https://example.test/first");
+        var secondChannel = new Channel(ChannelId.New(), second.Id, "Second channel", "https://example.test/second");
+        var preferences = new MemoryPreferenceStore(AppPreferences.CreateDefault());
+        var recording = new ControllableRecordingCoordinator();
+        var playback = new ImmediatePlaybackService();
+        using var model = new MainWindowViewModel(
+            new SourcePlaylistService(new Dictionary<PlaylistSourceId, Channel> { [first.Id] = firstChannel, [second.Id] = secondChannel }),
+            new FixedPlaylistSourceStore(first, second), playback, new EmptyEpgSourceManager(),
+            new NoOpWindowService(), new RecordingAccessibleStatusService(), new FocusCoordinator(),
+            new AppPreferencesService(preferences), recording);
+        await model.InitializeAsync();
+
+        // Selecting the second source does not load it until F5. A favorite
+        // from that source must still load its playlist before resolving its ID.
+        model.SelectedSource = model.Sources[1];
+        await model.PlayFavoriteAsync(second.Id.Value, secondChannel.Id.Value);
+        Assert.Equal([secondChannel.Name], playback.PlayedChannelNames);
+
+        // F5 can replace the list while the second source keeps playing.
+        model.SelectedSource = model.Sources[0];
+        await model.RefreshSourceCommand.ExecuteAsync(null);
+        await model.AddCurrentToFavoritesCommand.ExecuteAsync(null);
+        await model.StartVideoRecordingCommand.ExecuteAsync(null);
+
+        var favorite = Assert.Single(preferences.Settings.Favorites);
+        Assert.Equal(second.Id.Value, favorite.PlaylistSourceId);
+        Assert.Equal(secondChannel.Id.Value, favorite.ChannelId);
+        Assert.Same(secondChannel, recording.StartedChannel);
+        Assert.Equal(firstChannel.Id.ToString(), Assert.Single(model.Channels).Id);
+    }
+
     [AvaloniaFact]
     public async Task ControlL_DuringPlayerActivationRetainsListFocusAfterPlaybackStarts()
     {
@@ -329,7 +607,8 @@ public sealed class MainWindowPlaybackNavigationTests
 
             // Queue a new match and leave the list before its focus callback runs.
             window.KeyTextInput("o");
-            var button = window.FindControl<Grid>("ChannelActionsPanel")!.Children.OfType<Button>().First();
+            var button = window.FindControl<Grid>("ChannelActionsPanel")!.Children.OfType<Button>()
+                .First(control => control.IsEffectivelyVisible && control.IsEffectivelyEnabled);
             window.KeyPress(Key.Tab, RawInputModifiers.None, PhysicalKey.Tab, null);
             window.KeyRelease(Key.Tab, RawInputModifiers.None, PhysicalKey.Tab, null);
             Dispatcher.UIThread.RunJobs();
@@ -927,11 +1206,17 @@ public sealed class MainWindowPlaybackNavigationTests
             Task.FromResult(result);
     }
 
-    private sealed class FixedPlaylistSourceStore(PlaylistSource source) : IPlaylistSourceStore
+    private sealed class SourcePlaylistService(IReadOnlyDictionary<PlaylistSourceId, Channel> channels) : IPlaylistService
+    {
+        public Task<PlaylistLoadResult> LoadAsync(PlaylistSource source, CancellationToken cancellationToken = default) =>
+            Task.FromResult(PlaylistLoadResult.Success(new PlaylistParseResult(new PlaylistHeader(), [channels[source.Id]], [], "UTF-8", 0)));
+    }
+
+    private sealed class FixedPlaylistSourceStore(params PlaylistSource[] sources) : IPlaylistSourceStore
     {
         public Task<IReadOnlyList<PlaylistSource>> GetAllAsync(
             CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<PlaylistSource>>([source]);
+            Task.FromResult<IReadOnlyList<PlaylistSource>>(sources);
 
         public Task<PlaylistSource> ImportFileAsync(
             LocalPlaylistSourceImport import,
@@ -1037,6 +1322,10 @@ public sealed class MainWindowPlaybackNavigationTests
 
     private sealed class ImmediatePlaybackService : IPlaybackService
     {
+        public TaskCompletionSource? Preparation { get; init; }
+
+        public Task PrepareAsync(CancellationToken cancellationToken = default) => Preparation?.Task ?? Task.CompletedTask;
+
         public PlaybackSnapshot Current { get; private set; } = PlaybackSnapshot.Initial;
 
         public List<string> PlayedChannelNames { get; } = [];
@@ -1277,6 +1566,7 @@ public sealed class MainWindowPlaybackNavigationTests
 
     private sealed class ControllableRecordingCoordinator : IRecordingCoordinator
     {
+        public Channel? StartedChannel { get; private set; }
         public event EventHandler<RecordingProgress>? ProgressChanged;
 
         public bool IsRecording { get; private set; }
@@ -1287,8 +1577,11 @@ public sealed class MainWindowPlaybackNavigationTests
             Channel channel,
             string? programmeTitle,
             RecordingMode mode,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            StartedChannel = channel;
+            return Task.FromResult("test.ts");
+        }
 
         public Task StopAsync(CancellationToken cancellationToken = default)
         {

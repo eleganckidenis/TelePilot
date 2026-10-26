@@ -377,7 +377,7 @@ public class AccessibleTextBox : ContentControl
 
     private void OnFallbackEditorKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Tab)
+        if (e.Key != Key.Tab || (e.KeyModifiers & ~KeyModifiers.Shift) != KeyModifiers.None)
         {
             return;
         }

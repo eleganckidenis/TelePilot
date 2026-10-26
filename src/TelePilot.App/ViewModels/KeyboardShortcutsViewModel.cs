@@ -11,9 +11,11 @@ public sealed class KeyboardShortcutsViewModel
     {
         Shortcuts =
         [
+            new("Ctrl+Tab / Ctrl+Shift+Tab", "Następna lub poprzednia zakładka", "shortcut-sections"),
+            new("Ctrl+1 / Ctrl+2 / Ctrl+3", "TV na żywo, Ulubione lub Archiwum", "shortcut-section-selection"),
             new("Spacja", "Wstrzymaj lub wznów odtwarzanie", "shortcut-pause"),
             new("Ctrl+S", "Zatrzymaj odtwarzanie", "shortcut-stop"),
-            new("Ctrl+L", "Pokaż lub ukryj listę kanałów podczas odtwarzania", "shortcut-channel-list"),
+            new("Ctrl+L", "Pokaż lub ukryj listę kanałów albo archiwum podczas odtwarzania", "shortcut-channel-list"),
             new("Ctrl+E", "Otwórz program telewizyjny", "shortcut-epg"),
             new("Ctrl+O", "Dodaj playlistę z pliku", "shortcut-open-file"),
             new("Ctrl+U", "Dodaj playlistę z adresu URL", "shortcut-open-url"),
@@ -21,6 +23,7 @@ public sealed class KeyboardShortcutsViewModel
             new("Ctrl+M", "Wycisz lub przywróć dźwięk", "shortcut-mute"),
             new("Ctrl+Strzałka w górę", "Zwiększ głośność", "shortcut-volume-up"),
             new("Ctrl+Strzałka w dół", "Zmniejsz głośność", "shortcut-volume-down"),
+            new("Ctrl+Strzałka w lewo / w prawo", "Cofnij lub przewiń odtwarzaną audycję archiwalną o 30 sekund w widoku odtwarzacza", "shortcut-archive-seek"),
             new("Page Up", "Poprzedni kanał w aktywnym widoku odtwarzania", "shortcut-previous-channel"),
             new("Page Down", "Następny kanał w aktywnym widoku odtwarzania", "shortcut-next-channel"),
             new("Home", "Zwiększ głośność w aktywnym widoku odtwarzania", "shortcut-player-volume-up"),

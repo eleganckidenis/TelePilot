@@ -119,6 +119,22 @@ public sealed class WindowService : IWindowService
         }
     }
 
+    public async Task<IReadOnlyList<FavoriteChannelPreference>?> ShowFavoritesManagerAsync(FavoritesManagerViewModel viewModel)
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        var window = new FavoritesManagerWindow { DataContext = viewModel };
+        EventHandler<IReadOnlyList<FavoriteChannelPreference>?> closeHandler = (_, result) => window.Close(result);
+        viewModel.CloseRequested += closeHandler;
+        try
+        {
+            return await window.ShowDialog<IReadOnlyList<FavoriteChannelPreference>?>(GetOwner());
+        }
+        finally
+        {
+            viewModel.CloseRequested -= closeHandler;
+        }
+    }
+
     public async Task<RecordingScheduleRequest?> ShowScheduleRecordingAsync(ScheduleRecordingViewModel viewModel)
     {
         ArgumentNullException.ThrowIfNull(viewModel);

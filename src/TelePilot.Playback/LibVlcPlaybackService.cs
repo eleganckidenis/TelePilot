@@ -11,8 +11,7 @@ namespace TelePilot.Playback;
 
 public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMediaPlayerProvider
 {
-    private readonly LibVLC _libVlc;
-    private readonly MediaPlayer _mediaPlayer;
+    private readonly Lazy<NativePlayerResources> _nativeResources;
     private readonly ILogger<LibVlcPlaybackService> _logger;
     private readonly Channel<Func<Task>> _commandQueue;
     private readonly Task _commandWorker;
@@ -29,15 +28,14 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
     private volatile bool _disposed;
 
     public LibVlcPlaybackService(ILogger<LibVlcPlaybackService> logger)
+        : this(logger, LibVlcNativeBootstrapper.Initialize)
+    {
+    }
+
+    internal LibVlcPlaybackService(ILogger<LibVlcPlaybackService> logger, Action initializeNativeLibraries)
     {
         _logger = logger;
-        LibVlcNativeBootstrapper.Initialize();
-        _libVlc = new LibVLC("--no-video-title-show", "--quiet");
-        _mediaPlayer = new MediaPlayer(_libVlc);
-        // Skróty należą do okna Avalonia. Natywny widget VLC nie powinien
-        // przejmować klawiatury ani myszy, zwłaszcza po zmianie widoku.
-        _mediaPlayer.EnableKeyInput = false;
-        _mediaPlayer.EnableMouseInput = false;
+        _nativeResources = new Lazy<NativePlayerResources>(() => CreateNativeResources(initializeNativeLibraries));
         _commandQueue = System.Threading.Channels.Channel.CreateUnbounded<Func<Task>>(new UnboundedChannelOptions
         {
             SingleReader = true,
@@ -45,8 +43,11 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             AllowSynchronousContinuations = false,
         });
         _commandWorker = Task.Run(ProcessCommandsAsync);
-        SubscribePlayerEvents();
     }
+
+    private LibVLC _libVlc => _nativeResources.Value.LibVlc;
+
+    private MediaPlayer _mediaPlayer => _nativeResources.Value.MediaPlayer;
 
     public event EventHandler<PlaybackStateChangedEventArgs>? StateChanged;
 
@@ -63,9 +64,21 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
         }
     }
 
-    public MediaPlayer MediaPlayer => _mediaPlayer;
+    public MediaPlayer MediaPlayer => PreparedNativeResources.MediaPlayer;
 
-    public string LibVlcVersion => _libVlc.Version;
+    public string LibVlcVersion => PreparedNativeResources.LibVlc.Version;
+
+    private NativePlayerResources PreparedNativeResources => _nativeResources.IsValueCreated
+        ? _nativeResources.Value
+        : throw new InvalidOperationException("Najpierw przygotuj silnik odtwarzania przez PrepareAsync.");
+
+    public async Task PrepareAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        // Plugin discovery can take seconds on a cold installation. Keep it on
+        // the same worker as playback commands, after the window is visible.
+        await EnqueueAsync(() => { _ = _nativeResources.Value; }, cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<PlaybackCommandResult> PlayAsync(
         CoreChannel channel,
@@ -104,6 +117,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             () =>
             {
                 ResetRetryCancellation();
+                Interlocked.Increment(ref _playbackSessionGeneration);
                 UpdateCurrent(Current with
                 {
                     State = PlaybackState.Stopping,
@@ -216,16 +230,18 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
 
         _disposed = true;
         CancelRetryCancellation();
-        UnsubscribePlayerEvents();
-
         try
         {
             await EnqueueAsync(
                 () =>
                 {
-                    if (_mediaPlayer.IsPlaying)
+                    if (_nativeResources.IsValueCreated)
                     {
-                        _mediaPlayer.Stop();
+                        UnsubscribePlayerEvents();
+                        if (_mediaPlayer.IsPlaying)
+                        {
+                            _mediaPlayer.Stop();
+                        }
                     }
                 },
                 CancellationToken.None).ConfigureAwait(false);
@@ -235,13 +251,44 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             _commandQueue.Writer.TryComplete();
             await _commandWorker.ConfigureAwait(false);
             _retryCancellation.Dispose();
-            _mediaPlayer.Dispose();
-            _libVlc.Dispose();
+            if (_nativeResources.IsValueCreated)
+            {
+                _mediaPlayer.Dispose();
+                _libVlc.Dispose();
+            }
         }
     }
 
+    private NativePlayerResources CreateNativeResources(Action initializeNativeLibraries)
+    {
+        initializeNativeLibraries();
+        var libVlc = new LibVLC("--no-video-title-show", "--quiet");
+        MediaPlayer? player = null;
+        try
+        {
+            player = new MediaPlayer(libVlc)
+            {
+                // Avalonia owns keyboard and mouse navigation, including after
+                // a stopped player is shown again.
+                EnableKeyInput = false,
+                EnableMouseInput = false,
+            };
+            SubscribePlayerEvents(player);
+            return new NativePlayerResources(libVlc, player);
+        }
+        catch
+        {
+            player?.Dispose();
+            libVlc.Dispose();
+            throw;
+        }
+    }
+
+    private sealed record NativePlayerResources(LibVLC LibVlc, MediaPlayer MediaPlayer);
+
     private PlaybackCommandResult PlayInternal(CoreChannel channel, Uri streamUri, PlaybackOptions options)
     {
+        Interlocked.Increment(ref _playbackSessionGeneration);
         UpdateCurrent(new PlaybackSnapshot(
             PlaybackState.Connecting,
             channel.Id,
@@ -283,20 +330,22 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             : Current.Volume;
     }
 
-    private void SubscribePlayerEvents()
+    private void SubscribePlayerEvents(MediaPlayer player)
     {
-        _mediaPlayer.Playing += OnPlaying;
-        _mediaPlayer.Paused += OnPaused;
-        _mediaPlayer.Stopped += OnStopped;
-        _mediaPlayer.EndReached += OnEndReached;
-        _mediaPlayer.EncounteredError += OnEncounteredError;
-        _mediaPlayer.ESAdded += OnTracksChanged;
-        _mediaPlayer.ESDeleted += OnTracksChanged;
-        _mediaPlayer.ESSelected += OnTracksChanged;
+        player.Playing += OnPlaying;
+        player.Paused += OnPaused;
+        player.Stopped += OnStopped;
+        player.EndReached += OnEndReached;
+        player.EncounteredError += OnEncounteredError;
+        player.ESAdded += OnTracksChanged;
+        player.ESDeleted += OnTracksChanged;
+        player.ESSelected += OnTracksChanged;
     }
 
     private void UnsubscribePlayerEvents()
     {
+        _mediaPlayer.Playing -= OnSeekPlaybackResumed;
+        _seekEventsSubscribed = false;
         _mediaPlayer.Playing -= OnPlaying;
         _mediaPlayer.Paused -= OnPaused;
         _mediaPlayer.Stopped -= OnStopped;

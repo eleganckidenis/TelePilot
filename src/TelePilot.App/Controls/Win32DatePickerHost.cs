@@ -24,11 +24,13 @@ internal sealed class Win32DatePickerHost : NativeControlHost
     private const uint WmSetFont = 0x0030;
     private const uint WmSetFocus = 0x0007;
     private const uint WmKillFocus = 0x0008;
+    private const uint WmGetDlgCode = 0x0087;
     private const uint WmKeyDown = 0x0100;
     private const uint WmKeyUp = 0x0101;
     private const uint WmChar = 0x0102;
     private const uint WmLButtonUp = 0x0202;
     private const uint WmTimer = 0x0113;
+    private const int DlgcWantArrows = 0x0001;
     private const uint DtmFirst = 0x1000;
     private const uint DtmGetSystemTime = DtmFirst + 1;
     private const uint DtmSetSystemTime = DtmFirst + 2;
@@ -37,6 +39,8 @@ internal sealed class Win32DatePickerHost : NativeControlHost
     private const int VkTab = 0x09;
     private const int VkEscape = 0x1B;
     private const int VkShift = 0x10;
+    private const int VkControl = 0x11;
+    private const int VkMenu = 0x12;
     private const nuint DatePollTimerId = 1;
 
     private nint windowHandle;
@@ -191,7 +195,14 @@ internal sealed class Win32DatePickerHost : NativeControlHost
 
     private nint WindowProcedure(nint hwnd, uint message, nint wParam, nint lParam)
     {
-        if (message == WmKeyDown && wParam == VkTab)
+        if ((message == WmKeyDown || message == WmKeyUp) && IsSectionShortcut(wParam))
+        {
+            ForwardKeyToTopLevel(hwnd, message, wParam, lParam);
+            return 0;
+        }
+
+        if (message == WmKeyDown && wParam == VkTab
+            && (GetKeyState(VkControl) & 0x8000) == 0 && (GetKeyState(VkMenu) & 0x8000) == 0)
         {
             QueueDateRead();
             bool moveBackward = (GetKeyState(VkShift) & 0x8000) != 0;
@@ -225,6 +236,14 @@ internal sealed class Win32DatePickerHost : NativeControlHost
             ? CallWindowProcW(originalWindowProcedure, hwnd, message, wParam, lParam)
             : DefWindowProcW(hwnd, message, wParam, lParam);
 
+        if (message == WmGetDlgCode)
+        {
+            // Left/Right select a date section and Up/Down edit that section.
+            // Keep the native flags for Tab, characters and the calendar, while
+            // explicitly reserving arrows from parent dialog navigation.
+            return result | DlgcWantArrows;
+        }
+
         switch (message)
         {
             case WmSetFocus:
@@ -243,6 +262,19 @@ internal sealed class Win32DatePickerHost : NativeControlHost
         }
 
         return result;
+    }
+
+    private static bool IsSectionShortcut(nint key) =>
+        (GetKeyState(VkControl) & 0x8000) != 0 && (GetKeyState(VkMenu) & 0x8000) == 0
+        && (key == VkTab || (key is >= 0x31 and <= 0x33 && (GetKeyState(VkShift) & 0x8000) == 0));
+
+    private static void ForwardKeyToTopLevel(nint hwnd, uint message, nint wParam, nint lParam)
+    {
+        nint topLevelHandle = GetAncestor(hwnd, GaRoot);
+        if (topLevelHandle != 0)
+        {
+            PostMessageW(topLevelHandle, message, wParam, lParam);
+        }
     }
 
     private void QueueDateRead()

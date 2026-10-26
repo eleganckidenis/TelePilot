@@ -422,7 +422,7 @@ public sealed class AccessibleComboBox : ContentControl
 
     private void OnFallbackKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Tab)
+        if (e.Key != Key.Tab || (e.KeyModifiers & ~KeyModifiers.Shift) != KeyModifiers.None)
         {
             return;
         }

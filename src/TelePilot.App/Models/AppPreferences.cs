@@ -1,4 +1,5 @@
 using TelePilot.Core.Channels;
+using TelePilot.Core.CatchUp;
 using TelePilot.Recording;
 
 namespace TelePilot.App.Models;
@@ -7,9 +8,13 @@ public sealed class AppPreferences
 {
     public ChannelSortMode ChannelSortMode { get; init; } = ChannelSortMode.SourceOrder;
 
+    public string? ExternalEpgUrl { get; init; }
+
     public RecordingPreferences Recording { get; init; } = new();
 
     public List<FavoriteChannelPreference> Favorites { get; init; } = [];
+
+    public List<ArchiveSourcePreference> ArchiveSources { get; init; } = [];
 
     public static AppPreferences CreateDefault() => new()
     {
@@ -45,3 +50,7 @@ public sealed record FavoriteChannelPreference(
     Guid PlaylistSourceId,
     Guid ChannelId,
     string ChannelName);
+
+public sealed record ArchiveSourcePreference(
+    Guid PlaylistSourceId,
+    CatchUpSourceSettings Settings);

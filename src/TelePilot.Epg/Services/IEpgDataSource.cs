@@ -75,7 +75,9 @@ public sealed class HttpEpgDataSource : IEpgDataSource
 
         _httpClient = httpClient;
         _uri = uri;
-        Description = CreateSafeDescription(uri);
+        // XMLTV paths can contain credentials as well as query parameters.
+        // Descriptions flow into status/cache diagnostics, so expose no URL.
+        Description = "HTTP XMLTV";
     }
 
     public string Description { get; }
@@ -99,20 +101,6 @@ public sealed class HttpEpgDataSource : IEpgDataSource
             response.Dispose();
             throw;
         }
-    }
-
-    private static string CreateSafeDescription(Uri uri)
-    {
-        UriBuilder safe = new(uri)
-        {
-            UserName = string.Empty,
-            Password = string.Empty,
-            Query = string.Empty,
-            Fragment = string.Empty,
-        };
-        return safe.Uri.GetComponents(
-            UriComponents.SchemeAndServer | UriComponents.Path,
-            UriFormat.SafeUnescaped);
     }
 
     private sealed class HttpResponseReadStream : Stream

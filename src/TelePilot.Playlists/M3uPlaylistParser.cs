@@ -12,6 +12,8 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
     private const string ExtInf = "#EXTINF:";
     private const string ExtGroup = "#EXTGRP:";
     private const string ExtVlcOption = "#EXTVLCOPT:";
+    private static readonly string[] ArchiveFlagAttributes = ["catchup-enable", "tvg-rec", "timeshift"];
+    private static readonly string[] CatchUpModeAttributes = ["catchup", "catchup-type"];
 
     public PlaylistParseResult Parse(
         ReadOnlyMemory<byte> content,
@@ -153,6 +155,48 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
             }
 
             var entry = pending ?? PendingEntry.ForPlainUrl(lineNumber);
+            // Only catch-up defaults are inherited; channel metadata and explicit opt-outs win.
+            // Treat both mode spellings as one setting: a header catchup must not shadow
+            // a channel's catchup-type, including an unknown mode or an explicit opt-out.
+            var hasChannelCatchUpMode = CatchUpModeAttributes.Any(key =>
+                entry.Attributes.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value));
+            var changesCatchUpMode = hasChannelCatchUpMode &&
+                CatchUpModeForInheritance(entry.Attributes) != CatchUpModeForInheritance(headerAttributes);
+            var hasChannelRetention = entry.Attributes.ContainsKey("catchup-days") ||
+                entry.Attributes.ContainsKey("catchup-time") || entry.Attributes.ContainsKey("timeshift") ||
+                entry.Attributes.TryGetValue("tvg-rec", out var archiveMarker) && archiveMarker.Trim() != "1";
+            var hasChannelArchiveFlag = entry.Attributes.ContainsKey("catchup-enable") || entry.Attributes.ContainsKey("tvg-rec");
+            var hasChannelArchiveOptOut = ArchiveFlagAttributes.Any(key =>
+                entry.Attributes.TryGetValue(key, out var value) &&
+                value.Trim().ToLowerInvariant() is "0" or "off" or "false" or "none" or "disabled");
+            foreach (var key in new[]
+                { "catchup", "catchup-type", "catchup-source", "catchup-days", "catchup-time", "catchup-correction", "timeshift", "tvg-rec", "catchup-enable" })
+            {
+                if (hasChannelCatchUpMode && key is ("catchup" or "catchup-type"))
+                {
+                    continue;
+                }
+
+                // A header template belongs to its format, not to a channel selecting another format.
+                if (changesCatchUpMode && key == "catchup-source")
+                {
+                    continue;
+                }
+
+                if ((hasChannelRetention || hasChannelArchiveOptOut) && key is ("catchup-days" or "catchup-time" or "timeshift" or "tvg-rec") ||
+                    hasChannelArchiveFlag && key is ("catchup-enable" or "tvg-rec"))
+                {
+                    continue;
+                }
+
+                var hasChannelValue = entry.Attributes.TryGetValue(key, out var channelValue) &&
+                    (key is not ("catchup" or "catchup-type") || !string.IsNullOrWhiteSpace(channelValue));
+                if (!hasChannelValue && headerAttributes.TryGetValue(key, out var value))
+                {
+                    entry.Attributes[key] = value;
+                }
+            }
+
             var channel = CreateChannel(
                 entry,
                 streamUrl,
@@ -190,6 +234,34 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
             diagnostics,
             decoding.EncodingName,
             skippedEntries);
+    }
+
+    private static string? CatchUpModeForInheritance(Dictionary<string, string> attributes)
+    {
+        string? mode = null;
+        foreach (var key in CatchUpModeAttributes)
+        {
+            if (attributes.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
+            {
+                mode = value.Trim().ToLowerInvariant();
+                break;
+            }
+        }
+
+        if (mode is null && attributes.TryGetValue("catchup-source", out var source) && !string.IsNullOrWhiteSpace(source))
+        {
+            mode = "default";
+        }
+
+        return mode switch
+        {
+            "timeshift" => "shift",
+            "fs" or "flussonic-hls" or "flussonic-ts" => "flussonic",
+            "xtream-codes" => "xc",
+            "nimble-dvr" => "nimble",
+            "0" or "none" or "off" or "false" or "disabled" => "none",
+            _ => mode,
+        };
     }
 
     public PlaylistParseResult Parse(

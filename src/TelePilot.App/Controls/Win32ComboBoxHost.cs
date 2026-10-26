@@ -227,6 +227,12 @@ internal sealed class Win32ComboBoxHost : NativeControlHost
 
     private nint WindowProcedure(nint hwnd, uint message, nint wParam, nint lParam)
     {
+        if ((message == WmKeyDown || message == WmKeyUp) && IsSectionShortcut(wParam))
+        {
+            ForwardKeyToTopLevel(hwnd, message, wParam, lParam);
+            return 0;
+        }
+
         if ((message == WmKeyDown || message == WmKeyUp)
             && wParam == VkF10
             && !HasModifierKeys())
@@ -235,7 +241,8 @@ internal sealed class Win32ComboBoxHost : NativeControlHost
             return 0;
         }
 
-        if (message == WmKeyDown && wParam == VkTab)
+        if (message == WmKeyDown && wParam == VkTab
+            && (GetKeyState(VkControl) & 0x8000) == 0 && (GetKeyState(VkMenu) & 0x8000) == 0)
         {
             bool moveBackward = (GetKeyState(VkShift) & 0x8000) != 0;
             nint topLevelHandle = GetAncestor(hwnd, GaRoot);
@@ -290,6 +297,10 @@ internal sealed class Win32ComboBoxHost : NativeControlHost
         (GetKeyState(VkShift) & 0x8000) != 0
         || (GetKeyState(VkControl) & 0x8000) != 0
         || (GetKeyState(VkMenu) & 0x8000) != 0;
+
+    private static bool IsSectionShortcut(nint key) =>
+        (GetKeyState(VkControl) & 0x8000) != 0 && (GetKeyState(VkMenu) & 0x8000) == 0
+        && (key == VkTab || (key is >= 0x31 and <= 0x33 && (GetKeyState(VkShift) & 0x8000) == 0));
 
     private nint ParentWindowProcedure(
         nint hwnd,

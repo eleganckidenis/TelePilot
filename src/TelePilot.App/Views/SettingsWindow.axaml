@@ -30,6 +30,81 @@
               automation:AutomationProperties.AutomationId="settings-channel-sort" />
         </StackPanel>
 
+        <TextBlock Classes="section-heading" Text="Program telewizyjny — EPG" automation:AutomationProperties.HeadingLevel="2" />
+        <StackPanel Spacing="6">
+          <Label Classes="field-label" Content="Zewnętrzny adres _EPG, opcjonalnie" Target="ExternalEpgUrlBox" />
+          <controls:AccessibleTextBox
+              x:Name="ExternalEpgUrlBox"
+              Text="{Binding ExternalEpgUrl}"
+              Watermark="https://…/program.xml lub program.xml.gz"
+              automation:AutomationProperties.Name="Zewnętrzny adres EPG XMLTV, opcjonalnie"
+              automation:AutomationProperties.HelpText="Adres HTTP lub HTTPS zastępuje EPG z każdej playlisty. Puste pole przywraca źródła zapisane w playliście."
+              automation:AutomationProperties.AutomationId="settings-external-epg-url" />
+          <TextBlock
+              Text="Ten adres zastępuje EPG z playlisty, także gdy playlista zawiera własne EPG. Pozostaw puste, aby korzystać z EPG playlisty."
+              TextWrapping="Wrap" />
+          <TextBlock Text="{Binding ExternalEpgPrivacyMessage}" TextWrapping="Wrap"
+              automation:AutomationProperties.LiveSetting="Polite"
+              automation:AutomationProperties.AutomationId="settings-external-epg-privacy" />
+        </StackPanel>
+
+        <TextBlock Classes="section-heading" Text="Archiwum TV — wybrane źródło" automation:AutomationProperties.HeadingLevel="2" />
+        <TextBlock Text="{Binding ArchiveSourceMessage}" TextWrapping="Wrap"
+            automation:AutomationProperties.AutomationId="settings-archive-source-help" />
+        <StackPanel Spacing="10" IsEnabled="{Binding HasArchiveSources}"
+            automation:AutomationProperties.Name="Ustawienia archiwum wybranego źródła"
+            automation:AutomationProperties.AutomationId="settings-archive-source-group">
+          <StackPanel>
+            <Label Classes="field-label" Content="Źródło p_laylisty dla archiwum" Target="ArchiveSourcePicker" />
+            <controls:AccessibleComboBox
+                x:Name="ArchiveSourcePicker"
+                ItemsSource="{Binding ArchiveSources}"
+                SelectedItem="{Binding SelectedArchiveSource}"
+                DisplayMemberPath="Name"
+                automation:AutomationProperties.Name="Źródło playlisty dla ustawień archiwum"
+                automation:AutomationProperties.AutomationId="settings-archive-source" />
+          </StackPanel>
+          <StackPanel>
+            <Label Classes="field-label" Content="_Typ archiwum" Target="ArchiveModePicker" />
+            <controls:AccessibleComboBox
+                x:Name="ArchiveModePicker"
+                ItemsSource="{Binding ArchiveModeOptions}"
+                SelectedItem="{Binding SelectedArchiveMode}"
+                DisplayMemberPath="Name"
+                automation:AutomationProperties.Name="Typ archiwum wybranego źródła"
+                automation:AutomationProperties.AutomationId="settings-archive-mode" />
+          </StackPanel>
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsEnabled="{Binding IsArchiveManual}">
+            <StackPanel>
+              <Label Classes="field-label" Content="Liczba _dni archiwum" Target="ArchiveDaysBox" />
+              <controls:AccessibleTextBox
+                  x:Name="ArchiveDaysBox"
+                  Text="{Binding ArchiveRetentionDays}"
+                  Watermark="Liczba dni od dostawcy"
+                  automation:AutomationProperties.Name="Liczba dni archiwum wybranego źródła"
+                  automation:AutomationProperties.HelpText="Wymagane w trybie ręcznym. Liczba od 0,01 do 36500 dni; kropka lub przecinek oddziela część ułamkową."
+                  automation:AutomationProperties.AutomationId="settings-archive-days" />
+            </StackPanel>
+            <StackPanel Grid.Column="1">
+              <Label Classes="field-label" Content="_Korekta czasu w godzinach" Target="ArchiveCorrectionBox" />
+              <controls:AccessibleTextBox
+                  x:Name="ArchiveCorrectionBox"
+                  Text="{Binding ArchiveCorrectionHours}"
+                  automation:AutomationProperties.Name="Korekta czasu archiwum w godzinach"
+                  automation:AutomationProperties.HelpText="Liczba od -24 do 24 godzin, domyślnie zero."
+                  automation:AutomationProperties.AutomationId="settings-archive-correction" />
+            </StackPanel>
+          </Grid>
+          <CheckBox
+              x:Name="ArchiveOverrideCheckBox"
+              Content="Zastąp ustawienia archiwum zapisane w playliście"
+              IsEnabled="{Binding IsArchiveManual}"
+              IsChecked="{Binding OverrideArchivePlaylist}"
+              automation:AutomationProperties.Name="Zastąp ustawienia archiwum zapisane w playliście"
+              automation:AutomationProperties.HelpText="Domyślnie ustawienia ręczne uzupełniają brakujące dane i zachowują wyłączenia kanałów w playliście. Zaznaczenie wymusza ustawienia dla kanałów wybranego źródła."
+              automation:AutomationProperties.AutomationId="settings-archive-override" />
+        </StackPanel>
+
         <TextBlock Classes="section-heading" Text="Nagrywanie" automation:AutomationProperties.HeadingLevel="2" />
         <TextBlock
             Text="Nagrania wideo są zapisywane bez ponownej kompresji jako oryginalny strumień MPEG-TS (.ts)."

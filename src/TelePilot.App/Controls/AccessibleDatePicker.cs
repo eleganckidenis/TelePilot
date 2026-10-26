@@ -33,6 +33,7 @@ public sealed class AccessibleDatePicker : ContentControl
     private Control editor;
     private Win32DatePickerHost? nativePicker;
     private bool isSynchronizingEditor;
+    private bool isFocusingNativeEditor;
 
     static AccessibleDatePicker()
     {
@@ -83,7 +84,23 @@ public sealed class AccessibleDatePicker : ContentControl
     {
         if (nativePicker is not null && ReferenceEquals(editor, nativePicker))
         {
-            return nativePicker.FocusNativePicker();
+            // Establish logical focus first. Starting with the HWND causes its
+            // focus callback to focus the wrapper and then re-enter the HWND,
+            // which resets the section selected by the native date editor.
+            isFocusingNativeEditor = true;
+            try
+            {
+                if (!IsKeyboardFocusWithin && !Focus(NavigationMethod.Unspecified, KeyModifiers.None))
+                {
+                    return false;
+                }
+
+                return nativePicker.FocusNativePicker();
+            }
+            finally
+            {
+                isFocusingNativeEditor = false;
+            }
         }
 
         return fallbackPicker.Focus(NavigationMethod.Unspecified, KeyModifiers.None);
@@ -98,7 +115,7 @@ public sealed class AccessibleDatePicker : ContentControl
     protected override void OnGotFocus(FocusChangedEventArgs e)
     {
         base.OnGotFocus(e);
-        if (ReferenceEquals(e.NewFocusedElement, this))
+        if (ReferenceEquals(e.NewFocusedElement, this) && !isFocusingNativeEditor)
         {
             FocusEditor();
         }
@@ -164,6 +181,7 @@ public sealed class AccessibleDatePicker : ContentControl
         }
 
         ApplyEditorProperties();
+        SynchronizeEditorDate(SelectedDate?.Date);
     }
 
     private void ApplyEditorProperties()
@@ -182,7 +200,6 @@ public sealed class AccessibleDatePicker : ContentControl
         {
             if (ReferenceEquals(editor, fallbackPicker))
             {
-                fallbackPicker.SelectedDate = SelectedDate;
                 fallbackPicker.PlaceholderText = Watermark;
                 AutomationProperties.SetName(fallbackPicker, accessibleName);
                 AutomationProperties.SetHelpText(fallbackPicker, helpText);
@@ -191,7 +208,6 @@ public sealed class AccessibleDatePicker : ContentControl
             }
             else if (nativePicker is not null)
             {
-                nativePicker.SelectedDate = SelectedDate;
                 nativePicker.AccessibleName = accessibleName;
                 AutomationProperties.SetName(nativePicker, accessibleName);
                 AutomationProperties.SetHelpText(nativePicker, helpText);

@@ -15,6 +15,95 @@ namespace TelePilot.Tests.App;
 
 public sealed class MainWindowCurrentProgramRefreshTests
 {
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExternalEpg_OverridesEmbeddedSourcesAndRefreshesLoadedItemsImmediately(bool embedded)
+    {
+        string[] playlistSources = embedded ? ["embedded.xml"] : [];
+        using var fixture = new Fixture("Embedded show", epgUrls: playlistSources);
+        await fixture.ViewModel.InitializeAsync();
+        Assert.Equal(playlistSources, fixture.Epg.ConfiguredSources);
+        var item = Assert.Single(fixture.ViewModel.Channels);
+        fixture.Window.SettingsResult = new AppPreferences { ExternalEpgUrl = "https://epg.example.test/external.xml.gz" };
+        fixture.Epg.ConfiguredTitle = "External show";
+
+        await fixture.ViewModel.OpenSettingsCommand.ExecuteAsync(null);
+
+        Assert.Equal(["https://epg.example.test/external.xml.gz"], fixture.Epg.ConfiguredSources);
+        Assert.Null(fixture.Epg.ConfiguredBaseUri);
+        Assert.Equal("External show", item.CurrentProgram);
+        Assert.Same(item, fixture.ViewModel.SelectedChannel);
+        Assert.Same(item, Assert.Single(fixture.ViewModel.Channels));
+
+        fixture.Window.SettingsResult = AppPreferences.CreateDefault();
+        fixture.Epg.ConfiguredTitle = embedded ? "Embedded show" : string.Empty;
+        await fixture.ViewModel.OpenSettingsCommand.ExecuteAsync(null);
+
+        Assert.Equal(playlistSources, fixture.Epg.ConfiguredSources);
+        Assert.NotNull(fixture.Epg.ConfiguredBaseUri);
+        Assert.Equal(embedded ? "Embedded show" : string.Empty, item.CurrentProgram);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExternalEpg_IsAppliedAtStartupAndPlaylistRefreshAndPreservedByFavorites(bool embedded)
+    {
+        const string externalUrl = "https://epg.example.test/external.xml?token=synthetic";
+        using var fixture = new Fixture("External show", epgUrls: embedded ? ["embedded.xml"] : [],
+            preferences: new AppPreferences { ExternalEpgUrl = externalUrl });
+
+        await fixture.ViewModel.InitializeAsync();
+        Assert.Equal([externalUrl], fixture.Epg.ConfiguredSources);
+        await fixture.ViewModel.ToggleFavoriteCommand.ExecuteAsync(null);
+        await fixture.ViewModel.RefreshSourceCommand.ExecuteAsync(null);
+
+        Assert.Equal([externalUrl], fixture.Epg.ConfiguredSources);
+        Assert.Equal("External show", Assert.Single(fixture.ViewModel.Channels).CurrentProgram);
+        Assert.Single(fixture.ViewModel.FavoriteChannels);
+    }
+
+    [AvaloniaFact]
+    public async Task ExternalEpgFailure_KeepsChannelsUsableAndReportsNoUrl()
+    {
+        using var fixture = new Fixture("Old show");
+        await fixture.ViewModel.InitializeAsync();
+        fixture.Window.SettingsResult = new AppPreferences { ExternalEpgUrl = "https://epg.example.test/secret/path?token=synthetic" };
+        fixture.Epg.ConfigureFailure = true;
+        fixture.Status.Messages.Clear();
+
+        await fixture.ViewModel.OpenSettingsCommand.ExecuteAsync(null);
+
+        Assert.Single(fixture.ViewModel.Channels);
+        Assert.True(fixture.ViewModel.PlaySelectedCommand.CanExecute(null));
+        Assert.Contains(fixture.Status.Messages, message => message.Contains("kanały są nadal dostępne", StringComparison.Ordinal));
+        Assert.All(fixture.Status.Messages, message => Assert.DoesNotContain("synthetic", message, StringComparison.Ordinal));
+    }
+
+    [AvaloniaFact]
+    public async Task ExternalEpgChange_CancelsOlderPlaylistEpgLoadAndKeepsNewConfiguration()
+    {
+        using var fixture = new Fixture("Initial show", epgUrls: ["embedded.xml"]);
+        await fixture.ViewModel.InitializeAsync();
+        var item = Assert.Single(fixture.ViewModel.Channels);
+        fixture.Epg.NextConfigurationWait = new TaskCompletionSource();
+        var refresh = fixture.ViewModel.RefreshSourceCommand.ExecuteAsync(null);
+        Assert.False(refresh.IsCompleted);
+        var oldToken = fixture.Epg.ConfigurationToken;
+        fixture.Window.SettingsResult = new AppPreferences { ExternalEpgUrl = "https://epg.example.test/replacement.xml" };
+        fixture.Epg.ConfiguredTitle = "Replacement show";
+
+        await fixture.ViewModel.OpenSettingsCommand.ExecuteAsync(null);
+        await refresh;
+
+        Assert.True(oldToken.IsCancellationRequested);
+        Assert.Equal(["https://epg.example.test/replacement.xml"], fixture.Epg.ConfiguredSources);
+        Assert.Equal("Replacement show", item.CurrentProgram);
+        Assert.Same(item, Assert.Single(fixture.ViewModel.Channels));
+        Assert.False(fixture.ViewModel.IsLoading);
+    }
+
     [AvaloniaFact]
     public async Task CurrentProgramRefresh_UpdatesItemInPlaceWithoutSelectionFocusOrStatusNoise()
     {
@@ -113,7 +202,7 @@ public sealed class MainWindowCurrentProgramRefreshTests
 
     private sealed class Fixture : IDisposable
     {
-        public Fixture(string currentTitle, int channelCount = 1)
+        public Fixture(string currentTitle, int channelCount = 1, string[]? epgUrls = null, AppPreferences? preferences = null)
         {
             var sourceId = PlaylistSourceId.New();
             var source = new PlaylistSource(sourceId, "Test playlist", PlaylistSourceKind.File, "test.m3u");
@@ -126,7 +215,7 @@ public sealed class MainWindowCurrentProgramRefreshTests
                     groupTitle: "Test group"))
                 .ToArray();
             var playlist = new PlaylistParseResult(
-                new PlaylistHeader(),
+                new PlaylistHeader(epgUrls: epgUrls),
                 channels,
                 [],
                 "UTF-8",
@@ -144,7 +233,8 @@ public sealed class MainWindowCurrentProgramRefreshTests
                 Epg,
                 Window,
                 Status,
-                focusCoordinator);
+                focusCoordinator,
+                new FixedPreferencesService(preferences ?? AppPreferences.CreateDefault()));
         }
 
         public MainWindowViewModel ViewModel { get; }
@@ -210,17 +300,47 @@ public sealed class MainWindowCurrentProgramRefreshTests
 
         public int RefreshCallCount { get; private set; }
 
+        public string[] ConfiguredSources { get; private set; } = [];
+
+        public Uri? ConfiguredBaseUri { get; private set; }
+
+        public string? ConfiguredTitle { get; set; }
+
+        public bool ConfigureFailure { get; set; }
+
+        public TaskCompletionSource? NextConfigurationWait { get; set; }
+
+        public CancellationToken ConfigurationToken { get; private set; }
+
         public string Source => "test.xml";
 
         public IReadOnlyList<string> Sources => [Source];
 
         public EpgServiceStatus Status { get; } = new(EpgServiceState.Ready);
 
-        public Task SetSourcesAsync(
+        public async Task SetSourcesAsync(
             IEnumerable<string> sources,
             Uri? baseUri = null,
-            CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfiguredSources = sources.ToArray();
+            ConfiguredBaseUri = baseUri;
+            ConfigurationToken = cancellationToken;
+            var wait = NextConfigurationWait;
+            NextConfigurationWait = null;
+            if (wait is not null)
+            {
+                await wait.Task.WaitAsync(cancellationToken);
+            }
+
+            if (ConfigureFailure)
+            {
+                throw new IOException("https://epg.example.test/secret/path?token=synthetic");
+            }
+
+            CurrentTitle = ConfiguredTitle ?? CurrentTitle;
+        }
 
         public Task<IReadOnlyList<Programme>> GetProgrammesAsync(
             Channel channel,
@@ -230,7 +350,7 @@ public sealed class MainWindowCurrentProgramRefreshTests
             Task.FromResult<IReadOnlyList<Programme>>([CreateProgramme(channel)]);
 
         public Programme? GetCurrentProgramme(Channel channel, DateTimeOffset at) =>
-            CreateProgramme(channel);
+            string.IsNullOrEmpty(CurrentTitle) ? null : CreateProgramme(channel);
 
         public Task<EpgRefreshResult> RefreshAsync(CancellationToken cancellationToken = default)
         {
@@ -251,6 +371,10 @@ public sealed class MainWindowCurrentProgramRefreshTests
     private sealed class CapturingWindowService : IWindowService
     {
         public ProgramGuideViewModel? ProgramGuide { get; private set; }
+
+        public AppPreferences? SettingsResult { get; set; }
+
+        public Task<AppPreferences?> ShowSettingsAsync(SettingsWindowViewModel viewModel) => Task.FromResult(SettingsResult);
 
         public Task<IReadOnlyList<LocalPlaylistFileInput>> PickPlaylistFilesAsync() =>
             Task.FromResult<IReadOnlyList<LocalPlaylistFileInput>>([]);
@@ -278,6 +402,19 @@ public sealed class MainWindowCurrentProgramRefreshTests
 
         public Task ShowMessageAsync(string title, string message, string buttonText = "OK") =>
             Task.CompletedTask;
+    }
+
+    private sealed class FixedPreferencesService(AppPreferences preferences) : IAppPreferencesService
+    {
+        public AppPreferences Current { get; private set; } = preferences;
+
+        public Task LoadAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task SaveAsync(AppPreferences value, CancellationToken cancellationToken = default)
+        {
+            Current = value;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class NoOpPlaybackService : IPlaybackService

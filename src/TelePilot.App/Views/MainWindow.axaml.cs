@@ -13,6 +13,7 @@ using LibVLCSharp.Shared;
 using TelePilot.App.Accessibility;
 using TelePilot.App.Controls;
 using TelePilot.App.ViewModels;
+using TelePilot.Playback;
 
 namespace TelePilot.App.Views;
 
@@ -24,6 +25,7 @@ public sealed partial class MainWindow : Window
 
     private IFocusCoordinator? focusCoordinator;
     private MainWindowViewModel? viewModel;
+    private ILibVlcMediaPlayerProvider? mediaPlayerProvider;
     private MediaPlayer? mediaPlayer;
     private bool isMediaPlayerAttached;
     private FocusRequest? latestFocusRequest;
@@ -75,6 +77,7 @@ public sealed partial class MainWindow : Window
             handledEventsToo: true);
         MainMenu.Closed += OnMainMenuClosed;
         FavoritesMenu.SubmenuOpened += OnFavoritesMenuOpened;
+        SectionTabs.SelectionChanged += OnSectionSelectionChanged;
         Activated += OnActivated;
         Deactivated += OnDeactivated;
         Closing += OnClosing;
@@ -84,11 +87,11 @@ public sealed partial class MainWindow : Window
     public void Initialize(
         MainWindowViewModel mainWindowViewModel,
         IFocusCoordinator coordinator,
-        MediaPlayer mediaPlayer)
+        ILibVlcMediaPlayerProvider mediaPlayerProvider)
     {
         ArgumentNullException.ThrowIfNull(mainWindowViewModel);
         ArgumentNullException.ThrowIfNull(coordinator);
-        ArgumentNullException.ThrowIfNull(mediaPlayer);
+        ArgumentNullException.ThrowIfNull(mediaPlayerProvider);
         if (viewModel is not null)
         {
             throw new InvalidOperationException("Główne okno zostało już zainicjowane.");
@@ -96,8 +99,7 @@ public sealed partial class MainWindow : Window
 
         viewModel = mainWindowViewModel;
         focusCoordinator = coordinator;
-        this.mediaPlayer = mediaPlayer;
-        mediaPlayer.Vout += OnVideoOutputChanged;
+        this.mediaPlayerProvider = mediaPlayerProvider;
         mainWindowViewModel.Channels.ReplacementStarting += OnChannelItemsReplacementStarting;
         mainWindowViewModel.Channels.ReplacementCompleted += OnChannelItemsReplacementCompleted;
         DataContext = mainWindowViewModel;
@@ -113,10 +115,40 @@ public sealed partial class MainWindow : Window
     private async void OnOpened(object? sender, EventArgs e)
     {
         Opened -= OnOpened;
+        // Establish foreground and accessible editor focus while this is still
+        // the user's launch action, before playlist/EPG I/O or native warmup.
+        // Later completions must not reactivate the window or reset user focus.
+        Activate();
+        if (latestFocusRequest is null)
+        {
+            BeginFocusRecovery(new FocusRequest(FocusTarget.SearchBox, PreserveExistingFocus: true),
+                forceRequestedTarget: true);
+        }
+
+        // Warm native plugins on the playback worker while the visible window
+        // loads its channels. First Play awaits the same serialized preparation.
+        var playbackPreparation = WarmUpPlaybackAsync();
         if (viewModel is not null)
         {
             await viewModel.InitializeAsync();
-            SearchBox.Focus();
+        }
+
+        await playbackPreparation;
+    }
+
+    private async Task WarmUpPlaybackAsync()
+    {
+        try
+        {
+            if (mediaPlayerProvider is not null)
+            {
+                await mediaPlayerProvider.PrepareAsync();
+            }
+        }
+        catch (Exception)
+        {
+            // Missing or broken native libraries must not prevent playlist
+            // management. The awaited first Play reports the cached failure.
         }
     }
 
@@ -252,9 +284,11 @@ public sealed partial class MainWindow : Window
         return request.Target switch
         {
             FocusTarget.ChannelList => IsRequestedChannelFocusActive(request),
-            FocusTarget.PlaylistSourceSelector => SourceSelector.IsKeyboardFocusWithin,
-            FocusTarget.SearchBox => SearchBox.IsKeyboardFocusWithin,
+            FocusTarget.PlaylistSourceSelector => SourceSelector.IsEffectivelyVisible
+                ? SourceSelector.IsKeyboardFocusWithin : IsSectionEntryFocused,
+            FocusTarget.SearchBox => IsSectionEntryFocused,
             FocusTarget.PlayerControls => PauseResumeButton.IsKeyboardFocusWithin,
+            FocusTarget.Archive => ArchivePane.IsKeyboardFocusWithin,
             _ => false,
         };
     }
@@ -328,13 +362,16 @@ public sealed partial class MainWindow : Window
                 restored = listFocused && itemToFocus is null;
                 break;
             case FocusTarget.SearchBox:
-                restored = SearchBox.FocusEditor();
+                restored = FocusSectionEntry();
                 break;
             case FocusTarget.PlaylistSourceSelector:
-                restored = SourceSelector.FocusSelector();
+                restored = SourceSelector.IsEffectivelyVisible ? SourceSelector.FocusSelector() : FocusSectionEntry();
                 break;
             case FocusTarget.PlayerControls:
                 restored = PauseResumeButton.Focus(NavigationMethod.Unspecified, KeyModifiers.None);
+                break;
+            case FocusTarget.Archive:
+                restored = ArchivePane.FocusInitialControl();
                 break;
             default:
                 return false;
@@ -488,6 +525,21 @@ public sealed partial class MainWindow : Window
 
     private bool RestoreInteractiveLogicalFocus(IInputElement logicalFocus)
     {
+        if (logicalFocus is Control focusedControl)
+        {
+            var editor = focusedControl as AccessibleTextBox
+                ?? focusedControl.GetVisualAncestors().OfType<AccessibleTextBox>().FirstOrDefault();
+            if (editor is not null)
+            {
+                return editor.FocusEditor();
+            }
+            var selector = focusedControl as AccessibleComboBox
+                ?? focusedControl.GetVisualAncestors().OfType<AccessibleComboBox>().FirstOrDefault();
+            if (selector is not null)
+            {
+                return selector.FocusSelector();
+            }
+        }
         if (SearchBox.IsKeyboardFocusWithin || ReferenceEquals(logicalFocus, SearchBox))
         {
             return SearchBox.FocusEditor();
@@ -520,6 +572,19 @@ public sealed partial class MainWindow : Window
         }
 
         var nativeFocus = GetForegroundNativeFocus();
+        if (logicalFocus is Control focusedControl && ArchivePane.IsKeyboardFocusWithin)
+        {
+            if (IsNativeWindowClass(nativeFocus, "Edit")
+                && (focusedControl is AccessibleTextBox || focusedControl.GetVisualAncestors().OfType<AccessibleTextBox>().Any()))
+            {
+                return true;
+            }
+            if (IsNativeWindowClass(nativeFocus, "ComboBox")
+                && (focusedControl is AccessibleComboBox || focusedControl.GetVisualAncestors().OfType<AccessibleComboBox>().Any()))
+            {
+                return true;
+            }
+        }
         if (nativeFocus == mainWindowHandle)
         {
             return true;
@@ -844,6 +909,30 @@ public sealed partial class MainWindow : Window
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
+        if (CurrentViewModel is { } sectionModel && !MainMenu.IsOpen)
+        {
+            int? section = null;
+            if (e.Key == Key.Tab && (e.KeyModifiers == KeyModifiers.Control
+                || e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift)))
+            {
+                section = (sectionModel.SelectedSectionIndex + (e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? 2 : 1)) % 3;
+            }
+            else if (e.KeyModifiers == KeyModifiers.Control && e.Key is Key.D1 or Key.D2 or Key.D3)
+            {
+                section = e.Key == Key.D1 ? 0 : e.Key == Key.D2 ? 1 : 2;
+            }
+            if (section is { } index)
+            {
+                e.Handled = true;
+                sectionModel.SelectedSectionIndex = index;
+                SuspendFocusRecoveryForTabNavigation();
+                if (SectionTabs.Items[index] is TabItem tab)
+                {
+                    tab.Focus();
+                }
+                return;
+            }
+        }
         if (e.Key == Key.Tab && (e.KeyModifiers & ~KeyModifiers.Shift) == KeyModifiers.None)
         {
             ResetChannelSearch();
@@ -914,6 +1003,18 @@ public sealed partial class MainWindow : Window
                 playerCommand.Execute(null);
                 return;
             }
+        }
+
+        if (e.KeyModifiers == KeyModifiers.Control && e.Key is Key.Left or Key.Right
+            && IsActivePlayerShortcutContext(e.Source) && viewModel.IsArchivePlayback)
+        {
+            e.Handled = true;
+            var command = e.Key == Key.Left ? viewModel.SeekBackwardCommand : viewModel.SeekForwardCommand;
+            if (command.CanExecute(null))
+            {
+                command.Execute(null);
+            }
+            return;
         }
 
         if (e.KeyModifiers == KeyModifiers.Control && e.Key is Key.Up or Key.Down)
@@ -992,7 +1093,7 @@ public sealed partial class MainWindow : Window
         ConfigureMainFocusCycleEdges();
 
         bool moveBackward = (e.KeyModifiers & KeyModifiers.Shift) != 0;
-        bool channelListVisible = PlaySelectedChannelButton.IsEffectivelyVisible;
+        bool channelListVisible = PlaySelectedChannelButton.IsEffectivelyVisible && PlaySelectedChannelButton.IsEffectivelyEnabled;
         bool playerVisible = ReturnToChannelListButton.IsEffectivelyVisible;
         Control? target = null;
 
@@ -1000,12 +1101,16 @@ public sealed partial class MainWindow : Window
         {
             if (IsFocusWithin(PlaySelectedChannelButton))
             {
-                target = playerVisible ? PauseResumeButton : SourceSelector;
+                target = playerVisible ? PauseResumeButton : SelectedSectionTab();
             }
             else if (IsFocusWithin(VolumeSlider))
             {
-                target = channelListVisible ? SourceSelector : PauseResumeButton;
+                target = channelListVisible ? SelectedSectionTab() : PauseResumeButton;
             }
+        }
+        else if (SelectedSectionTab() is { } selectedTab && IsFocusWithin(selectedTab))
+        {
+            target = playerVisible ? VolumeSlider : PlaySelectedChannelButton;
         }
         else if (IsFocusWithin(PauseResumeButton))
         {
@@ -1025,11 +1130,32 @@ public sealed partial class MainWindow : Window
 
     private void ConfigureMainFocusCycleEdges()
     {
-        SourceSelector.PreviousTabTarget = VolumeSlider.IsEffectivelyVisible
-            ? VolumeSlider
-            : PlaySelectedChannelButton.IsEffectivelyVisible
-                ? PlaySelectedChannelButton
-                : null;
+        SourceSelector.PreviousTabTarget = SelectedSectionTab();
+        SearchBox.PreviousTabTarget = PlaylistManagementPanel.IsEffectivelyVisible
+            ? RemoveSourceButton.IsEffectivelyEnabled ? RemoveSourceButton
+                : RefreshSourceButton.IsEffectivelyEnabled ? RefreshSourceButton : AddUrlSourceButton
+            : SelectedSectionTab();
+        SearchBox.NextTabTarget = GroupSelector.IsEffectivelyVisible && GroupSelector.IsEffectivelyEnabled
+            ? GroupSelector : ChannelList;
+    }
+
+    private bool IsSectionEntryFocused => CurrentViewModel?.IsArchiveSection == true
+        ? ArchivePane.IsChannelFocusWithin : SearchBox.IsKeyboardFocusWithin;
+
+    private bool FocusSectionEntry() => CurrentViewModel?.IsArchiveSection == true
+        ? ArchivePane.FocusInitialControl() : SearchBox.FocusEditor();
+
+    private TabItem? SelectedSectionTab() => SectionTabs.SelectedItem as TabItem;
+
+    private void OnSectionSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (viewModel is null)
+        {
+            return;
+        }
+        SuspendFocusRecoveryForTabNavigation();
+        BeginFocusRecovery(GetFocusRequestForCurrentView() with { PreserveExistingFocus = true },
+            forceRequestedTarget: false);
     }
 
     private bool IsFocusWithin(Control control)
@@ -1081,6 +1207,12 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        if (mediaPlayer is null && mediaPlayerProvider is not null)
+        {
+            mediaPlayer = mediaPlayerProvider.MediaPlayer;
+            mediaPlayer.Vout += OnVideoOutputChanged;
+        }
+
         VideoView.UpdateLayout();
         AttachMediaPlayerToVideoView();
     }
@@ -1108,7 +1240,8 @@ public sealed partial class MainWindow : Window
             // Read the current view here: Ctrl+L or Stop may have happened since
             // the native event was queued. Never restore an obsolete view.
             var request = current.IsChannelListViewVisible
-                ? new FocusRequest(FocusTarget.ChannelList, current.SelectedChannel?.Id, PreserveExistingFocus: true)
+                ? new FocusRequest(current.IsArchiveSection ? FocusTarget.Archive : FocusTarget.ChannelList,
+                    current.SelectedChannel?.Id, PreserveExistingFocus: true)
                 : new FocusRequest(FocusTarget.PlayerControls, PreserveExistingFocus: true);
             OnFocusRequested(this, request);
         }, DispatcherPriority.Input);
@@ -1196,6 +1329,10 @@ public sealed partial class MainWindow : Window
 
         if (CurrentViewModel?.IsChannelListViewVisible == true)
         {
+            if (CurrentViewModel.IsArchiveSection)
+            {
+                return new FocusRequest(FocusTarget.Archive);
+            }
             return new FocusRequest(FocusTarget.ChannelList, CurrentViewModel.SelectedChannel?.Id);
         }
 
@@ -1246,6 +1383,7 @@ public sealed partial class MainWindow : Window
         Closing -= OnClosing;
         MainMenu.Closed -= OnMainMenuClosed;
         FavoritesMenu.SubmenuOpened -= OnFavoritesMenuOpened;
+        SectionTabs.SelectionChanged -= OnSectionSelectionChanged;
         SourceSelector.TabNavigationStarting -= OnTabNavigationStarting;
         SearchBox.TabNavigationStarting -= OnTabNavigationStarting;
         GroupSelector.TabNavigationStarting -= OnTabNavigationStarting;
@@ -1280,6 +1418,7 @@ public sealed partial class MainWindow : Window
         }
 
         mediaPlayer = null;
+        mediaPlayerProvider = null;
     }
 
     private static bool IsTextEditingSource(object? source)
@@ -1338,6 +1477,7 @@ public sealed partial class MainWindow : Window
             or ComboBox
             or AccessibleComboBox
             or ListBoxItem
+            or TabItem
             or MenuItem;
     }
 
