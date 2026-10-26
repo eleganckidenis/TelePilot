@@ -15,6 +15,10 @@ public sealed class SafeFileNameGeneratorTests
     [Theory]
     [InlineData("CON", "_CON")]
     [InlineData("nul", "_nul")]
+    [InlineData("CON.txt", "_CON.txt")]
+    [InlineData("nul.recording.backup", "_nul.recording.backup")]
+    [InlineData("LPT9.custom", "_LPT9.custom")]
+    [InlineData("CONcert.txt", "CONcert.txt")]
     [InlineData("", "nagranie")]
     public void Sanitize_HandlesReservedAndEmptyNames(string input, string expected)
     {

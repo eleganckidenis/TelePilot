@@ -70,7 +70,11 @@ public static partial class SafeFileNameGenerator
             compact = "nagranie";
         }
 
-        if (WindowsReservedNames.Contains(compact))
+        // Windows reserves device names even when followed by an extension,
+        // including an extension supplied by the user's filename template.
+        var extensionStart = compact.IndexOf('.');
+        var deviceName = extensionStart < 0 ? compact : compact[..extensionStart];
+        if (WindowsReservedNames.Contains(deviceName))
         {
             compact = $"_{compact}";
         }
