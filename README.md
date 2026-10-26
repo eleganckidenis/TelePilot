@@ -10,9 +10,9 @@ TelePilot jest darmowy. Jeśli chcesz dorzucić się do jego rozwoju, **[wesprzy
 
 ## Pobranie i instalacja
 
-Pobierz **TelePilot-1.1.0-win-x64-setup.exe** z [najnowszego wydania](https://github.com/eleganckidenis/TelePilot/releases/latest) i uruchom instalator. Potrzebujesz Windows 10 22H2 lub Windows 11 na komputerze Intel/AMD oraz uprawnień administratora do instalacji.
+Pobierz **TelePilot-1.1.1-win-x64-setup.exe** z [najnowszego wydania](https://github.com/eleganckidenis/TelePilot/releases/latest) i uruchom instalator. Potrzebujesz Windows 10 22H2 lub Windows 11 na komputerze Intel/AMD oraz uprawnień administratora do instalacji.
 
-Instalator przygotowuje potrzebne składniki. Jeśli brakuje FFmpeg do nagrywania, pobierze go z internetu. Wersja 1.1.0 nie ma podpisu cyfrowego, więc Windows może pokazać informację o nieznanym wydawcy.
+Instalator przygotowuje potrzebne składniki. Jeśli brakuje FFmpeg do nagrywania, pobierze zweryfikowaną paczkę z oficjalnego archiwum wydawcy na GitHubie. Wersja 1.1.1 naprawia błąd pobierania 404 występujący w poprzednim instalatorze. Nie ma podpisu cyfrowego, więc Windows może pokazać informację o nieznanym wydawcy.
 
 ## Pierwsze oglądanie
 

@@ -2,7 +2,7 @@
 #define AppExeName "TelePilot.exe"
 
 #ifndef AppVersion
-  #define AppVersion "1.1.0"
+  #define AppVersion "1.1.1"
 #endif
 
 #ifndef Runtime
@@ -10,11 +10,11 @@
 #endif
 
 #ifndef PublishDir
-  #define PublishDir "..\..\artifacts\release\1.1.0\win-x64\publish"
+  #define PublishDir "..\..\artifacts\release\1.1.1\win-x64\publish"
 #endif
 
 #ifndef OutputDir
-  #define OutputDir "..\..\artifacts\release\1.1.0\win-x64"
+  #define OutputDir "..\..\artifacts\release\1.1.1\win-x64"
 #endif
 
 #if Runtime == "win-x64"
@@ -73,7 +73,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.1-essentials_build.zip"; DestName: "ffmpeg-9.0.1-essentials_build.zip"; DestDir: "{app}\tools\ffmpeg"; Hash: "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9"; ExternalSize: 321521840; Flags: external download extractarchive recursesubdirs createallsubdirs ignoreversion; Check: ShouldInstallFfmpeg
+; Versioned archive from the publisher's official GitHub mirror; rotating packages/ links can disappear.
+Source: "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip"; DestName: "ffmpeg-9.0.1-essentials_build.zip"; DestDir: "{app}\tools\ffmpeg"; Hash: "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9"; ExternalSize: 321521840; Flags: external download extractarchive recursesubdirs createallsubdirs ignoreversion; Check: ShouldInstallFfmpeg
 
 [Icons]
 Name: "{group}\TelePilot"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"

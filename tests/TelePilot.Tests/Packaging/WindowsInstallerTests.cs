@@ -7,6 +7,15 @@ public sealed class WindowsInstallerTests
     {
         string script = File.ReadAllText(FindInstallerScript());
 
+        string downloadEntry = Assert.Single(script.Split('\n'), line => line.Contains("Check: ShouldInstallFfmpeg", StringComparison.Ordinal));
+        string url = downloadEntry.Split('"')[1];
+        Uri download = new(url);
+        Assert.Equal(Uri.UriSchemeHttps, download.Scheme);
+        Assert.Equal("github.com", download.Host);
+        Assert.Equal("/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip", download.AbsolutePath);
+        Assert.Empty(download.Query);
+        Assert.Contains("DestName: \"" + Path.GetFileName(download.AbsolutePath) + "\"", downloadEntry, StringComparison.Ordinal);
+
         Assert.Contains("ArchiveExtraction=full", script, StringComparison.Ordinal);
         Assert.Contains(
             "Flags: external download extractarchive recursesubdirs createallsubdirs ignoreversion",

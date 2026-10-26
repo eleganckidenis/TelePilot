@@ -9,7 +9,7 @@
     <Description>Odtwarzacz telewizji IPTV z EPG i nagrywaniem.</Description>
     <Company>TelePilot</Company>
     <Authors>TelePilot contributors</Authors>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <ApplicationIcon
         Condition="('$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))) Or $([System.Text.RegularExpressions.Regex]::IsMatch('$(RuntimeIdentifier)', '^win-'))">Assets\TelePilot.ico</ApplicationIcon>
     <ApplicationManifest

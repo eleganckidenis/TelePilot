@@ -7,7 +7,7 @@
 3. Zbuduj samodzielny instalator:
 
    ```powershell
-   .\scripts\build-windows-installer.ps1 -Runtime win-x64 -Version 1.1.0
+   .\scripts\build-windows-installer.ps1 -Runtime win-x64 -Version 1.1.1
    ```
 
 4. Zainstaluj wynik na czystym komputerze Windows bez zainstalowanego .NET i VLC; potwierdź monit UAC i sprawdź katalog `C:\Program Files\TelePilot`.
@@ -48,8 +48,8 @@
       natywnego HWND VLC, a fokus UIA musi pozostać na kontrolkach Avalonia;
     - uruchom NVDA z logowaniem debug i potwierdź, że cykle oraz strzałki nie
       zapisują błędu `gainFocus` w `_get_UIASelectionItemPattern`.
-11. Na komputerze bez FFmpeg w `PATH` uruchom instalator z dostępem do sieci:
-    - potwierdź pobranie przypiętego FFmpeg 9.0.1 Essentials z gyan.dev;
+11. Uruchom `scripts/test-windows-ffmpeg-download.ps1 -RunDownloadTest -TestInvalidHash`, aby sprawdzić rzeczywisty mechanizm pobierania i rozpakowania Inno w izolowanym katalogu z pustym `PATH` procesu testowego. Następnie na komputerze bez FFmpeg w `PATH` uruchom instalator z dostępem do sieci:
+    - potwierdź pobranie przypiętego FFmpeg 9.0.1 Essentials z oficjalnego archiwum GyanD/codexffmpeg na GitHubie;
     - potwierdź widoczny pasek postępu pobierania i poprawne rozpakowanie ZIP;
     - potwierdź, że niezgodna suma SHA-256 lub przerwane pobieranie przerywa instalację;
     - sprawdź wykrycie zagnieżdżonego `tools\ffmpeg\...\bin\ffmpeg.exe` oraz obecność `LICENSE`, `README.txt` i dokumentacji;

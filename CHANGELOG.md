@@ -1,5 +1,11 @@
 # Historia zmian
 
+## 1.1.1 — 2026-10-26
+
+- Naprawione pobieranie FFmpeg podczas instalacji na komputerze bez tego narzędzia: niedostępny adres zwracający 404 zastąpiono przypiętym adresem tej samej paczki w oficjalnym archiwum wydawcy na GitHubie.
+- Zachowane FFmpeg 9.0.1, kontrola SHA-256, automatyczne rozpakowanie oraz pomijanie pobierania, gdy FFmpeg jest już dostępny.
+- Dodany test pobierania i rozpakowania przez rzeczywisty Inno Setup w izolowanym katalogu, niezależnie od FFmpeg zainstalowanego na komputerze.
+
 ## 1.1.0 — 2026-10-26
 
 - Trzy zakładki: TV na żywo, Ulubione i Archiwum, ze skrótami Ctrl+Tab oraz Ctrl+1/2/3.
