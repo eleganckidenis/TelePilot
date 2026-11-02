@@ -30,7 +30,7 @@ public sealed partial class LibVlcPlaybackService
             time = ResolveSeekBaseTime(time, _lastSeekTarget, elapsed, _mediaPlayer.State == VlcState.Paused,
                 _lastSeekWasPaused, _lastSeekSessionGeneration == generation
                 && _lastSeekResumeGeneration == Volatile.Read(ref _seekResumeGeneration));
-            return time < 0 ? null : TimeSpan.FromMilliseconds(time);
+            return time < 0 ? null : TimeSpan.FromMilliseconds(time) + TimeSpan.FromSeconds(_archiveResumeOffset);
         }, cancellationToken);
     }
 
@@ -97,7 +97,7 @@ public sealed partial class LibVlcPlaybackService
                 _lastSeekWasPaused = paused;
                 return new PlaybackCommandResult(
                     PlaybackCommandStatus.Succeeded,
-                    $"Pozycja odtwarzania: {target / 1_000} s.");
+                    $"Pozycja odtwarzania: {(long)(target / 1_000d + _archiveResumeOffset)} s.");
             },
             cancellationToken);
     }

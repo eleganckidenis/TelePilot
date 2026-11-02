@@ -30,6 +30,24 @@
               automation:AutomationProperties.AutomationId="settings-channel-sort" />
         </StackPanel>
 
+        <TextBlock Classes="section-heading" Text="Bufor sieciowy" automation:AutomationProperties.HeadingLevel="2" />
+        <StackPanel>
+          <Label Classes="field-label" Content="Docelowy bufor sieciowy w sekundach" Target="BufferSecondsBox" />
+          <controls:AccessibleTextBox x:Name="BufferSecondsBox" Text="{Binding BufferSeconds}"
+              automation:AutomationProperties.Name="Docelowy bufor sieciowy w sekundach" automation:AutomationProperties.AutomationId="settings-buffer-seconds" />
+        </StackPanel>
+        <StackPanel>
+          <Label Classes="field-label" Content="Maksymalny bufor sieciowy w sekundach" Target="BufferMaximumBox" />
+          <controls:AccessibleTextBox x:Name="BufferMaximumBox" Text="{Binding BufferMaximum}"
+              automation:AutomationProperties.Name="Maksymalny bufor sieciowy w sekundach" automation:AutomationProperties.AutomationId="settings-buffer-maximum" />
+        </StackPanel>
+        <StackPanel>
+          <Label Classes="field-label" Content="Limit jakości HLS w Mb/s, zero bez limitu" Target="VariantCapBox" />
+          <controls:AccessibleTextBox x:Name="VariantCapBox" Text="{Binding VariantCap}"
+              automation:AutomationProperties.Name="Limit jakości HLS w Mb/s, zero bez limitu" automation:AutomationProperties.AutomationId="settings-variant-cap" />
+        </StackPanel>
+        <TextBlock Text="Zmiana działa od następnego uruchomienia kanału. Transmisja na żywo zaczyna od półsekundowego bufora; przy odzyskiwaniu połączenia używa pełnego celu. Wyższy bufor zwiększa opóźnienie." TextWrapping="Wrap" />
+
         <TextBlock Classes="section-heading" Text="Program telewizyjny — EPG" automation:AutomationProperties.HeadingLevel="2" />
         <StackPanel Spacing="6">
           <Label Classes="field-label" Content="Zewnętrzny adres _EPG, opcjonalnie" Target="ExternalEpgUrlBox" />

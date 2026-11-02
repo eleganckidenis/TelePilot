@@ -16,8 +16,14 @@ public sealed partial class SettingsWindow : Window
     {
         InitializeComponent();
         SortPicker.PreviousTabTarget = SaveButton;
-        SortPicker.NextTabTarget = ExternalEpgUrlBox;
-        ExternalEpgUrlBox.PreviousTabTarget = SortPicker;
+        SortPicker.NextTabTarget = BufferSecondsBox;
+        BufferSecondsBox.PreviousTabTarget = SortPicker;
+        BufferSecondsBox.NextTabTarget = BufferMaximumBox;
+        BufferMaximumBox.PreviousTabTarget = BufferSecondsBox;
+        BufferMaximumBox.NextTabTarget = VariantCapBox;
+        VariantCapBox.PreviousTabTarget = BufferMaximumBox;
+        VariantCapBox.NextTabTarget = ExternalEpgUrlBox;
+        ExternalEpgUrlBox.PreviousTabTarget = VariantCapBox;
         ExternalEpgUrlBox.NextTabTarget = RecordingDirectoryBox;
         RecordingDirectoryBox.PreviousTabTarget = ExternalEpgUrlBox;
         ArchiveSourcePicker.PreviousTabTarget = ExternalEpgUrlBox;

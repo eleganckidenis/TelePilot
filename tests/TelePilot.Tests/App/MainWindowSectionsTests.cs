@@ -239,7 +239,7 @@ public sealed class MainWindowSectionsTests
             fixture.Playback.PlayedChannels[^1].StreamUrl);
         Assert.Equal(2, fixture.Playback.PositionReadCount);
         Assert.All(fixture.Playback.PlayedChannels, channel => Assert.Equal(fixture.FirstChannel.Id, channel.Id));
-        Assert.All(fixture.Playback.PlayOptions, options => Assert.Equal(0, options.MaximumReconnectAttempts));
+        Assert.All(fixture.Playback.PlayOptions, options => Assert.Equal(6, options.MaximumReconnectAttempts));
         Assert.True(fixture.ViewModel.IsArchivePlayback);
         Assert.Equal(programme.Title, fixture.ViewModel.CurrentProgramName);
         Assert.Contains("192 s", fixture.Status.StatusMessage, StringComparison.Ordinal);
@@ -921,7 +921,7 @@ public sealed class MainWindowSectionsTests
         Assert.True(model.IsArchivePlayback);
         Assert.Equal("Odtwarzanie archiwum", model.PlaybackHeading);
         Assert.Equal(programme.Title, model.CurrentProgramName);
-        Assert.Equal(0, Assert.Single(fixture.Playback.PlayOptions).MaximumReconnectAttempts);
+        Assert.Equal(6, Assert.Single(fixture.Playback.PlayOptions).MaximumReconnectAttempts);
 
         await model.StopCommand.ExecuteAsync(null);
         model.SelectedSectionIndex = 0;
@@ -958,7 +958,7 @@ public sealed class MainWindowSectionsTests
         Assert.Equal(fixture.FirstChannel.Id.ToString(), fixture.Windows.ProgramGuide.SelectedChannel!.Id);
         Assert.Equal(2, fixture.Playback.PlayedChannels.Count);
         Assert.Same(fixture.FirstChannel, fixture.Playback.PlayedChannels[^1]);
-        Assert.Equal(3, fixture.Playback.PlayOptions[^1].MaximumReconnectAttempts);
+        Assert.Equal(6, fixture.Playback.PlayOptions[^1].MaximumReconnectAttempts);
         Assert.False(model.IsArchivePlayback);
         Assert.Equal("Odtwarzanie na żywo", model.PlaybackHeading);
         Assert.Equal("Brak danych o bieżącej audycji", model.CurrentProgramName);
