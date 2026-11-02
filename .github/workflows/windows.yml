@@ -32,7 +32,7 @@ jobs:
       - name: Test Release
         shell: pwsh
         run: |
-          $env:TELEPILOT_TEST_FFMPEG = (Get-Command ffmpeg -ErrorAction Stop).Source
+          ./scripts/prepare-ci-ffmpeg.ps1
           dotnet test TelePilot.sln --configuration Release --no-restore -p:UsedAvaloniaProducts=
 
   installers:

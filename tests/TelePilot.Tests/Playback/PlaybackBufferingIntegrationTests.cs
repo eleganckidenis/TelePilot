@@ -69,6 +69,7 @@ public sealed class PlaybackBufferingIntegrationTests
             try
             {
                 await service.PrepareAsync(timeout.Token);
+                Assert.True(service.MediaPlayer.SetAudioOutput("dummy"));
                 await service.SetVolumeAsync(0, timeout.Token);
                 var channel = new Channel(ChannelId.New(), PlaylistSourceId.New(), "Synthetic buffering test", $"http://127.0.0.1:{endpoint.Port}/live/test/test/123.ts");
                 Assert.True((await service.PlayAsync(channel, new(), timeout.Token)).IsSuccess);
