@@ -42,6 +42,7 @@ public sealed class AppPreferencesService : IAppPreferencesService
         var persisted = new AppPreferences
         {
             ChannelSortMode = normalized.ChannelSortMode,
+            Buffering = normalized.Buffering,
             ExternalEpgUrl = TelePilot.Core.Security.SensitiveDataRedactor.ContainsPotentialSecret(normalized.ExternalEpgUrl)
                 ? null
                 : normalized.ExternalEpgUrl,
@@ -93,6 +94,7 @@ public sealed class AppPreferencesService : IAppPreferencesService
         return new AppPreferences
         {
             ChannelSortMode = sortMode,
+            Buffering = (source.Buffering ?? new()).Normalize(),
             ExternalEpgUrl = NormalizeExternalEpgUrl(source.ExternalEpgUrl),
             Recording = new RecordingPreferences
             {

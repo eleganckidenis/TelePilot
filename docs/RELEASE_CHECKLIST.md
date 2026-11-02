@@ -1,5 +1,21 @@
 # Lista kontrolna wydania TelePilot
 
+## Aktualny zakres 1.2.0
+
+- Windows x64: bieżący publiczny kod, pełne testy na Windows, natywne syntetyczne
+  odtwarzanie, budowanie instalatora, weryfikacja FFmpeg i SHA-256. Wydanie bez
+  Authenticode, zgodnie z dotychczasowym zakresem publikacji; podaj to w Release.
+- macOS 14+ Apple Silicon: natywny projekt `macos/`, jego testy i skrypty pakowania,
+  ścisła kontrola architektury/zależności oraz podpisu ad-hoc w ZIP i DMG. Intel
+  i płatny Developer ID/notaryzacja są poza uzgodnionym zakresem.
+- Zachowaj licencje i odpowiadające źródła wszystkich dystrybuowanych składników.
+  Sprawdź zgodność paczek z kodem przeznaczonym do tagowania i brak danych prywatnych.
+- Rzeczywisty zakres ręcznej weryfikacji NVDA/VoiceOver i czystej instalacji zapisz
+  uczciwie w raporcie; testy automatyczne nie dowodzą odsłuchu czytnika ekranu.
+
+Niższe sekcje zachowują historyczne scenariusze i dawne numery robocze.
+Nie zastępują aktualnych skryptów ani jawnych decyzji zakresu powyżej.
+
 ## Windows
 
 1. Uruchom pełne testy automatyczne i prywatne testy playlisty.

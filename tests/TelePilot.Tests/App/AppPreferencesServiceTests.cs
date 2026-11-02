@@ -10,6 +10,17 @@ namespace TelePilot.Tests.App;
 public sealed class AppPreferencesServiceTests
 {
     [Fact]
+    public async Task BufferSettingsRoundTripPreservesOldPreferencesAndExplicitChoice()
+    {
+        var old = System.Text.Json.JsonSerializer.Deserialize<AppPreferences>("{}")!;
+        Assert.Equal(new TelePilot.Core.Models.PlaybackBufferSettings(), old.Buffering);
+        var store = new MemoryStore(old); var service = new AppPreferencesService(store);
+        await service.SaveAsync(new AppPreferences { Buffering = new(9, 40, 6) });
+        await service.LoadAsync();
+        Assert.Equal(new TelePilot.Core.Models.PlaybackBufferSettings(9, 40, 6), service.Current.Buffering);
+    }
+
+    [Fact]
     public async Task Load_NormalizesInvalidValuesAndRemovesDuplicateFavorites()
     {
         var sourceId = Guid.NewGuid();

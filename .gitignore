@@ -4,6 +4,9 @@
 artifacts/
 .artifacts/
 .test-output/
+**/.build/
+**/.swiftpm/
+**/artifacts/
 macos-handoff/
 TestResults/
 *.trx
@@ -46,7 +49,11 @@ settings*.json
 /*.m3u
 /*.m3u8
 /url.txt
+**/url.txt
+**/*.m3u
+**/*.m3u8
 
 # Synthetic samples are intentionally versioned
 !samples/*.m3u
 !samples/*.m3u8
+!macos/Tests/**

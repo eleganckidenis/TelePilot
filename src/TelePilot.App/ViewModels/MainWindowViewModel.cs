@@ -713,6 +713,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                     ExternalEpgUrl = current.ExternalEpgUrl,
                     ArchiveSources = [.. current.ArchiveSources],
                     Recording = current.Recording,
+                    Buffering = current.Buffering,
                     Favorites = remaining.ToList(),
                 });
                 ReloadFavoriteChannels();
@@ -780,6 +781,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                     ExternalEpgUrl = current.ExternalEpgUrl,
                     ArchiveSources = [.. current.ArchiveSources],
                     Recording = current.Recording,
+                    Buffering = current.Buffering,
                     Favorites = favorites,
                 });
             if (channelItemsById.TryGetValue(channel.Id.ToString(), out var item))
@@ -850,6 +852,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 ExternalEpgUrl = current.ExternalEpgUrl,
                 ArchiveSources = [.. current.ArchiveSources],
                 Recording = current.Recording,
+                Buffering = current.Buffering,
                 Favorites = current.Favorites.Where(item => !removed.Contains((item.PlaylistSourceId, item.ChannelId))).ToList(),
             });
             ReloadFavoriteChannels();
@@ -1602,7 +1605,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(IsArchivePlayback));
             OnPropertyChanged(nameof(PlaybackHeading));
             var result = await playbackService.PlayAsync(channel,
-                new PlaybackOptions(MaximumReconnectAttempts: archiveProgramme is null ? 3 : 0), cancellationToken);
+                new PlaybackOptions(IsLive: archiveProgramme is null, Buffering: preferencesService.Current.Buffering,
+                    ArchiveSource: archiveSource, ArchiveStart: archiveProgramme?.Start + archiveOffset, ArchiveEnd: archiveProgramme?.Stop), cancellationToken);
             archiveAccepted = archiveProgramme is not null && result.IsSuccess;
             if (!IsCurrentPlayerActivation(activationGeneration))
             {
@@ -1708,7 +1712,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             // Play accepts a request before HLS opens. Only native Playing confirms
             // that the archived stream actually started; EndReached is a failure here.
             Observe(playbackService.Current);
-            await started.Task.WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(32), cancellationToken);
             // Some rejected HLS variants briefly raise Playing and immediately
             // EndReached without presenting media. Do not announce that as success.
             await Task.Delay(TimeSpan.FromMilliseconds(350), cancellationToken);
@@ -2167,7 +2171,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             archivePlaybackOffset = default;
             OnPropertyChanged(nameof(IsArchivePlayback));
             OnPropertyChanged(nameof(PlaybackHeading));
-            var result = await playbackService.PlayAsync(channel, new PlaybackOptions(), cancellationToken);
+            var result = await playbackService.PlayAsync(channel, new PlaybackOptions(Buffering: preferencesService.Current.Buffering), cancellationToken);
             if (!IsCurrentPlayerActivation(activationGeneration))
             {
                 return;

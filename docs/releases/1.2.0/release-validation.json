@@ -1,0 +1,35 @@
+{
+  "version": "1.2.0",
+  "date": "2026-11-02",
+  "windowsBuildCommit": "49ba19476e7a1b93d6bba8b8433a08e158492ba6",
+  "windowsCI": "https://github.com/eleganckidenis/TelePilot/actions/runs/41498133981",
+  "windowsTests": {
+    "passed": 650,
+    "skipped": 5,
+    "failed": 0
+  },
+  "macTests": {
+    "passed": 66,
+    "failed": 0,
+    "suites": 7,
+    "location": "local Apple Silicon host"
+  },
+  "binaryAssets": [
+    {
+      "file": "TelePilot-1.2.0-win-x64-setup.exe",
+      "sha256": "4a0fcbe9caea3856b405c67a645068f431ea5a152d2aaf96397b62e663bd053a",
+      "bytes": 66816814
+    },
+    {
+      "file": "TelePilot-1.2.0-Apple-Silicon.dmg",
+      "sha256": "b8b1372b715ef6b575b8c17585751b4a0ab3670d2bc710910395cdad11a6ecd0",
+      "bytes": 73228777
+    },
+    {
+      "file": "TelePilot-1.2.0-macos-third-party-sources.zip",
+      "sha256": "9f6739cc4b3c93aa2486d9c97008e118f2f9fa8bca8b6f36cc17096e67466c9d",
+      "bytes": 24481737
+    }
+  ],
+  "sourceArchive": "Generated from final tag; documentation-only commit after tested code; runtime and packaging source unchanged."
+}

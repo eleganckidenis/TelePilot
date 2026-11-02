@@ -24,16 +24,21 @@ public enum PlaybackCommandStatus
 }
 
 public sealed record PlaybackOptions(
-    int NetworkCachingMilliseconds = 1_500,
-    int MaximumReconnectAttempts = 3)
+    int NetworkCachingMilliseconds = 25_000,
+    int MaximumReconnectAttempts = 6,
+    bool IsLive = true,
+    PlaybackBufferSettings? Buffering = null,
+    Channel? ArchiveSource = null,
+    DateTimeOffset? ArchiveStart = null,
+    DateTimeOffset? ArchiveEnd = null)
 {
     public void Validate()
     {
-        if (NetworkCachingMilliseconds is < 0 or > 60_000)
+        if (NetworkCachingMilliseconds is < 0 or > 300_000)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(NetworkCachingMilliseconds),
-                "Bufor sieciowy musi mieścić się w zakresie od 0 do 60000 ms.");
+                "Bufor sieciowy musi mieścić się w zakresie od 0 do 300000 ms.");
         }
 
         if (MaximumReconnectAttempts is < 0 or > 20)

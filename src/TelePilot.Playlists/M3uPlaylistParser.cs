@@ -197,6 +197,9 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                 }
             }
 
+            if (headerAttributes.TryGetValue("catchup-timezone", out var timezone) && !string.IsNullOrWhiteSpace(timezone))
+                entry.Attributes["_dispatcharr"] = "1";
+
             var channel = CreateChannel(
                 entry,
                 streamUrl,

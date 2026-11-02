@@ -10,9 +10,11 @@ Read these files before changing the project:
 4. `docs/ACCESSIBILITY_TEST_CHECKLIST.md` and `docs/RELEASE_CHECKLIST.md` before a release.
 5. `CHANGELOG.md` for the current version history.
 
-The current verified Windows baseline is TelePilot 2.0.1. Preserve its behavior and
-tests while adding macOS support. Isolate platform-specific code behind OS/RID checks
-only where it is actually needed.
+The public Windows baseline before this release is TelePilot 1.1.1, commit
+b727566a4910c1e735340bd150f50a1569ec6b51. Earlier 2.0.x numbers were internal.
+Preserve its behavior and tests. The native Swift/AppKit Apple Silicon application
+is in macos/ and has its own AGENTS.md, tests and packaging scripts. It is the
+released macOS app; do not substitute the older Avalonia macOS experiment.
 
 ## Accessibility is a release gate
 
@@ -53,6 +55,9 @@ by Git and must remain ignored.
   published SHA-256, version, Developer ID signature, and TeamIdentifier before
   repackaging it. Keep ARM64 and x64 binaries separate and preserve all applicable
   license notices, including an inventory for bundled VLC/FFmpeg plugins.
+- For the native macOS app follow macos/AGENTS.md. The owner chose an Apple Silicon
+  package with validated free ad-hoc signing, without paid Developer ID/notarization.
+  Label this accurately, retain dependency notices/source archives and verify the DMG.
 - A loose `dotnet publish` folder or a Windows cross-publish is not a macOS release.
   The release artifacts are separate, tested `.app` bundles and DMGs for `osx-arm64`
   and `osx-x64`, signed with Developer ID, notarized, and stapled.

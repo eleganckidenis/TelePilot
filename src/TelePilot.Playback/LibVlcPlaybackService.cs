@@ -20,12 +20,20 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
     private PlaybackSnapshot _current = PlaybackSnapshot.Initial;
     private CoreChannel? _channel;
     private PlaybackOptions _options = new();
-    private int _reconnectAttempt;
     private int _metadataRefreshQueued;
     private long _retryGeneration;
-    private long _nextReconnectLease;
-    private long _activeReconnectLease;
     private volatile bool _disposed;
+    private PlaybackRecoveryPolicy? _recovery;
+    private Timer? _healthTimer;
+    private int _healthQueued;
+    private long _requestGeneration;
+    private bool _restoringPause;
+    private double _resumePosition;
+    private Uri? _recoverySourceUri;
+    private double _archiveResumeOffset;
+    private readonly Dictionary<MediaTrackKind, (int Id, string Name)> _rememberedTracks = [];
+    private readonly HashSet<MediaTrackKind> _tracksToRestore = [];
+    private static double MonotonicNow => System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency;
 
     public LibVlcPlaybackService(ILogger<LibVlcPlaybackService> logger)
         : this(logger, LibVlcNativeBootstrapper.Initialize)
@@ -95,28 +103,34 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             return PlaybackCommandResult.Rejected("Kanał ma nieprawidłowy adres strumienia.");
         }
 
+        var requestGeneration = Interlocked.Increment(ref _requestGeneration);
+        var resolved = await HlsVariantResolver.ResolveAsync(streamUri,
+            options.Buffering?.Normalize().VariantMaxMbps ?? 0, cancellationToken).ConfigureAwait(false);
         return await EnqueueAsync(
             () =>
             {
-                // The active session belongs to the same serialized operation as
-                // the native Play call. Otherwise a queued Stop can clear a newer
-                // channel that was assigned by a following PlayAsync call.
+                if (requestGeneration != Volatile.Read(ref _requestGeneration))
+                    return PlaybackCommandResult.Rejected("Żądanie odtwarzania jest już nieaktualne.");
                 ResetRetryCancellation();
-                _channel = channel;
-                _options = options;
-                Interlocked.Exchange(ref _reconnectAttempt, 0);
-                return PlayInternal(channel, streamUri, options);
-            },
-            cancellationToken).ConfigureAwait(false);
+                _channel = channel; _options = options; _recoverySourceUri = streamUri;
+                _restoringPause = false; _resumePosition = _archiveResumeOffset = 0;
+                _rememberedTracks.Clear(); _tracksToRestore.Clear();
+                _recovery = new PlaybackRecoveryPolicy(options, streamUri,
+                    channel.Attributes.TryGetValue("_dispatcharr", out var marker) && marker == "1", MonotonicNow);
+                _healthTimer ??= new Timer(_ => QueueHealthCheck(), null, 500, 500);
+                return PlayInternal(channel, resolved, options, quickStart: options.IsLive);
+            }, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        Interlocked.Increment(ref _requestGeneration);
         await EnqueueAsync(
             () =>
             {
                 ResetRetryCancellation();
+                _recovery = null;
                 Interlocked.Increment(ref _playbackSessionGeneration);
                 UpdateCurrent(Current with
                 {
@@ -125,7 +139,6 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
                 });
                 _mediaPlayer.Stop();
                 _channel = null;
-                Interlocked.Exchange(ref _reconnectAttempt, 0);
                 UpdateCurrent(PlaybackSnapshot.Initial with
                 {
                     Volume = ReadKnownVolume(),
@@ -215,6 +228,9 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
                     return PlaybackCommandResult.Rejected("Silnik nie przyjął wyboru ścieżki.");
                 }
 
+                var chosen = ReadTracks(kind).FirstOrDefault(track => track.EngineId == engineId);
+                _rememberedTracks[kind] = (engineId, chosen?.Description ?? string.Empty);
+                _tracksToRestore.Remove(kind);
                 PublishTracks(kind);
                 return PlaybackCommandResult.Success();
             },
@@ -229,6 +245,8 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
         }
 
         _disposed = true;
+        Interlocked.Increment(ref _requestGeneration);
+        _healthTimer?.Dispose();
         CancelRetryCancellation();
         try
         {
@@ -286,7 +304,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
 
     private sealed record NativePlayerResources(LibVLC LibVlc, MediaPlayer MediaPlayer);
 
-    private PlaybackCommandResult PlayInternal(CoreChannel channel, Uri streamUri, PlaybackOptions options)
+    private PlaybackCommandResult PlayInternal(CoreChannel channel, Uri streamUri, PlaybackOptions options, bool quickStart = false)
     {
         Interlocked.Increment(ref _playbackSessionGeneration);
         UpdateCurrent(new PlaybackSnapshot(
@@ -298,24 +316,19 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             false,
             $"Łączenie z kanałem {channel.Name}."));
 
-        if (_mediaPlayer.IsPlaying)
-        {
-            _mediaPlayer.Stop();
-        }
+        _mediaPlayer.Stop();
+        _recovery?.BeginAttempt(MonotonicNow);
 
         using var media = new Media(_libVlc, streamUri);
-        media.AddOption($":network-caching={options.NetworkCachingMilliseconds}");
-        media.AddOption(":input-repeat=0");
+        var settings = _recovery?.Settings ?? new PlaybackBufferSettings();
+        foreach (var option in settings.MediaOptions(_recovery?.Target ?? settings.Seconds, options.IsLive, quickStart)) media.AddOption(option);
+        media.AddOption($":http-user-agent={HlsVariantResolver.UserAgent}");
+        if (_resumePosition > 0 && !options.IsLive) media.AddOption(":start-time=" + _resumePosition.ToString(System.Globalization.CultureInfo.InvariantCulture));
         if (!_mediaPlayer.Play(media))
         {
             var error = new PlaybackError(channel.Name, "Silnik odtwarzania odrzucił strumień.", "play-rejected");
-            UpdateCurrent(Current with
-            {
-                State = PlaybackState.Error,
-                StatusMessage = error.Message,
-                Error = error,
-            });
-            return PlaybackCommandResult.Rejected(error.Message);
+            EvaluateRecovery(new RecoverySample(7));
+            return _recovery is { GaveUp: false } ? PlaybackCommandResult.Success() : PlaybackCommandResult.Rejected(error.Message);
         }
 
         LogConnecting(_logger, channel.Name, channel.Id);
@@ -368,11 +381,13 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             return;
         }
 
-        // A confirmed Playing state ends the preceding error cycle. Cancel any
-        // delayed reconnect that may still be outstanding so it cannot interrupt
-        // this healthy stream later.
-        ResetRetryCancellation();
-        Interlocked.Exchange(ref _reconnectAttempt, 0);
+        // Keep the retry budget until 120 seconds of stability. A transient
+        // Playing event must not reset the bounded recovery cycle.
+        _ = _recovery?.Evaluate(new RecoverySample(3), MonotonicNow);
+        if (_restoringPause && _mediaPlayer.CanPause)
+        {
+            _restoringPause = false; _mediaPlayer.SetPause(true);
+        }
         UpdateCurrent(snapshot with
         {
             State = PlaybackState.Playing,
@@ -421,7 +436,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             return;
         }
 
-        UpdateCurrent(Current with { State = PlaybackState.Idle, CanPause = false, StatusMessage = "Strumień został zakończony." });
+        PollPlaybackHealth();
     }
 
     private void OnEncounteredError(object? sender, EventArgs eventArgs) => QueuePlaybackEvent(ApplyEncounteredError);
@@ -436,23 +451,8 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             return;
         }
 
-        var lease = Interlocked.Increment(ref _nextReconnectLease);
-        if (Interlocked.CompareExchange(ref _activeReconnectLease, lease, 0) != 0)
-        {
-            // LibVLC can report the same failure more than once. Only one delay
-            // and one retry may belong to a single error cycle.
-            return;
-        }
-
-        var error = new PlaybackError(channel.Name, "Utracono połączenie ze strumieniem.", "libvlc-error");
-        UpdateCurrent(Current with { State = PlaybackState.Error, CanPause = false, Error = error, StatusMessage = error.Message });
         LogPlaybackError(_logger, channel.Name, channel.Id);
-        _ = ScheduleReconnectAsync(
-            channel,
-            _options,
-            Volatile.Read(ref _retryGeneration),
-            lease,
-            _retryCancellation.Token);
+        PollPlaybackHealth();
     }
 
     private void OnTracksChanged(object? sender, EventArgs eventArgs) => QueuePlayerMetadataRefresh();
@@ -502,6 +502,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
                     }
                 }
 
+                RestoreSelectedTracks();
                 PublishTracks(MediaTrackKind.Audio);
                 PublishTracks(MediaTrackKind.Subtitle);
                 return Task.CompletedTask;
@@ -515,80 +516,6 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             Interlocked.Exchange(ref _metadataRefreshQueued, 0);
         }
     }
-
-    private async Task ScheduleReconnectAsync(
-        CoreChannel channel,
-        PlaybackOptions options,
-        long generation,
-        long lease,
-        CancellationToken cancellationToken)
-    {
-        var releaseLease = true;
-        try
-        {
-            if (!IsCurrentReconnect(generation, lease, cancellationToken))
-            {
-                return;
-            }
-
-            var attempt = Interlocked.Increment(ref _reconnectAttempt);
-            if (attempt > options.MaximumReconnectAttempts)
-            {
-                // Keep the lease until Play/Stop starts a new session. Repeated
-                // native error callbacks must not repeat the terminal message.
-                releaseLease = false;
-                UpdateCurrent(Current with { StatusMessage = "Nie udało się ponownie połączyć. Możesz ponowić ręcznie." });
-                return;
-            }
-
-            UpdateCurrent(Current with { StatusMessage = $"Ponowne łączenie, próba {attempt} z {options.MaximumReconnectAttempts}." });
-            await Task.Delay(TimeSpan.FromSeconds(Math.Min(2 * attempt, 10)), cancellationToken).ConfigureAwait(false);
-            if (!IsCurrentReconnect(generation, lease, cancellationToken)
-                || !Uri.TryCreate(channel.StreamUrl, UriKind.Absolute, out var uri))
-            {
-                return;
-            }
-
-            await EnqueueAsync(
-                () =>
-                {
-                    if (!IsCurrentReconnect(generation, lease, cancellationToken))
-                    {
-                        return PlaybackCommandResult.Rejected("Próba ponownego połączenia jest już nieaktualna.");
-                    }
-
-                    // Release this unique lease before native Play. A synchronous
-                    // error callback from that attempt can then schedule exactly
-                    // one following retry; this task's finally cannot clear it.
-                    Interlocked.CompareExchange(ref _activeReconnectLease, 0, lease);
-                    return PlayInternal(channel, uri, options);
-                },
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (ChannelClosedException) when (_disposed)
-        {
-        }
-        catch (Exception exception)
-        {
-            LogCommandWorkerFailure(_logger, exception);
-        }
-        finally
-        {
-            if (releaseLease)
-            {
-                Interlocked.CompareExchange(ref _activeReconnectLease, 0, lease);
-            }
-        }
-    }
-
-    private bool IsCurrentReconnect(long generation, long lease, CancellationToken cancellationToken) =>
-        !_disposed
-        && !cancellationToken.IsCancellationRequested
-        && Volatile.Read(ref _retryGeneration) == generation
-        && Volatile.Read(ref _activeReconnectLease) == lease;
 
     private CoreMediaTrack[] ReadTracks(MediaTrackKind kind)
     {
@@ -653,7 +580,6 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
     {
         var previous = Interlocked.Exchange(ref _retryCancellation, new CancellationTokenSource());
         Interlocked.Increment(ref _retryGeneration);
-        Interlocked.Exchange(ref _activeReconnectLease, 0);
         previous.Cancel();
         previous.Dispose();
     }
@@ -661,7 +587,6 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
     private void CancelRetryCancellation()
     {
         Interlocked.Increment(ref _retryGeneration);
-        Interlocked.Exchange(ref _activeReconnectLease, 0);
         _retryCancellation.Cancel();
     }
 

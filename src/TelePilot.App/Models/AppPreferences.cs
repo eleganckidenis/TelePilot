@@ -6,6 +6,8 @@ namespace TelePilot.App.Models;
 
 public sealed class AppPreferences
 {
+    public TelePilot.Core.Models.PlaybackBufferSettings Buffering { get; init; } = new();
+
     public ChannelSortMode ChannelSortMode { get; init; } = ChannelSortMode.SourceOrder;
 
     public string? ExternalEpgUrl { get; init; }

@@ -6,7 +6,7 @@ public sealed class PlaybackModelsTests
 {
     [Theory]
     [InlineData(-1, 3)]
-    [InlineData(60_001, 3)]
+    [InlineData(300_001, 3)]
     [InlineData(1_500, -1)]
     [InlineData(1_500, 21)]
     public void PlaybackOptions_RejectsOutOfRangeValues(int caching, int attempts)
