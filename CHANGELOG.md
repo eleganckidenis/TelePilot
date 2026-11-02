@@ -1,5 +1,14 @@
 # Historia zmian
 
+## 1.2.0 — 2026-11-02
+
+- Wspólne wydanie dla Windows x64 oraz macOS 14+ na Apple Silicon. Mac używa natywnego Swift/AppKit i ma dołączone VLC oraz FFmpeg; źródła i testy są w `macos/`.
+- Buforowanie sieciowe wzorowane na Accessible IPTV Client: cache startowy TV 0,5 s, pełny bufor 25 s, maksimum 30 s, wzrost o 1 s przy problemach oraz dostępne ustawienia bufora i limitu HLS.
+- Ograniczone ponowienia z odstępami, wykrywanie zatrzymanego obrazu i dźwięku, częstego/długiego buforowania, braków danych i zwykłych końców segmentów TV. Stop i zmiana kanału unieważniają stare operacje.
+- Odtwarzanie zachowuje normalną prędkość 1×. Bufor sieciowy nie wymaga timeshiftu u dostawcy; lokalny DVR na dysku pozostaje poza zakresem.
+- Wersja Mac zawiera także strumieniowe wczytywanie dużego EPG XMLTV/gzip i zachowuje dotychczasowe źródła, ulubione oraz ustawienia.
+- Uzupełniono dokumentację, licencję MIT zasad buforowania, źródła zależności i procesy testowania Windows/macOS. Szczegóły i ograniczenia w `docs/RELEASE_NOTES_1.2.0.md`.
+
 ## 1.1.1 — 2026-10-26
 
 - Naprawione pobieranie FFmpeg podczas instalacji na komputerze bez tego narzędzia: niedostępny adres zwracający 404 zastąpiono przypiętym adresem tej samej paczki w oficjalnym archiwum wydawcy na GitHubie.

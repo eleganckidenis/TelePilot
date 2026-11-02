@@ -10,9 +10,20 @@ TelePilot jest darmowy. Jeśli chcesz dorzucić się do jego rozwoju, **[wesprzy
 
 ## Pobranie i instalacja
 
-Pobierz **TelePilot-1.1.1-win-x64-setup.exe** z [najnowszego wydania](https://github.com/eleganckidenis/TelePilot/releases/latest) i uruchom instalator. Potrzebujesz Windows 10 22H2 lub Windows 11 na komputerze Intel/AMD oraz uprawnień administratora do instalacji.
+Z [najnowszego wydania](https://github.com/eleganckidenis/TelePilot/releases/latest) pobierz paczkę dla swojego komputera:
 
-Instalator przygotowuje potrzebne składniki. Jeśli brakuje FFmpeg do nagrywania, pobierze zweryfikowaną paczkę z oficjalnego archiwum wydawcy na GitHubie. Wersja 1.1.1 naprawia błąd pobierania 404 występujący w poprzednim instalatorze. Nie ma podpisu cyfrowego, więc Windows może pokazać informację o nieznanym wydawcy.
+- **Windows Intel/AMD:** `TelePilot-1.2.0-win-x64-setup.exe`. Wymagany Windows 10 22H2 lub Windows 11 oraz uprawnienia administratora.
+- **Mac Apple Silicon:** `TelePilot-1.2.0-Apple-Silicon.dmg`. Wymagany macOS 14 lub nowszy i procesor Apple M1 lub nowszy. Przeciągnij aplikację do Programów. To natywna wersja Swift/AppKit z dołączonym VLC i FFmpeg; nie wymaga .NET. [Instrukcja macOS](macos/README.md).
+
+Instalator Windows przygotowuje potrzebne składniki. Jeśli brakuje FFmpeg do nagrywania, pobierze zweryfikowaną paczkę z oficjalnego archiwum wydawcy na GitHubie. Instalator Windows jest niepodpisany cyfrowo, a Mac ma lokalny podpis ad-hoc bez notaryzacji Apple. Sumy SHA-256 są obok paczek. Nie trzeba usuwać dotychczasowych źródeł ani ulubionych.
+
+## Buforowanie sieciowe w 1.2.0
+
+Windows i Mac mają buforowanie wzorowane na [Accessible IPTV Client](https://github.com/serrebidev/Accessible-IPTV-Client): szybki start TV z cache 0,5 s, domyślny pełny bufor 25 s i maksimum 30 s. Przy zacięciach ponowne połączenie korzysta z pełnego bufora, zwiększanego o 1 s do maksimum. Ustawienia zawierają bufor, maksimum i opcjonalny limit jakości HLS (0 = bez limitu).
+
+Odtwarzanie pozostaje w normalnym tempie 1×. Nie ma spowalniania mowy ani gwarancji, że przy szybkim starcie serwer zawsze udostępni pełne 25 s zapasu. Obraz i audio są monitorowane osobno, ponowienia mają limit i odstępy, a Stop i zmiana kanału unieważniają stare próby. Funkcja działa przy zwykłej TV na żywo, bez timeshiftu i archiwum u dostawcy. Osobny lokalny DVR/cofanie transmisji na dysku nie jest częścią tej wersji.
+
+Źródła natywnego Maca i jego testy są w `macos/`. Pozostała instrukcja opisuje Windows; odpowiedniki skrótów i szczegóły dostępności Maca są w jego osobnym README. [Zmiany 1.2.0](docs/RELEASE_NOTES_1.2.0.md).
 
 ## Pierwsze oglądanie
 

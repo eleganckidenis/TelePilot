@@ -13,5 +13,9 @@ You should have received a copy of the GNU General Public License along with
 this program. If not, see https://www.gnu.org/licenses/.
 
 Third-party components retain their own licenses and copyright notices.
+Network buffering policy adapted from Accessible IPTV Client,
+Copyright (c) 2025 serrebi, MIT license, upstream commit
+6afe6014fa773a5489d4c43ccafad5726386d931. Full notice:
+docs/licenses/Accessible-IPTV-Client-MIT.txt (also in installed licenses).
 See docs/THIRD_PARTY_LICENSES.md in the source distribution and the licenses
 directory in the installed application.

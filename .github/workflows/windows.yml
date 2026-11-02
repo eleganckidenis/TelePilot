@@ -2,7 +2,7 @@ name: Windows build and tests
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, 'release/**']
   pull_request:
   workflow_dispatch:
 
@@ -14,6 +14,7 @@ env:
   DOTNET_NOLOGO: '1'
   DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
   TELEPILOT_RUN_PRIVATE_INTEGRATION: '0'
+  TELEPILOT_RUN_PLAYBACK_INTEGRATION: '1'
 
 jobs:
   tests:
@@ -29,17 +30,20 @@ jobs:
       - name: Restore
         run: dotnet restore TelePilot.sln -p:UsedAvaloniaProducts=
       - name: Test Release
-        run: dotnet test TelePilot.sln --configuration Release --no-restore -p:UsedAvaloniaProducts=
+        shell: pwsh
+        run: |
+          $env:TELEPILOT_TEST_FFMPEG = (Get-Command ffmpeg -ErrorAction Stop).Source
+          dotnet test TelePilot.sln --configuration Release --no-restore -p:UsedAvaloniaProducts=
 
   installers:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/heads/release/')
     needs: tests
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        runtime: [win-x64, win-arm64]
+        runtime: [win-x64]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -69,6 +73,9 @@ jobs:
         env:
           TELEPILOT_BUILD_RUNTIME: ${{ matrix.runtime }}
         run: ./scripts/build-windows-installer.ps1 -Runtime $env:TELEPILOT_BUILD_RUNTIME -InnoCompiler (Join-Path $env:RUNNER_TEMP 'inno-setup-6\ISCC.exe') -SkipTests
+      - name: Verify FFmpeg download and checksum rejection with real Inno Setup
+        shell: pwsh
+        run: ./scripts/test-windows-ffmpeg-download.ps1 -RunDownloadTest -TestInvalidHash -InnoCompiler (Join-Path $env:RUNNER_TEMP 'inno-setup-6\ISCC.exe')
       - name: Archive source
         if: matrix.runtime == 'win-x64'
         shell: pwsh

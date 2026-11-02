@@ -15,13 +15,13 @@ New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
 $rootFiles = @('.gitattributes', '.gitignore', 'AGENTS.md', 'CHANGELOG.md',
     'Directory.Build.props', 'Directory.Packages.props', 'IMPLEMENTATION_PLAN.md',
     'LICENSE', 'NOTICE', 'README.md', 'TelePilot.sln', 'global.json')
-$allowedFolders = @('.github', 'docs', 'installer', 'samples', 'scripts', 'src', 'tests')
+$allowedFolders = @('.github', 'docs', 'installer', 'macos', 'samples', 'scripts', 'src', 'tests')
 $candidates = @(& git -C $repositoryRoot -c core.quotepath=false ls-files --cached --others --exclude-standard)
 if ($LASTEXITCODE -ne 0) { throw 'Nie udało się odczytać listy plików Git.' }
 $sourceFiles = @($candidates | Sort-Object -Unique | Where-Object {
     $parts = $_ -split '/'
     ($rootFiles -contains $_ -or $allowedFolders -contains $parts[0]) -and
-    $_ -notmatch '(^|/)(bin|obj|logs|recordings|app-data|\.git|\.dotnet|\.tools|artifacts|\.artifacts)(/|$)' -and
+    $_ -notmatch '(^|/)(bin|obj|logs|recordings|app-data|\.git|\.dotnet|\.tools|\.build|\.swiftpm|artifacts|\.artifacts)(/|$)' -and
     $_ -notmatch '(?i)(^|/)(url\.txt|settings[^/]*\.json|\.env[^/]*)$' -and
     $_ -notmatch '(?i)\.(pfx|p12|key|log|pdb|exe|dll|nupkg)$' -and
     ($_ -notmatch '(?i)\.m3u8?$' -or $_ -match '^samples/')
