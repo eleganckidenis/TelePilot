@@ -1,5 +1,15 @@
 # TelePilot: przekazanie projektu na macOS
 
+## Aktualizacja 1.2.0
+
+Wydawana aplikacja macOS jest natywnym projektem Swift/AppKit w `macos/`.
+Obowiązują `macos/AGENTS.md`, `macos/README.md` i `macos/scripts/package-app.sh`.
+Zakres właściciela to Apple Silicon i zweryfikowany podpis ad-hoc, bez płatnego
+Developer ID/notaryzacji. Źródła obu platform są teraz w jednym repozytorium.
+
+Pozostała część tego dokumentu zachowuje historyczne przekazanie eksperymentalnego
+portu Avalonia. Nie jest instrukcją budowania publicznej paczki Maca 1.2.0.
+
 ## Najkrótsza odpowiedź
 
 Nowy Codex nie dziedziczy automatycznie tej rozmowy ani lokalnej pamięci z komputera

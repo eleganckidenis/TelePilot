@@ -21,6 +21,8 @@ Windows jest niepodpisany cyfrowo. Mac ma lokalny podpis ad-hoc, bez płatnego D
 
 ## Weryfikacja i źródła
 
+Windows: **650 testów zaliczonych, 5 pominiętych, 0 błędów**; instalator i testy pobierania FFmpeg zaliczone na Windows w [GitHub Actions](https://github.com/eleganckidenis/TelePilot/actions/runs/41498133981). Mac: **66 testów zaliczonych**, także rzeczywiste syntetyczne integracje na Apple Silicon. Podpis i integralność końcowego DMG sprawdzone.
+
 Dokładne wyniki dla końcowego commita: [raport 1.2.0](RELEASE_TESTS_1.2.0.md). Automatyczne testy i kontrola drzew dostępności nie zastępują pełnego ręcznego odsłuchu NVDA/VoiceOver ani testu konkretnego dostawcy IPTV. Nie otwierano prywatnych playlist użytkownika.
 
 Kod obu aplikacji i skrypty budowania zawiera **TelePilot-1.2.0-source.zip**. Źródła dołączonego natywnego FFmpeg Maca zawiera **TelePilot-1.2.0-macos-third-party-sources.zip**. Niezmienione źródła VLC 3.0.23, LibVLCSharp i pełny zestaw źródeł contrib są w [TelePilot-1.0.0-third-party-sources.zip](https://github.com/eleganckidenis/TelePilot/releases/download/v1.0.0/TelePilot-1.0.0-third-party-sources.zip), [SHA-256](https://github.com/eleganckidenis/TelePilot/releases/download/v1.0.0/TelePilot-1.0.0-third-party-sources.zip.sha256). Numery archiwów zależności nie zmieniają się, gdy ich zawartość pozostaje identyczna. Szczegóły: [zależności macOS](../macos/docs/DEPENDENCIES.md), [licencje](THIRD_PARTY_LICENSES.md).

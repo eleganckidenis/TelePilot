@@ -12,6 +12,11 @@ Data: 2026-11-02. Docelowe paczki: Windows x64 oraz macOS 14+ Apple Silicon.
 
 ## Windows
 
+- Końcowy pełny przebieg na Windows x64: **650 zaliczonych, 5 pominiętych, 0 błędów** z 655 testów. [GitHub Actions](https://github.com/eleganckidenis/TelePilot/actions/runs/41498133981), commit kodu `49ba19476e7a1b93d6bba8b8433a08e158492ba6`.
+- Natywny test LibVLC przez syntetyczny HTTP/MPEG-TS był włączony i zaliczony: dekodowanie audio, ponowne otwarcie po końcu segmentu i brak kolejnego żądania po Stop. Wyjście audio dummy usuwa zależność testu od karty dźwiękowej runnera.
+- Instalator zbudowano na Windows, sprawdzono jego wersję i samodzielną publikację. Rzeczywisty harness Inno Setup potwierdził pobranie przypiętego FFmpeg, ponowne użycie oraz odrzucenie błędnej sumy. Cały przebieg testów/pakowania zakończył się powodzeniem.
+- Pominięto wyłącznie dwa testy prywatnych playlist, dodatkowy opt-in test nagrywania, test Harmonogramu Windows i oddzielny test przewijania LibVLC wymagający długiej próbki. Nie są oznaczane jako zaliczone.
+
 - Nowa implementacja obejmuje testy reguł buforowania, ustawień i ich zgodności, nawigacji Tab, HLS przez rzeczywisty loopback HTTP oraz przygotowany opt-in test natywnego LibVLC (syntetyczny MPEG-TS, dekodowanie audio, rollover i anulowanie po Stop).
 - Na Macu kompilacja .NET 10.0.302 zakończyła się bez ostrzeżeń. Końcowy zestaw objęty zmianami: **91/91 zaliczonych**. Szerszy zestaw zarządzany po wyłączeniu dokładnie znanych testów zależnych od Windows: **639 zaliczonych, 9 pominiętych, 0 błędów**.
 - Pełne uruchomienie tej samej aplikacji .NET na macOS ujawniło pięć istniejących ograniczeń platformowych w testach SingleInstance i blokady magazynu harmonogramu. Nie są one traktowane jako zaliczony test Windows; pełny zestaw na Windows jest uruchamiany bez tych wyłączeń w GitHub Actions.
@@ -23,3 +28,5 @@ Data: 2026-11-02. Docelowe paczki: Windows x64 oraz macOS 14+ Apple Silicon.
 Windows pozostaje niepodpisany cyfrowo, jak wcześniejsze publiczne wydanie. Mac ma zweryfikowany lokalny podpis ad-hoc, bez płatnego Developer ID/notaryzacji; dotyczy wyłącznie Apple Silicon. Źródła obu aplikacji, notices oraz źródła zależności są wskazane w opisie wydania. Nie ma lokalnego DVR/timeshiftu na dysku.
 
 Stan końcowych zadań CI i dokładne sumy pobieranych plików należy sprawdzać przy wydaniu i w jego załącznikach; raport nie zastępuje dowodów dla wskazanego commita.
+
+Końcowa dokumentacja po powyższym przebiegu nie zmienia kodu aplikacji, testów ani skryptów budowania. Źródła są archiwizowane z końcowego tagu. Sumy paczek i identyfikator zweryfikowanego commita zapisano również w `docs/releases/1.2.0/release-validation.json`. Natywne testy Maca potwierdzono lokalnie; oczekujący dodatkowy runner GitHuba nie jest liczony jako zaliczona weryfikacja.
