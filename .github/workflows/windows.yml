@@ -89,6 +89,7 @@ jobs:
           $process = Start-Process -FilePath $setupPath -ArgumentList $setupArguments -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Inno Setup installation failed: $($process.ExitCode)" }
       - name: Build installer
+        id: build_installer
         shell: pwsh
         run: ./scripts/build-windows-installer.ps1 -Runtime $env:TELEPILOT_BUILD_RUNTIME -InnoCompiler (Join-Path $env:RUNNER_TEMP 'inno-setup-6\ISCC.exe') -SkipTests
       - name: Install and uninstall the release package in both languages
@@ -99,6 +100,7 @@ jobs:
           [xml]$project = Get-Content -LiteralPath 'src/TelePilot.App/TelePilot.App.csproj' -Raw
           ./scripts/test-windows-installer.ps1 -Installer $installers[0].FullName -Version $project.Project.PropertyGroup.Version -Runtime $env:TELEPILOT_BUILD_RUNTIME
       - name: Verify FFmpeg download and checksum rejection with real Inno Setup
+        if: ${{ !cancelled() && steps.build_installer.outcome == 'success' }}
         shell: pwsh
         run: ./scripts/test-windows-ffmpeg-download.ps1 -Runtime $env:TELEPILOT_BUILD_RUNTIME -RunDownloadTest -TestInvalidHash -InnoCompiler (Join-Path $env:RUNNER_TEMP 'inno-setup-6\ISCC.exe')
       - name: Archive source
@@ -116,3 +118,13 @@ jobs:
             artifacts/release/*/${{ matrix.runtime }}/*.sha256
             artifacts/release/*/source/*.zip
             artifacts/release/*/source/*.sha256
+      - name: Keep installer for diagnostics if a smoke test failed
+        if: ${{ failure() && steps.build_installer.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: TelePilot-diagnostics-${{ matrix.runtime }}
+          if-no-files-found: error
+          retention-days: 3
+          path: |
+            artifacts/release/*/${{ matrix.runtime }}/*-setup.exe
+            artifacts/release/*/${{ matrix.runtime }}/*.sha256
