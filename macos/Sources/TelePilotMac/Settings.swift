@@ -27,28 +27,22 @@ enum SettingsSecret {
 }
 @MainActor final class SettingsWindow:NSWindowController,NSWindowDelegate {
     weak var appController:MainController?
-    let folder = namedField("Folder nagrań")
-    let ffmpeg = namedField("Plik FFmpeg, opcjonalnie")
-    let epg = namedField("Zewnętrzny adres EPG, opcjonalnie")
-    let template = namedField("Format nazwy pliku")
-    let bitrate = namedField("Bitrate audio w kb/s")
-    let audio = popup("Format audio",items:AudioFormat.allCases.map{$0.rawValue.uppercased()},target:nil,action:nil)
-    let sort = popup("Sortowanie kanałów",items:["Kolejność playlisty","Alfabetycznie","Grupa i nazwa"],target:nil,action:nil)
-    let source = NSPopUpButton()
-    let mode = popup("Tryb archiwum",items:["Automatycznie","Wyłączone","Flussonic HLS","Flussonic TS","Shift","Xtream Codes"],target:nil,action:nil)
-    let days = namedField("Liczba dni archiwum")
-    let correction = namedField("Korekta czasu archiwum w godzinach")
-    let override = NSButton(checkboxWithTitle:"Zastąp ustawienia archiwum zapisane w playliście",target:nil,action:nil)
+    let folder = namedField(l("Folder nagrań", "Recordings folder"))
+    let ffmpeg = namedField(l("Plik FFmpeg, opcjonalnie", "FFmpeg executable, optional"))
+    let epg = namedField(l("Zewnętrzny adres EPG, opcjonalnie", "External guide URL, optional"))
+    let template = namedField(l("Format nazwy pliku", "Filename format"))
+    let bitrate = namedField(l("Bitrate audio w kb/s", "Audio bitrate in kb/s"))
+    let audio = popup(l("Format audio", "Audio format"),items:AudioFormat.allCases.map{$0.rawValue.uppercased()},target:nil,action:nil)
+    let sort = popup(l("Sortowanie kanałów", "Channel sort order"),items:[l("Kolejność playlisty", "Playlist Order"),l("Alfabetycznie", "Alphabetical"),l("Grupa i nazwa", "Group and Name")],target:nil,action:nil)
+    let language = popup(l("Język aplikacji", "App language"), items: Language.allCases.map(\.title), target: nil, action: nil)
     let ffmpegStatus = label("")
-    let bufferSeconds = namedField("Docelowy bufor sieciowy w sekundach")
-    let bufferMaximum = namedField("Maksymalny bufor sieciowy w sekundach")
-    let variantCap = namedField("Limit jakości HLS w megabitach na sekundę, zero bez limitu")
-    var profiles:[String:CatchUpProfile] = [:]
-    var currentSource:UUID?
+    let bufferSeconds = namedField(l("Docelowy bufor sieciowy w sekundach", "Target network buffer in seconds"))
+    let bufferMaximum = namedField(l("Maksymalny bufor sieciowy w sekundach", "Maximum network buffer in seconds"))
+    let variantCap = namedField(l("Limit jakości HLS w megabitach na sekundę, zero bez limitu", "HLS bitrate limit in megabits per second, zero for unlimited"))
     init(appController:MainController) {
-        self.appController = appController;profiles = appController.preferences.catchUpProfiles
+        self.appController = appController
         let w = NSWindow(contentRect:NSRect(x:0,y:0,width:700,height:680),styleMask:[.titled,.closable,.resizable],backing:.buffered,defer:false)
-        w.title = "Ustawienia TelePilota";w.isReleasedWhenClosed = false;w.minSize = NSSize(width:650,height:450)
+        w.title = l("Ustawienia TelePilota", "TelePilot Settings");w.isReleasedWhenClosed = false;w.minSize = NSSize(width:650,height:450)
         super.init(window:w);w.delegate = self;w.center()
         let p = appController.preferences
         let buffering = p.buffering ?? PlaybackBufferSettings()
@@ -57,48 +51,40 @@ enum SettingsSecret {
         folder.stringValue = p.recordingsDirectory;ffmpeg.stringValue = p.ffmpegPath;epg.stringValue = p.externalEPG ?? ""
         template.stringValue = p.filenameTemplate;bitrate.stringValue = String(p.bitrate);sort.selectItem(at:p.sortOrder)
         audio.selectItem(at:AudioFormat.allCases.firstIndex(of:p.audioFormat) ?? 0)
-        source.addItems(withTitles:appController.sources.map(\.name));source.setAccessibilityLabel("Playlista profilu archiwum")
-        source.target = self;source.action = #selector(sourceChanged)
-        source.selectItem(at:appController.sourcePopup.indexOfSelectedItem);currentSource = appController.selectedSource?.id;loadProfile()
+        language.selectItem(at: Language.allCases.firstIndex(of: p.language ?? .system) ?? 0)
         let body = FlippedDocumentStack(views: [
-            label("Lista kanałów"),sort,
-            label("Buforowanie sieciowe"),
-            label("Start TV: 0,5 s. Przy zacięciach bufor rośnie o 1 s do maksimum. Zmiany od następnego odtworzenia."),
-            stack([label("Bufor (s)"),bufferSeconds,label("Maksimum (s)"),bufferMaximum]),
-            stack([label("Limit HLS (Mb/s, 0: bez limitu)"),variantCap]),
-            label("Zewnętrzny adres EPG XMLTV / gzip (pusty: EPG playlisty)"),epg,
-            label("Nagrywanie"),stack([folder,button("Wybierz folder…",self,#selector(chooseFolder))]),
-            stack([ffmpeg,button("Wybierz FFmpeg…",self,#selector(chooseFFmpeg)),button("Sprawdź",self,#selector(checkFFmpeg))]),ffmpegStatus,
-            stack([label("Format audio"),audio,label("Bitrate kb/s"),bitrate]),
-            label("Nazwa: {date}, {time}, {channel}, {programme}, {mode}"),template,
-            label("Profil archiwum osobno dla playlisty"),source,mode,
-            stack([label("Dni"),days,label("Korekta godzin"),correction]),override,
-            label("Archiwum wymaga usługi u dostawcy. Planowanie wymaga włączonego Maca i zalogowanego konta.")
+            label(l("Język aplikacji (po ponownym uruchomieniu)", "App language (after restart)")), language,
+            label(l("Lista kanałów", "Channel List")),sort,
+            label(l("Buforowanie sieciowe", "Network Buffering")),
+            label(l("Start TV: 0,5 s. Przy zacięciach bufor rośnie o 1 s do maksimum. Zmiany od następnego odtworzenia.", "Live TV starts with 0.5 s. The buffer grows by 1 s after stalls, up to the maximum. Changes apply on the next playback.")),
+            stack([label(l("Bufor (s)", "Buffer (s)")),bufferSeconds,label(l("Maksimum (s)", "Maximum (s)")),bufferMaximum]),
+            stack([label(l("Limit HLS (Mb/s, 0: bez limitu)", "HLS limit (Mb/s, 0 for unlimited)")),variantCap]),
+            label(l("Zewnętrzny adres EPG XMLTV / gzip (pusty: EPG playlisty)", "External XMLTV / gzip guide URL (leave blank to use the playlist guide)")),epg,
+            label(l("Nagrywanie", "Recording")),stack([folder,button(l("Wybierz folder…", "Choose Folder…"),self,#selector(chooseFolder))]),
+            stack([ffmpeg,button(l("Wybierz FFmpeg…", "Choose FFmpeg…"),self,#selector(chooseFFmpeg)),button(l("Sprawdź", "Check"),self,#selector(checkFFmpeg))]),ffmpegStatus,
+            stack([label(l("Format audio", "Audio format")),audio,label(l("Bitrate kb/s", "Bitrate (kb/s)")),bitrate]),
+            label(l("Nazwa: {date}, {time}, {channel}, {programme}, {mode}", "Filename fields: {date}, {time}, {channel}, {programme}, {mode}")),template,
+            label(l("Planowanie wymaga włączonego Maca i zalogowanego konta.", "Scheduled recordings require your Mac to be on and your account logged in."))
         ])
         body.orientation = .vertical; body.alignment = .leading; body.spacing = 10
-        days.widthAnchor.constraint(equalToConstant: 90).isActive = true
-        correction.widthAnchor.constraint(equalToConstant: 90).isActive = true
         bitrate.widthAnchor.constraint(equalToConstant: 80).isActive = true
         for field in [bufferSeconds, bufferMaximum, variantCap] { field.widthAnchor.constraint(equalToConstant: 80).isActive = true }
-        ffmpeg.placeholderString = "Automatyczne wykrywanie FFmpeg"
+        ffmpeg.placeholderString = l("Automatyczne wykrywanie FFmpeg", "Detect FFmpeg automatically")
         let scroll = NSScrollView();scroll.hasVerticalScroller = true;scroll.documentView = body
         body.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([body.leadingAnchor.constraint(equalTo:scroll.contentView.leadingAnchor),body.topAnchor.constraint(equalTo:scroll.contentView.topAnchor),body.widthAnchor.constraint(equalTo:scroll.widthAnchor,constant:-24)])
         for v in body.arrangedSubviews {v.widthAnchor.constraint(equalTo:body.widthAnchor).isActive = true}
-        let actions = stack([button("Zapisz",self,#selector(save)),button("Anuluj",self,#selector(cancel))])
+        let actions = stack([button(l("Zapisz", "Save"),self,#selector(save)),button(l("Anuluj", "Cancel"),self,#selector(cancel))])
         let root = stack([scroll,actions],vertical:true)
         scroll.widthAnchor.constraint(equalTo:root.widthAnchor).isActive = true;scroll.heightAnchor.constraint(greaterThanOrEqualToConstant:300).isActive = true
-        fill(root,in:w.contentView!,margin:16);w.makeFirstResponder(sort)
+        fill(root,in:w.contentView!,margin:16);w.makeFirstResponder(language)
     }
     required init?(coder:NSCoder){fatalError("init(coder:) unavailable")}
-    func storeProfile() {guard let id = currentSource else{return};profiles[id.uuidString] = CatchUpProfile(mode:CatchUpProfile.Mode.allCases[mode.indexOfSelectedItem],days:Double(days.stringValue) ?? 0,hourOffset:Double(correction.stringValue) ?? 0,overridePlaylist:override.state == .on)}
-    func loadProfile() {let p = currentSource.flatMap{profiles[$0.uuidString]} ?? CatchUpProfile();mode.selectItem(at:CatchUpProfile.Mode.allCases.firstIndex(of:p.mode) ?? 0);days.stringValue = String(p.days);correction.stringValue = String(p.hourOffset);override.state = p.overridePlaylist ? .on:.off}
-    @objc func sourceChanged(){storeProfile();currentSource = appController?.sources.indices.contains(source.indexOfSelectedItem) == true ? appController?.sources[source.indexOfSelectedItem].id:nil;loadProfile()}
     @objc func chooseFolder(){let p = NSOpenPanel();p.canChooseDirectories = true;p.canChooseFiles = false;p.canCreateDirectories = true;if p.runModal() == .OK,let u = p.url {folder.stringValue = u.path}}
     @objc func chooseFFmpeg(){let p = NSOpenPanel();p.canChooseDirectories = false;p.canChooseFiles = true;if p.runModal() == .OK,let u = p.url {ffmpeg.stringValue = u.path}}
     @objc func checkFFmpeg(){let preferred = ffmpeg.stringValue.isEmpty ? nil:ffmpeg.stringValue
-        Task {guard let u = Recorder.locateFFmpeg(preferred:preferred) else {ffmpegStatus.stringValue = "Nie znaleziono FFmpeg. Wskaż plik programu.";return}
-            do {ffmpegStatus.stringValue = try await Recorder.version(at:u)} catch {ffmpegStatus.stringValue = "Wybrany program nie odpowiada jako FFmpeg."}
+        Task {guard let u = Recorder.locateFFmpeg(preferred:preferred) else {ffmpegStatus.stringValue = l("Nie znaleziono FFmpeg. Wskaż plik programu.", "FFmpeg was not found. Select the executable.");return}
+            do {ffmpegStatus.stringValue = try await Recorder.version(at:u)} catch {ffmpegStatus.stringValue = l("Wybrany program nie odpowiada jako FFmpeg.", "The selected executable did not respond as FFmpeg.")}
             announce(ffmpegStatus.stringValue,window:window)
         }
     }
@@ -109,14 +95,13 @@ enum SettingsSecret {
         func number(_ field: NSTextField) -> Double? { Double(field.stringValue.replacingOccurrences(of: ",", with: ".")) }
         guard let buffer = number(bufferSeconds), buffer.isFinite, buffer > 0, let maximum = number(bufferMaximum), maximum.isFinite,
               maximum >= buffer, maximum <= 300, let cap = number(variantCap), cap.isFinite, cap >= 0, cap <= 500 else {
-            alert("Nieprawidłowe buforowanie", "Podaj dodatni bufor i maksimum do 300 sekund, nie mniejsze od bufora. Limit HLS: 0–500 Mb/s.", window: window)
+            alert(l("Nieprawidłowe buforowanie", "Invalid Buffer Settings"), l("Podaj dodatni bufor i maksimum do 300 sekund, nie mniejsze od bufora. Limit HLS: 0–500 Mb/s.", "Enter a positive buffer and a maximum between the buffer size and 300 seconds. HLS limit: 0–500 Mb/s."), window: window)
             window?.makeFirstResponder(bufferSeconds); return
         }
         let address = epg.stringValue.trimmingCharacters(in:.whitespacesAndNewlines)
-        if !address.isEmpty {guard let u = URL(string:address),["http","https"].contains(u.scheme?.lowercased() ?? ""),u.host != nil else {alert("Nieprawidłowe EPG","Podaj pełny adres HTTP lub HTTPS.",window:window);window?.makeFirstResponder(epg);return}}
-        guard folder.stringValue.hasPrefix("/"),let kbps = Int(bitrate.stringValue),(32...512).contains(kbps), !template.stringValue.isEmpty else {alert("Nieprawidłowe ustawienia","Podaj bezwzględną ścieżkę folderu, bitrate 32–512 kb/s oraz szablon nazwy.",window:window);return}
-        if mode.indexOfSelectedItem > 1 {guard let d = Double(days.stringValue),d.isFinite,d > 0,d <= 36500,let c = Double(correction.stringValue),c.isFinite,(-24...24).contains(c) else {alert("Nieprawidłowy profil","Podaj dodatnią liczbę dni i korektę od −24 do 24 godzin.",window:window);return}}
-        storeProfile();appController.preferences.catchUpProfiles = profiles
+        if !address.isEmpty {guard let u = URL(string:address),["http","https"].contains(u.scheme?.lowercased() ?? ""),u.host != nil else {alert(l("Nieprawidłowe EPG", "Invalid TV Guide URL"),l("Podaj pełny adres HTTP lub HTTPS.", "Enter a full HTTP or HTTPS URL."),window:window);window?.makeFirstResponder(epg);return}}
+        guard folder.stringValue.hasPrefix("/"),let kbps = Int(bitrate.stringValue),(32...512).contains(kbps), !template.stringValue.isEmpty else {alert(l("Nieprawidłowe ustawienia", "Invalid Settings"),l("Podaj bezwzględną ścieżkę folderu, bitrate 32–512 kb/s oraz szablon nazwy.", "Enter an absolute folder path, a bitrate of 32–512 kb/s, and a filename template."),window:window);return}
+        appController.preferences.language = Language.allCases[language.indexOfSelectedItem]
         appController.preferences.buffering = PlaybackBufferSettings(seconds: buffer, maximumSeconds: maximum, variantMaxMbps: cap)
         appController.preferences.externalEPG = address.isEmpty ? nil:address;appController.preferences.recordingsDirectory = folder.stringValue
         appController.preferences.ffmpegPath = ffmpeg.stringValue;appController.preferences.filenameTemplate = template.stringValue

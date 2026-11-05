@@ -3,68 +3,134 @@ import TelePilotCore
 import TelePilotRecording
 
 extension MainController {
-    @objc func addFile() {
-        let p = NSOpenPanel(); p.allowsMultipleSelection = true; p.canChooseDirectories = false
-        p.allowedContentTypes = [.init(filenameExtension: "m3u")!, .init(filenameExtension: "m3u8")!]
-        p.title = "Dodaj playlisty"
-        guard p.runModal() == .OK else { return }; importFiles(p.urls)
+    func runPlaylistTask(cancellable: Bool = true, _ operation: @escaping @MainActor () async -> Void) {
+        guard loadingTask == nil else { return }
+        playlistTaskCancellable = cancellable
+        loadingTask = Task {
+            await operation()
+            loadingTask = nil
+            playlistTaskCancellable = false
+            playlistManager?.updateButtons()
+            runQueuedImports()
+        }
+        playlistManager?.updateButtons()
     }
-    func importFiles(_ urls: [URL]) {
-        loadingTask?.cancel(); loadingTask = Task {
-            var failures = 0; var last: UUID?
+    func queueFileImports(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        pendingFileImports += urls
+        showPlaylistManager()
+        runQueuedImports()
+    }
+    func runQueuedImports() {
+        guard loadingTask == nil, !pendingFileImports.isEmpty, !terminating else { return }
+        let urls = pendingFileImports
+        pendingFileImports.removeAll()
+        runPlaylistTask {
+            self.setPlaylistStatus(l("Importowanie playlist…", "Importing playlists…"))
+            var failures = 0
+            var last: UUID?
             for url in urls {
-                do { let s = try await repository.addFile(url); playlists[s.id] = try await repository.loadCached(s); last = s.id }
-                catch is CancellationError { return }
+                do {
+                    let source = try await self.repository.addFile(url)
+                    last = source.id
+                    try await self.readCommittedImport(source)
+                } catch is CancellationError { break }
                 catch { failures += 1 }
             }
-            sources = await repository.sources(); updateSources(select: last)
-            updateGroups(); applyFilter(); refreshEPG(); window?.makeFirstResponder(table)
-            if failures > 0 { setStatus("Nie dodano \(failures) plików. Poprawnie wczytane playlisty pozostały dostępne.") }
+            await self.finishImport(select: last)
+            if Task.isCancelled { self.reportCancelledPlaylistTask() }
+            else if failures > 0 {
+                self.setPlaylistStatus(l("Nie udało się zaimportować wszystkich plików (błędy: \(failures)).",
+                                         "Some files could not be imported (errors: \(failures))."))
+            } else { self.setPlaylistStatus(l("Zaimportowano playlisty.", "Playlists imported.")) }
         }
     }
-    @objc func addURL() {
-        let name = namedField("Nazwa źródła", value: "Nowa playlista")
-        let address = namedField("Adres playlisty HTTP lub HTTPS")
-        while form("Dodaj playlistę z URL", views: [label("Nazwa źródła"),name,label("Adres playlisty HTTP lub HTTPS"),address], confirm: "Dodaj") {
-            guard let u = URL(string: address.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)), ["http","https"].contains(u.scheme?.lowercased() ?? ""), u.host != nil else {
-                alert("Nieprawidłowy adres", "Wpisz pełny adres HTTP lub HTTPS.", window: window); continue
-            }
-            loadingTask?.cancel(); loadingTask = Task {
-                do {
-                    let s = try await repository.addURL(u, name: name.stringValue.isEmpty ? "Playlista URL" : name.stringValue)
-                    playlists[s.id] = try await repository.loadCached(s); sources = await repository.sources()
-                    updateSources(select: s.id); updateGroups(); applyFilter(); refreshEPG(); window?.makeFirstResponder(table)
-                } catch is CancellationError { setStatus("Anulowano wczytywanie.") }
-                catch { setStatus("Nie udało się dodać źródła. Sprawdź połączenie i adres playlisty.") }
-            }; return
-        }
-    }
-    @objc func refresh() {
-        guard let s = selectedSource else { return }
-        loadingTask?.cancel(); loadingTask = Task {
-            setStatus("Wczytywanie playlisty…")
-            do { playlists[s.id] = try await repository.load(s); updateGroups(); applyFilter(); refreshEPG(); archiveBrowser.reloadChannels() }
-            catch is CancellationError { setStatus("Anulowano wczytywanie.") }
-            catch { setStatus("Nie udało się odświeżyć źródła. Zachowano poprzednią listę.") }
-        }
-    }
-    @objc func cancelLoading() { loadingTask?.cancel(); epgTask?.cancel(); setStatus("Anulowano wczytywanie.") }
-    @objc func removeSource() {
-        guard let s = selectedSource else { return }
-        let a = NSAlert(); a.messageText = "Usunąć źródło „\(s.name)” z TelePilota?"
-        a.informativeText = "Plik wybrany na dysku pozostanie bez zmian. Zostanie usunięta kopia przechowywana w aplikacji."
-        a.addButton(withTitle: "Usuń źródło"); a.addButton(withTitle: "Anuluj")
-        guard a.runModal() == .alertFirstButtonReturn else { return }
-        loadingTask?.cancel(); epgTask?.cancel()
-        Task {
+    func importPlaylist(from url: URL, name: String) {
+        runPlaylistTask {
+            self.setPlaylistStatus(l("Pobieranie playlisty…", "Downloading playlist…"))
+            var id: UUID?
             do {
-                try await repository.remove(s.id)
-                let ids = Set(playlists[s.id]?.channels.map(\.id) ?? [])
-                preferences.favorites.subtract(ids); savePreferences()
-                playlists[s.id] = nil; guides[s.id] = nil; guideSourceURLs[s.id] = nil
-                sources = await repository.sources(); updateSources(); updateGroups(); applyFilter(); archiveBrowser.reloadChannels()
-                window?.makeFirstResponder(sourcePopup)
-            } catch { alert("Nie usunięto źródła", "Sprawdź dostęp do katalogu danych aplikacji.", window: window) }
+                let source = try await self.repository.addURL(url, name: name)
+                id = source.id
+                try await self.readCommittedImport(source)
+                await self.finishImport(select: source.id)
+                self.setPlaylistStatus(l("Dodano playlistę.", "Playlist added."))
+            } catch is CancellationError {
+                await self.finishImport(select: id)
+                self.reportCancelledPlaylistTask()
+            } catch {
+                await self.finishImport(select: id)
+                self.setPlaylistStatus(l("Nie udało się dodać playlisty. Sprawdź połączenie i adres.",
+                                         "Could not add the playlist. Check your connection and the address."))
+            }
+        }
+    }
+    private func readCommittedImport(_ source: PlaylistSource) async throws {
+        // Once persisted, a playlist belongs in the UI even if the batch was canceled.
+        let read = Task { try await repository.loadCached(source) }
+        playlists[source.id] = try await read.value
+    }
+    func finishImport(select id: UUID?) async {
+        sources = await repository.sources()
+        if let id { selectPlaylist(id) }
+        else { libraryDidChange() }
+        refreshEPG()
+    }
+    func selectPlaylist(_ id: UUID) {
+        guard sources.contains(where: { $0.id == id }) else { return }
+        if preferences.selectedPlaylistID != id {
+            preferences.selectedPlaylistID = id
+            savePreferences()
+        }
+        libraryDidChange()
+    }
+    func refreshPlaylist() {
+        guard let source = selectedSource else { return }
+        runPlaylistTask {
+            self.setPlaylistStatus(l("Wczytywanie playlisty…", "Loading playlist…"))
+            do {
+                self.playlists[source.id] = try await self.repository.load(source)
+                self.libraryDidChange()
+                self.refreshEPG()
+                self.setPlaylistStatus(l("Odświeżono playlistę.", "Playlist refreshed."))
+            } catch is CancellationError { self.reportCancelledPlaylistTask() }
+            catch { self.setPlaylistStatus(l("Nie udało się odświeżyć playlisty. Zachowano poprzednią listę.",
+                                             "Could not refresh the playlist. The previous list is still available.")) }
+        }
+    }
+    func reportCancelledPlaylistTask() {
+        setPlaylistStatus(l("Anulowano wczytywanie playlisty.", "Playlist loading canceled."))
+    }
+    func removePlaylist(_ source: PlaylistSource) {
+        runPlaylistTask(cancellable: false) {
+            var removedCleanly = false
+            do {
+                try await self.repository.remove(source.id)
+                removedCleanly = true
+            } catch {
+                self.setPlaylistStatus(l("Nie udało się całkowicie usunąć playlisty. Sprawdź dostęp do katalogu danych.",
+                                         "Could not completely remove the playlist. Check access to the data folder."))
+            }
+            self.sources = await self.repository.sources()
+            guard !self.sources.contains(where: { $0.id == source.id }) else { return }
+            let ids = Set(self.playlists.removeValue(forKey: source.id)?.channels.map(\.id) ?? [])
+            self.preferences.favorites.subtract(ids)
+            self.preferences.catchUpProfiles[source.id.uuidString] = nil
+            self.preferences.selectedPlaylistID = self.selectedSource?.id
+            self.savePreferences()
+            self.guides[source.id] = nil
+            self.guideSourceURLs[source.id] = nil
+            self.libraryDidChange()
+            self.refreshEPG()
+            if removedCleanly { self.setPlaylistStatus(l("Usunięto playlistę.", "Playlist removed.")) }
+        }
+    }
+    func setPlaylistStatus(_ text: String) {
+        playlistStatus = text
+        if let playlistManager, playlistManager.window?.isVisible == true {
+            playlistManager.updateStatus(announceChange: true)
+        } else {
+            setStatus(text)
         }
     }
     func refreshEPG() {
@@ -77,7 +143,7 @@ extension MainController {
             var failures = 0; var loaded = 0; var programmeCount = 0
             var oversized = false
             if sources.contains(where: { external != nil || !(playlists[$0.id]?.epgURLs.isEmpty ?? true) }) {
-                setStatus("Wczytywanie programu TV…")
+                setStatus(l("Wczytywanie programu TV…", "Loading TV Guide…"))
             }
             for source in sources {
                 guard !Task.isCancelled, generation == epgGeneration else { return }
@@ -113,16 +179,16 @@ extension MainController {
             table.reloadData(); archiveBrowser.reloadProgrammes()
             (guideWindow?.contentViewController as? GuideBrowser)?.reloadProgrammes()
             if failures > 0 {
-                let retained = programmeCount > 0 ? " Zachowano ostatni dostępny program." : ""
-                if loaded > 0 { setStatus("Wczytano program TV: \(programmeCount) audycji. Część źródeł EPG jest niedostępna.") }
-                else if oversized { setStatus("Plik EPG przekracza bezpieczny limit rozmiaru." + retained) }
-                else { setStatus("Nie udało się wczytać EPG." + retained + " Możesz ponowić odświeżanie.") }
-            } else if loaded > 0 { setStatus("Wczytano program TV: \(programmeCount) audycji.") }
+                let retained = programmeCount > 0 ? l(" Zachowano ostatni dostępny program.", " The last available guide was kept.") : ""
+                if loaded > 0 { setStatus(l("Wczytano program TV: \(programmeCount) audycji. Część źródeł EPG jest niedostępna.", "TV guide loaded with \(programmeCount) programmes. Some guide sources are unavailable.")) }
+                else if oversized { setStatus(l("Plik EPG przekracza bezpieczny limit rozmiaru.", "The guide file exceeds the size limit.") + retained) }
+                else { setStatus(l("Nie udało się wczytać EPG.", "Could not load the TV guide.") + retained + l(" Możesz ponowić odświeżanie.", " You can try refreshing again.")) }
+            } else if loaded > 0 { setStatus(l("Wczytano program TV: \(programmeCount) audycji.", "TV guide loaded. Programmes: \(programmeCount).")) }
         }
     }
     @objc func showGuide() {
         let g = GuideBrowser(owner: self, archive: false)
-        let w = NSWindow(contentViewController: g); w.title = "Program telewizyjny"; w.setContentSize(NSSize(width: 900,height: 650))
+        let w = NSWindow(contentViewController: g); w.title = l("Program telewizyjny", "TV Guide"); w.setContentSize(NSSize(width: 900,height: 650))
         w.styleMask.insert([.resizable,.closable]); w.center()
         guideWindow = NSWindowController(window: w); guideWindow?.showWindow(nil); g.reloadChannels(select: activeChannel?.id)
         w.makeFirstResponder(g.channelPopup)
@@ -130,20 +196,20 @@ extension MainController {
     @objc func toggleFavorite() {
         guard let c = selectedChannel ?? playing else { return }
         if preferences.favorites.contains(c.id) { preferences.favorites.remove(c.id) } else { preferences.favorites.insert(c.id) }
-        savePreferences(); applyFilter(); setStatus(preferences.favorites.contains(c.id) ? "Dodano do ulubionych: \(c.name)." : "Usunięto z ulubionych: \(c.name).")
+        savePreferences(); applyFilter(); setStatus(preferences.favorites.contains(c.id) ? l("Dodano do ulubionych: \(c.name).", "Added to favorites: \(c.name).") : l("Usunięto z ulubionych: \(c.name).", "Removed from favorites: \(c.name)."))
     }
     @objc func favoritePlaying() {
         guard let c = playing else { toggleFavorite(); return }
-        preferences.favorites.insert(c.id); savePreferences(); updateFavoritesMenu(); setStatus("Dodano do ulubionych: \(c.name).")
+        preferences.favorites.insert(c.id); savePreferences(); updateFavoritesMenu(); setStatus(l("Dodano do ulubionych: \(c.name).", "Added to favorites: \(c.name)."))
     }
     @objc func manageFavorites() {
         let channels = allChannels.filter { preferences.favorites.contains($0.id) }
-        guard !channels.isEmpty else { alert("Ulubione", "Nie masz jeszcze ulubionych kanałów.", window: window); return }
-        let checks = channels.map { c -> NSButton in let b = NSButton(checkboxWithTitle: c.name, target: nil, action: nil); b.setAccessibilityLabel("Usuń z ulubionych: \(c.name)"); return b }
+        guard !channels.isEmpty else { alert(l("Ulubione", "Favorites"), l("Nie masz jeszcze ulubionych kanałów.", "You do not have any favorite channels yet."), window: window); return }
+        let checks = channels.map { c -> NSButton in let b = NSButton(checkboxWithTitle: c.name, target: nil, action: nil); b.setAccessibilityLabel(l("Usuń z ulubionych: \(c.name)", "Remove from favorites: \(c.name)")); return b }
         let body = stack(checks, vertical: true)
         let scroll = NSScrollView(frame: NSRect(x:0,y:0,width:490,height:min(350,channels.count*30))); scroll.documentView = body; scroll.hasVerticalScroller = true
         body.frame = NSRect(x:0,y:0,width:470,height:channels.count*30)
-        if form("Zaznacz kanały do usunięcia z ulubionych", views: [scroll], confirm: "Usuń zaznaczone") {
+        if form(l("Zaznacz kanały do usunięcia z ulubionych", "Select Channels to Remove from Favorites"), views: [scroll], confirm: l("Usuń zaznaczone", "Remove Selected")) {
             for (index,c) in channels.enumerated() where checks[index].state == .on { preferences.favorites.remove(c.id) }
             savePreferences(); applyFilter()
         }
@@ -153,6 +219,6 @@ extension MainController {
     func playArchive(_ channel: Channel, programme: Programme, offset: TimeInterval = 0, preservePause: Bool = false) {
         do { let url = try CatchUp.url(channel: channel, programme: programme, profile: profile(for: channel), offset: offset)
             play(channel, url: url, programme: programme, offset: offset, preservePause: preservePause)
-        } catch { alert("Archiwum niedostępne", "Audycja jest poza okresem archiwum lub dostawca nie udostępnia poprawnej konfiguracji.", window: window) }
+        } catch { alert(l("Archiwum niedostępne", "Catch-up Unavailable"), l("Audycja jest poza okresem archiwum lub dostawca nie udostępnia poprawnej konfiguracji.", "The programme falls outside the catch-up period or the provider has not supplied a valid configuration."), window: window) }
     }
 }

@@ -1,5 +1,9 @@
 # Historia zmian — TelePilot dla Apple Silicon
 
+## 2.0.0
+
+[Release notes in English and Polish / opis zmian po angielsku i po polsku](../CHANGELOG.md#200).
+
 ## 1.1.3 — 2026-11-02
 
 - Przeniesiono buforowanie sieciowe Accessible IPTV Client: start TV z cache 0,5 s, domyślny bufor odzyskiwania 25 s, maksimum 30 s, wzrost o 1 s przy zacięciach i osobne opcje VLC dla TV oraz archiwum.

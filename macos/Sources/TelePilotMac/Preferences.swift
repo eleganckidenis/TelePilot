@@ -17,6 +17,14 @@ struct Preferences: Codable {
     var buffering: PlaybackBufferSettings? = nil
     // External addresses remain in memory until Keychain-backed settings are available.
     var externalEPG: String? = nil
+    var language: Language? = nil
+    var selectedPlaylistID: UUID? = nil
+
+    static func isFirstRun(in directory: URL) -> Bool {
+        let files = FileManager.default
+        return !files.fileExists(atPath: directory.appendingPathComponent("preferences.json").path)
+            && !files.fileExists(atPath: directory.appendingPathComponent("Playlists/sources.json").path)
+    }
     static func load(from url: URL) throws -> Self {
         guard FileManager.default.fileExists(atPath: url.path) else { return Self() }
         var p = try JSONDecoder().decode(Self.self, from: Data(contentsOf: url))

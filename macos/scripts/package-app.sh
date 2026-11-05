@@ -157,6 +157,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>pl.telepilot.native</string>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array><string>en</string><string>pl</string></array>
 <key>CFBundleExecutable</key><string>TelePilot</string>
 <key>CFBundleName</key><string>TelePilot</string>
 <key>CFBundleDisplayName</key><string>TelePilot</string>

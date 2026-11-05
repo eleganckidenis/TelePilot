@@ -45,17 +45,17 @@ import TelePilotCore
         switch action {
         case .none: break
         case .finished:
-            recovery = nil; setStatus("Transmisja została zakończona.")
+            recovery = nil; setStatus(l("Transmisja została zakończona.", "The stream has ended."))
         case .lost:
             recoveryTask?.cancel(); recoveryTask = nil; playbackReady = false
             await player.stop(generation: generation)
             guard generation == playbackGeneration else { return }
-            setStatus("Nie udało się odzyskać transmisji. Użyj Ponów lub wybierz inny kanał.")
+            setStatus(l("Nie udało się odzyskać transmisji. Użyj Ponów lub wybierz inny kanał.", "Could not recover the stream. Reconnect or choose another channel."))
         case let .retry(delay, quickStart):
             guard let channel = playing, let original = playingURL else { return }
             let attempts = recovery?.attempts ?? 0
             let target = recovery?.target ?? 25
-            setStatus(quickStart ? "Odświeżanie transmisji: \(channel.name)." : "Ponowne łączenie: \(channel.name), próba \(attempts) z 6. Bufor \(Int(target)) s.")
+            setStatus(quickStart ? l("Odświeżanie transmisji: \(channel.name).", "Refreshing the stream: \(channel.name).") : l("Ponowne łączenie: \(channel.name), próba \(attempts) z 6. Bufor \(Int(target)) s.", "Reconnecting to \(channel.name), attempt \(attempts) of 6. Buffer: \(Int(target)) s."))
             recoveryTask?.cancel()
             recoveryTask = Task { [weak self] in
                 do { try await Task.sleep(for: .seconds(delay)) } catch { return }

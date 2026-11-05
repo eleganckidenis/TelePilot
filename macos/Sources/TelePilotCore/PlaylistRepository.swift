@@ -54,7 +54,7 @@ public actor PlaylistRepository {
         let keyData = try RepositoryKeychain.key(account: stableID(directory.standardizedFileURL.path))
         try self.init(directory: directory, keyData: keyData)
     }
-    init(directory: URL, keyData: Data) throws {
+    package init(directory: URL, keyData: Data) throws {
         guard keyData.count == 32 else { throw TelePilotError.persistenceFailed }
         self.directory = directory; self.key = SymmetricKey(data: keyData)
         do {

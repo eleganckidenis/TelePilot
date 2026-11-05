@@ -40,9 +40,9 @@ import AppKit
     a.runModal()
     if let previous { window?.makeFirstResponder(previous) }
 }
-@MainActor func form(_ title: String, views: [NSView], confirm: String = "Zapisz") -> Bool {
+@MainActor func form(_ title: String, views: [NSView], confirm: String = l("Zapisz", "Save")) -> Bool {
     let a = NSAlert(); a.messageText = title
-    a.addButton(withTitle: confirm); a.addButton(withTitle: "Anuluj")
+    a.addButton(withTitle: confirm); a.addButton(withTitle: l("Anuluj", "Cancel"))
     a.buttons[0].keyEquivalent = "\r"; a.buttons[1].keyEquivalent = "\u{1b}"
     let body = stack(views, vertical: true); body.frame = NSRect(x: 0, y: 0, width: 490, height: CGFloat(views.count) * 38 + 8)
     body.widthAnchor.constraint(equalToConstant: 490).isActive = true

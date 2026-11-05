@@ -37,8 +37,8 @@ public enum CatchUp {
     private static let keys = ["catchup", "catchup-type", "catchup-source", "catchup-days", "catchup-time", "catchup-correction", "timeshift", "tvg-rec", "catchup-enable"]
     private static let modes: Set<String> = ["default", "append", "shift", "timeshift", "nimble", "nimble-dvr", "fs", "flussonic", "flussonic-hls", "flussonic-ts", "flussonic-index", "flussonic-ts-forced", "xc", "xtream-codes"]
     private struct Configuration { var availability: CatchUpAvailability; var template = ""; var correction = 0.0 }
-    public static func availability(channel: Channel, profile: CatchUpProfile? = nil) -> CatchUpAvailability {
-        configuration(channel: channel, profile: profile).availability
+    public static func availability(channel: Channel, profile: CatchUpProfile? = nil, english: Bool = false) -> CatchUpAvailability {
+        configuration(channel: channel, profile: profile, english: english).availability
     }
     public static func url(channel: Channel, programme: Programme, profile: CatchUpProfile? = nil, now: Date = .now, offset: TimeInterval = 0) throws -> URL {
         let config = configuration(channel: channel, profile: profile)
@@ -95,23 +95,24 @@ public enum CatchUp {
         if p.overridePlaylist || attr(a,"catchup-correction") == nil { a["catchup-correction"] = String(p.hourOffset) }
         return a
     }
-    private static func configuration(channel: Channel, profile: CatchUpProfile?) -> Configuration {
+    private static func configuration(channel: Channel, profile: CatchUpProfile?, english: Bool = false) -> Configuration {
         let a = attributes(channel, profile)
+        func diagnostic(_ polish: String, _ englishText: String) -> String { english ? englishText : polish }
         func failure(_ reason: String) -> Configuration { Configuration(availability: .init(supported: false, days: retention(a), reason: reason)) }
-        if disabled(a) { return failure("Archiwum wyłączone.") }
-        if !keys.contains(where: { a[$0] != nil }) { return failure("Brak ustawień archiwum.") }
-        guard let days = retention(a) else { return failure(declaredRetention(a) ? "Nieprawidłowy okres archiwum." : "Brak okresu archiwum.") }
+        if disabled(a) { return failure(diagnostic("Archiwum wyłączone.", "Catch-up is disabled.")) }
+        if !keys.contains(where: { a[$0] != nil }) { return failure(diagnostic("Brak ustawień archiwum.", "No catch-up configuration.")) }
+        guard let days = retention(a) else { return failure(declaredRetention(a) ? diagnostic("Nieprawidłowy okres archiwum.", "Invalid catch-up period.") : diagnostic("Brak okresu archiwum.", "No catch-up period specified.")) }
         var correction = 0.0
         if let text = attr(a,"catchup-correction") {
-            guard let d = Double(text), d.isFinite, (-24...24).contains(d) else { return failure("Nieprawidłowa korekta czasu archiwum.") }; correction = d
+            guard let d = Double(text), d.isFinite, (-24...24).contains(d) else { return failure(diagnostic("Nieprawidłowa korekta czasu archiwum.", "Invalid catch-up time offset.")) }; correction = d
         }
         let mode = (attr(a,"catchup") ?? attr(a,"catchup-type"))?.lowercased() ?? (attr(a,"catchup-source") == nil ? "shift" : "default")
-        guard modes.contains(mode) else { return failure("Nieobsługiwany tryb archiwum.") }
+        guard modes.contains(mode) else { return failure(diagnostic("Nieobsługiwany tryb archiwum.", "Unsupported catch-up mode.")) }
         let live = channel.streamURL.absoluteString
         var template: String?
         if let source = attr(a,"catchup-source"), mode != "append" { template = source }
         else {
-            guard httpURL(live) else { return failure("Nieobsługiwany adres transmisji.") }
+            guard httpURL(live) else { return failure(diagnostic("Nieobsługiwany adres transmisji.", "Unsupported stream URL.")) }
             switch mode {
             case "default": template = nil
             case "append":
@@ -125,8 +126,8 @@ public enum CatchUp {
             }
         }
         let sample = Date(timeIntervalSince1970: 86400)
-        guard let template, let expanded = expand(template, start: sample, end: sample.addingTimeInterval(3600), now: sample.addingTimeInterval(86400)), httpURL(expanded) else { return failure("Nieprawidłowy szablon archiwum.") }
-        return Configuration(availability: .init(supported: true, days: days, reason: "Archiwum dostępne."), template: template, correction: correction)
+        guard let template, let expanded = expand(template, start: sample, end: sample.addingTimeInterval(3600), now: sample.addingTimeInterval(86400)), httpURL(expanded) else { return failure(diagnostic("Nieprawidłowy szablon archiwum.", "Invalid catch-up URL template.")) }
+        return Configuration(availability: .init(supported: true, days: days, reason: diagnostic("Archiwum dostępne.", "Catch-up is available.")), template: template, correction: correction)
     }
     private static func httpURL(_ s: String) -> Bool {
         !s.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) || "{}|".unicodeScalars.contains($0) } &&

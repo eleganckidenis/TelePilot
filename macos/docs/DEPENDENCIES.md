@@ -10,7 +10,7 @@ Run from the native project directory after the current full test run succeeds:
 scripts/package-app.sh --vlc-dmg /path/to/vlc-3.0.23-arm64.dmg
 ```
 
-The default release is read from `VERSION` (currently `1.2.0`); output goes to `artifacts/1.2.0/arm64/`. It contains the installation DMG with an Applications link, a resource-preserving app ZIP, and `SHA256SUMS`. A verified loose `TelePilot.app` is also copied there when the volume permits it. If File Provider immediately restores prohibited Finder metadata, the invalid loose copy is removed and a verified local app is retained under a printed `/tmp/telepilot-native-app-VERSION-ARCH.XXXXXX/TelePilot.app` path; the DMG and ZIP remain the distributable artifacts. Existing output requires explicit `--force`. The selected Apple Silicon release requires its matching image and native host. Historical x86_64 build options and source pins are not tested or delivered.
+The default release is read from `VERSION`; output goes to `artifacts/<version>/arm64/`. It contains the installation DMG with an Applications link, a resource-preserving app ZIP, and `SHA256SUMS`. A verified loose `TelePilot.app` is also copied there when the volume permits it. If File Provider immediately restores prohibited Finder metadata, the invalid loose copy is removed and a verified local app is retained under a printed `/tmp/telepilot-native-app-VERSION-ARCH.XXXXXX/TelePilot.app` path; the DMG and ZIP remain the distributable artifacts. Existing output requires explicit `--force`. The selected Apple Silicon release requires its matching image and native host. Historical x86_64 build options and source pins are not tested or delivered.
 
 The script runs the tests, builds the Swift release executable with an app-relative LibVLC runtime search path, generates the app icon from the original TelePilot PNG when no native ICNS exists, and builds/signs in a temporary local directory. Swift module/build caches are under `/tmp`. `--skip-tests` is available after a successful full test run of the same source. Bundle identifier: `pl.telepilot.native`. The plist uses the numeric release version for Apple's bundle version fields and retains the full version in `TelePilotDistributionVersion` and artifact names. `NSAllowsArbitraryLoads` supports user-supplied HTTP IPTV endpoints; it does not grant access to protected streams.
 
@@ -46,12 +46,12 @@ The binary is copied to `Contents/Resources/tools/ffmpeg`. The JSON manifest mus
 
 ## Project license and retained source documents
 
-The 1.2.0 public package also supplies `--vlc-license-dir` with the complete retained
+Public packages also supply `--vlc-license-dir` with the complete retained
 VLC3.0.23 contrib notices archive from the main repository (including optional
 source components). The corresponding VLC/contrib source bundle is available in
 [Release v1.0.0](https://github.com/eleganckidenis/TelePilot/releases/tag/v1.0.0).
 The native FFmpeg source archives, manifest, licenses and build recipe accompany
-Release1.2.0 as `TelePilot-1.2.0-macos-third-party-sources.zip`. This is separate from
+the GitHub Release as `TelePilot-<version>-macos-third-party-sources.zip`. This is separate from
 the older Windows FFmpeg download, which is supplied directly by its publisher.
 
 `Resources/licenses/TelePilot-LICENSE.txt` (GPL-3.0) and `TelePilot-NOTICE.txt` were fetched from [eleganckidenis/TelePilot](https://github.com/eleganckidenis/TelePilot/tree/b727566a4910c1e735340bd150f50a1569ec6b51). The retained LGPL text comes from the same commit. `VLC-COPYING.txt`, `VLC-COPYING.LIB.txt`, `VLC-AUTHORS.txt` and `VLC-THANKS.txt` come from VideoLAN's `3.0.23` source tag. These files and this document are copied into every native package.

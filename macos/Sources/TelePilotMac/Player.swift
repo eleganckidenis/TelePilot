@@ -61,7 +61,7 @@ actor Player {
         return (0..<tvlc_track_count(handle.pointer, s)).map { index in
             let id = tvlc_track_id(handle.pointer, s, index)
             let p = tvlc_track_name(handle.pointer, s, index)
-            let name = p.map { String(cString: $0) } ?? "Ścieżka \(id)"
+            let name = p.map { String(cString: $0) } ?? l("Ścieżka \(id)", "Track \(id)")
             if let p { tvlc_free(p) }
             return MediaTrack(id: id, name: name, selected: id == current)
         }
@@ -74,8 +74,8 @@ actor Player {
         case unavailable, playback
         var errorDescription: String? {
             switch self {
-            case .unavailable: "Nie można uruchomić dołączonego silnika LibVLC. Sprawdź kompletność pakietu aplikacji."
-            case .playback: "Nie można rozpocząć odtwarzania. Spróbuj ponownie lub wybierz inny kanał."
+            case .unavailable: l("Nie można uruchomić dołączonego silnika LibVLC. Sprawdź kompletność pakietu aplikacji.", "Could not start LibVLC. Check that the app bundle is complete.")
+            case .playback: l("Nie można rozpocząć odtwarzania. Spróbuj ponownie lub wybierz inny kanał.", "Could not start playback. Try again or choose another channel.")
             }
         }
     }

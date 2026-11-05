@@ -22,6 +22,10 @@ import TelePilotRecording
     var playbackGeneration = 0
     var playbackTask: Task<Void, Never>?
     var loadingTask: Task<Void, Never>?
+    var playlistTaskCancellable = false
+    var pendingFileImports: [URL] = []
+    var playlistStatus = ""
+    var playlistManager: PlaylistManager?
     var epgTask: Task<Void, Never>?
     var filterTask: Task<Void, Never>?
     var pollTask: Task<Void, Never>?
@@ -45,31 +49,29 @@ import TelePilotRecording
     var settingsWindow: SettingsWindow?
     let table = ChannelTable()
     let search = NSSearchField()
-    let sourcePopup = NSPopUpButton()
     let groupPopup = NSPopUpButton()
-    let tabs = NSSegmentedControl(labels: ["TV na żywo", "Ulubione", "Archiwum"], trackingMode: .selectOne, target: nil, action: nil)
-    let status = label("Dodaj playlistę z pliku lub adresu URL.")
+    let tabs = NSSegmentedControl(labels: [l("TV na żywo", "Live TV"), l("Ulubione", "Favorites"), l("Archiwum", "Catch-up")], trackingMode: .selectOne, target: nil, action: nil)
+    let status = label(l("Otwórz Menedżer playlist z menu Plik, aby dodać lub wybrać playlistę.", "Open Playlist Manager from the File menu to add or select a playlist."))
     let nowPlaying = label("TelePilot")
     let programmeLabel = label("")
     let recordingLabel = label("")
     let video = VideoSurface(frame: .zero)
     let volume = NSSlider(value: 80, minValue: 0, maxValue: 100, target: nil, action: nil)
     var pauseButton: NSButton!
-    var sourceRow: NSStackView!
     var filterRow: NSStackView!
     var libraryPanel: NSStackView!
     var playerPanel: NSStackView!
     var contentRow: NSStackView!
     var archiveBrowser: GuideBrowser!
     var playerControls: [NSView] = []
-    let favoritesMenu = NSMenu(title: "Ulubione")
+    let favoritesMenu = NSMenu(title: l("Ulubione", "Favorites"))
     var keyMonitor: Any?
     var terminating = false
 
-    init(repository: PlaylistRepository, scheduler: RecordingScheduler, player: Player, directory: URL) throws {
+    init(repository: PlaylistRepository, scheduler: RecordingScheduler, player: Player,
+         directory: URL, preferences: Preferences, firstRun: Bool) {
         self.repository = repository; self.scheduler = scheduler; self.player = player; dataDirectory = directory
-        preferences = try Preferences.load(from: directory.appendingPathComponent("preferences.json"))
-        preferences.externalEPG = try SettingsSecret.get()
+        self.preferences = preferences
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760), styleMask: [.titled,.closable,.miniaturizable,.resizable], backing: .buffered, defer: false)
         w.title = "TelePilot — macOS"; w.minSize = NSSize(width: 840, height: 640)
         w.setFrameAutosaveName("NativeMainWindow"); w.isReleasedWhenClosed = false
@@ -81,7 +83,7 @@ import TelePilotRecording
             MainActor.assumeIsolated { handled = self?.handleKey(event) == nil }
             return handled ? nil : event
         }
-        loadingTask = Task { await startup() }
+        runPlaylistTask { await self.startup(firstRun: firstRun) }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
@@ -91,53 +93,50 @@ import TelePilotRecording
         }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
-    var selectedSource: PlaylistSource? { sources.indices.contains(sourcePopup.indexOfSelectedItem) ? sources[sourcePopup.indexOfSelectedItem] : nil }
+    var selectedSource: PlaylistSource? { sources.first { $0.id == preferences.selectedPlaylistID } ?? sources.first }
     var selectedChannel: Channel? { rows.indices.contains(table.selectedRow) ? rows[table.selectedRow] : nil }
     var activeChannel: Channel? { playing ?? selectedChannel }
     func guide(for channel: Channel) -> TVGuide { guides[channel.sourceID] ?? TVGuide(programmes: []) }
     var allChannels: [Channel] { sources.flatMap { playlists[$0.id]?.channels ?? [] } }
     func buildUI() {
         tabs.target = self; tabs.action = #selector(changeSection); tabs.selectedSegment = 0
-        tabs.setAccessibilityLabel("Widok biblioteki")
-        sourcePopup.target = self; sourcePopup.action = #selector(sourceChanged); sourcePopup.setAccessibilityLabel("Źródło playlisty")
-        sourcePopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
-        sourceRow = stack([label("Źródło:"), sourcePopup, button("Dodaj plik…", self, #selector(addFile)), button("Dodaj URL…", self, #selector(addURL)), button("Odśwież", self, #selector(refresh)), button("Usuń źródło…", self, #selector(removeSource))])
-        search.placeholderString = "Szukaj kanałów"; search.setAccessibilityLabel("Szukaj kanałów"); search.delegate = self
+        tabs.setAccessibilityLabel(l("Widok biblioteki", "Library view"))
+        search.placeholderString = l("Szukaj kanałów", "Search Channels"); search.setAccessibilityLabel(l("Szukaj kanałów", "Search Channels")); search.delegate = self
         search.widthAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
-        groupPopup.addItem(withTitle: "Wszystkie grupy"); groupPopup.target = self; groupPopup.action = #selector(filterChanged); groupPopup.setAccessibilityLabel("Grupa")
+        groupPopup.addItem(withTitle: l("Wszystkie grupy", "All Groups")); groupPopup.target = self; groupPopup.action = #selector(filterChanged); groupPopup.setAccessibilityLabel(l("Grupa", "Group"))
         filterRow = stack([search, groupPopup])
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("channel")); column.title = "Kanał, aktualna audycja, stan i grupa"; column.resizingMask = .autoresizingMask
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("channel")); column.title = l("Kanał, aktualna audycja, stan i grupa", "Channel, current programme, status, and group"); column.resizingMask = .autoresizingMask
         table.addTableColumn(column); table.headerView = nil; table.rowHeight = 32; table.usesAlternatingRowBackgroundColors = true
         table.dataSource = self; table.delegate = self; table.allowsEmptySelection = false
-        table.setAccessibilityLabel("Kanały"); table.setAccessibilityIdentifier("channelTable")
+        table.setAccessibilityLabel(l("Kanały", "Channels")); table.setAccessibilityIdentifier("channelTable")
         table.activate = { [weak self] in self?.playSelected() }; table.jump = { [weak self] s in self?.jump(s) }
         table.target = self; table.doubleAction = #selector(playSelected)
         let menu = NSMenu()
-        for (name, action) in [("Odtwórz", #selector(playSelected)), ("Dodaj / usuń ulubiony", #selector(toggleFavorite)), ("Program telewizyjny…", #selector(showGuide)), ("Zaplanuj nagranie…", #selector(scheduleSelected))] { menu.addItem(menuItem(name, action)) }
+        for (name, action) in [(l("Odtwórz", "Play"), #selector(playSelected)), (l("Dodaj / usuń ulubiony", "Add or Remove Favorite"), #selector(toggleFavorite)), (l("Program telewizyjny…", "TV Guide…"), #selector(showGuide)), (l("Zaplanuj nagranie…", "Schedule Recording…"), #selector(scheduleSelected))] { menu.addItem(menuItem(name, action)) }
         table.menu = menu
         let scroll = NSScrollView(); scroll.documentView = table; scroll.hasVerticalScroller = true; scroll.borderType = .bezelBorder
-        let actions = stack([stack([button("Odtwórz", self, #selector(playSelected)), button("Ulubiony: dodaj / usuń", self, #selector(toggleFavorite))]), stack([button("Program TV…", self, #selector(showGuide)), button("Zarządzaj ulubionymi…", self, #selector(manageFavorites))])], vertical: true)
+        let actions = stack([stack([button(l("Odtwórz", "Play"), self, #selector(playSelected)), button(l("Ulubiony: dodaj / usuń", "Add or Remove Favorite"), self, #selector(toggleFavorite))]), stack([button(l("Program TV…", "TV Guide…"), self, #selector(showGuide)), button(l("Zarządzaj ulubionymi…", "Manage Favorites…"), self, #selector(manageFavorites))])], vertical: true)
         libraryPanel = stack([filterRow, scroll, actions], vertical: true)
         scroll.widthAnchor.constraint(equalTo: libraryPanel.widthAnchor).isActive = true
         scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 200).isActive = true
         archiveBrowser = GuideBrowser(owner: self, archive: true)
         archiveBrowser.view.isHidden = true
-        pauseButton = button("Pauza / Wznów", self, #selector(togglePause))
-        let stop = button("Zatrzymaj", self, #selector(stopPlayback))
-        let mute = button("Wycisz / Włącz dźwięk", self, #selector(toggleMute))
-        let audio = button("Ścieżka dźwiękowa…", self, #selector(audioTracks))
-        let subtitles = button("Napisy…", self, #selector(subtitleTracks))
-        let record = NSPopUpButton(frame: .zero, pullsDown: true); record.setAccessibilityLabel("Nagrywanie")
-        record.addItem(withTitle: "Nagrywanie…")
+        pauseButton = button(l("Pauza / Wznów", "Pause / Resume"), self, #selector(togglePause))
+        let stop = button(l("Zatrzymaj", "Stop"), self, #selector(stopPlayback))
+        let mute = button(l("Wycisz / Włącz dźwięk", "Mute / Unmute"), self, #selector(toggleMute))
+        let audio = button(l("Ścieżka dźwiękowa…", "Audio Track…"), self, #selector(audioTracks))
+        let subtitles = button(l("Napisy…", "Subtitles…"), self, #selector(subtitleTracks))
+        let record = NSPopUpButton(frame: .zero, pullsDown: true); record.setAccessibilityLabel(l("Nagrywanie", "Recording"))
+        record.addItem(withTitle: l("Nagrywanie…", "Recording…"))
         for (name, action) in recordingActions {
             let item = NSMenuItem(title: name, action: action, keyEquivalent: ""); item.target = self; record.menu?.addItem(item)
         }
-        let full = button("Pełny ekran", self, #selector(fullscreen))
-        let back = button("Przejdź do listy kanałów", self, #selector(toggleList))
+        let full = button(l("Pełny ekran", "Full Screen"), self, #selector(fullscreen))
+        let back = button(l("Przejdź do listy kanałów", "Go to Channel List"), self, #selector(toggleList))
         let controls = stack([stack([pauseButton, stop, mute]), stack([audio, subtitles, record])], vertical: true)
-        let extra = stack([stack([full, back]), stack([label("Głośność:"), volume])], vertical: true)
+        let extra = stack([stack([full, back]), stack([label(l("Głośność:", "Volume:")), volume])], vertical: true)
         playerControls = [pauseButton, stop, mute, audio, subtitles, record, full, back, volume]
-        volume.target = self; volume.action = #selector(volumeChanged); volume.setAccessibilityLabel("Głośność w procentach"); volume.doubleValue = Double(preferences.volume)
+        volume.target = self; volume.action = #selector(volumeChanged); volume.setAccessibilityLabel(l("Głośność w procentach", "Volume in percent")); volume.doubleValue = Double(preferences.volume)
         volume.widthAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
         nowPlaying.font = .systemFont(ofSize: 20, weight: .semibold)
         programmeLabel.lineBreakMode = .byTruncatingTail
@@ -148,9 +147,9 @@ import TelePilotRecording
         playerPanel.isHidden = true
         contentRow = stack([libraryPanel, archiveBrowser.view, playerPanel]); contentRow.alignment = .top
         contentRow.distribution = .fillEqually
-        let root = stack([tabs, sourceRow, contentRow, status], vertical: true)
+        let root = stack([tabs, contentRow, status], vertical: true)
         root.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
-        for v in [sourceRow!, contentRow!, status] { v.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -32).isActive = true }
+        for v in [contentRow!, status] { v.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -32).isActive = true }
         libraryPanel.heightAnchor.constraint(equalTo: contentRow.heightAnchor).isActive = true
         archiveBrowser.view.heightAnchor.constraint(equalTo: contentRow.heightAnchor).isActive = true
         playerPanel.heightAnchor.constraint(equalTo: contentRow.heightAnchor).isActive = true
@@ -158,43 +157,49 @@ import TelePilotRecording
         fill(root, in: window!.contentView!)
         window?.recalculateKeyViewLoop()
     }
-    func startup() async {
-        sources = await repository.sources(); updateSources()
+    func startup(firstRun: Bool) async {
+        sources = await repository.sources()
+        if firstRun { showPlaylistManager() }
+        libraryDidChange()
+        if let window { UpdateStartup.start(window: window) }
         if !sources.isEmpty { await loadSources() }
     }
-    func updateSources(select id: UUID? = nil) {
-        let selected = id ?? selectedSource?.id
-        sourcePopup.removeAllItems(); sourcePopup.addItems(withTitles: sources.map(\.name))
-        if let selected, let i = sources.firstIndex(where: { $0.id == selected }) { sourcePopup.selectItem(at: i) }
-    }
     func loadSources() async {
-        for s in sources {
+        for source in sources {
             do {
-                playlists[s.id] = try await repository.loadCached(s)
-                if playlists.count == 1 { updateGroups(); applyFilter() }
-                playlists[s.id] = try await repository.load(s)
-            }
-            catch is CancellationError { return }
-            catch { setStatus("Nie udało się wczytać jednego ze źródeł. Możesz spróbować ponownie.") }
+                playlists[source.id] = try await repository.loadCached(source)
+                if source.id == selectedSource?.id { libraryDidChange() }
+            } catch is CancellationError { return }
+            catch { setPlaylistStatus(l("Nie udało się wczytać zapisanej kopii playlisty.", "Could not load the saved copy of a playlist.")) }
         }
-        updateGroups(); applyFilter(); refreshEPG()
+        for source in sources {
+            do { playlists[source.id] = try await repository.load(source) }
+            catch is CancellationError { break }
+            catch { setPlaylistStatus(l("Nie udało się odświeżyć jednej z playlist. Zachowano dostępną kopię.", "Could not refresh a playlist. Its saved copy is still available.")) }
+        }
+        libraryDidChange()
+        refreshEPG()
+    }
+    func libraryDidChange() {
+        updateGroups(); applyFilter(); archiveBrowser.reloadChannels()
+        (guideWindow?.contentViewController as? GuideBrowser)?.reloadChannels()
+        playlistManager?.reloadSources()
     }
     func savePreferences() {
         do { try preferences.save(to: dataDirectory.appendingPathComponent("preferences.json")) }
-        catch { alert("Nie zapisano ustawień", "Sprawdź dostęp do katalogu danych aplikacji.", window: window) }
+        catch { alert(l("Nie zapisano ustawień", "Could Not Save Settings"), l("Sprawdź dostęp do katalogu danych aplikacji.", "Check access to the app’s data folder."), window: window) }
     }
     func setStatus(_ text: String, speak: Bool = true) {
         guard status.stringValue != text else { return }
         status.stringValue = text
-        if speak { announce(text, window: window) }
+        if speak && playlistManager?.window?.isKeyWindow != true { announce(text, window: window) }
     }
     func updateGroups() {
         let old = groupPopup.titleOfSelectedItem
-        groupPopup.removeAllItems(); groupPopup.addItem(withTitle: "Wszystkie grupy")
+        groupPopup.removeAllItems(); groupPopup.addItem(withTitle: l("Wszystkie grupy", "All Groups"))
         groupPopup.addItems(withTitles: Set((playlists[selectedSource?.id ?? UUID()]?.channels ?? []).map(\.group).filter { !$0.isEmpty }).sorted())
         if let old { groupPopup.selectItem(withTitle: old) }
     }
-    @objc func sourceChanged() { updateGroups(); applyFilter(); archiveBrowser.reloadChannels(); if let s = selectedSource, playlists[s.id] == nil { refresh() } }
     @objc func filterChanged() { applyFilter() }
     func controlTextDidChange(_ obj: Notification) {
         filterTask?.cancel(); filterTask = Task { [weak self] in
@@ -213,13 +218,16 @@ import TelePilotRecording
         if preferences.sortOrder == 2 { rows.sort { ($0.group + $0.name).localizedStandardCompare($1.group + $1.name) == .orderedAscending } }
         table.reloadData()
         if !rows.isEmpty { table.selectRowIndexes(IndexSet(integer: rows.firstIndex { $0.id == id } ?? 0), byExtendingSelection: false) }
-        setStatus("Kanały: \(rows.count).")
+        if sources.isEmpty && section == 0 {
+            setStatus(l("Otwórz Menedżer playlist z menu Plik, aby dodać playlistę.",
+                        "Open Playlist Manager from the File menu to add a playlist."))
+        } else { setStatus(l("Kanały: \(rows.count).", "Channels: \(rows.count).")) }
         updateFavoritesMenu()
     }
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard rows.indices.contains(row) else { return nil }; let c = rows[row]
-        let text = "\(c.name) — \(guide(for: c).current(for: c)?.title ?? "brak danych EPG")\(playing?.id == c.id ? " — odtwarzanie" : "") — \(c.group)"
+        let text = "\(c.name) — \(guide(for: c).current(for: c)?.title ?? l("brak danych EPG", "no guide data"))\(playing?.id == c.id ? l(" — odtwarzanie", " — playing") : "") — \(c.group)"
         let cell = NSTextField(labelWithString: text); cell.lineBreakMode = .byTruncatingTail
         cell.setAccessibilityLabel(text); return cell
     }
@@ -231,14 +239,13 @@ import TelePilotRecording
     @objc func changeSection() { selectSection(tabs.selectedSegment) }
     func selectSection(_ value: Int) {
         section = max(0, min(2, value)); tabs.selectedSegment = section
-        search.setAccessibilityLabel(section == 1 ? "Szukaj ulubionych" : "Szukaj kanałów")
-        search.placeholderString = section == 1 ? "Szukaj ulubionych" : "Szukaj kanałów"
+        search.setAccessibilityLabel(section == 1 ? l("Szukaj ulubionych", "Search Favorites") : l("Szukaj kanałów", "Search Channels"))
+        search.placeholderString = section == 1 ? l("Szukaj ulubionych", "Search Favorites") : l("Szukaj kanałów", "Search Channels")
         listShown = true; updateVisibility(); applyFilter(); archiveBrowser.reloadChannels()
         window?.makeFirstResponder(section == 2 ? archiveBrowser.channelPopup : search)
     }
     func updateVisibility() {
         tabs.isHidden = playing != nil && !listShown
-        sourceRow.isHidden = section != 0 || (playing != nil && !listShown)
         libraryPanel.isHidden = section == 2 || !listShown
         archiveBrowser.view.isHidden = section != 2 || !listShown
         playerPanel.isHidden = playing == nil
@@ -262,10 +269,10 @@ import TelePilotRecording
         listShown = false; paused = false; pendingPause = preservePause; lastState = -1
         recovery = PlaybackRecovery(settings: preferences.buffering ?? .init(), live: programme == nil,
                                     url: url ?? channel.streamURL, dispatcharr: channel.attributes["_dispatcharr"] == "1", now: ProcessInfo.processInfo.systemUptime)
-        nowPlaying.stringValue = channel.name + (programme == nil ? "" : " — archiwum")
-        programmeLabel.stringValue = programme?.title ?? guide(for: channel).current(for: channel)?.title ?? "Brak danych EPG"
+        nowPlaying.stringValue = channel.name + (programme == nil ? "" : l(" — archiwum", " — catch-up"))
+        programmeLabel.stringValue = programme?.title ?? guide(for: channel).current(for: channel)?.title ?? l("Brak danych EPG", "No guide data")
         updateVisibility(); window?.makeFirstResponder(pauseButton)
-        setStatus("Łączenie: \(channel.name).")
+        setStatus(l("Łączenie: \(channel.name).", "Connecting: \(channel.name)."))
         startPlaybackAttempt(url ?? channel.streamURL, generation: generation, quickStart: programme == nil)
     }
     @objc func stopPlayback() {
@@ -276,20 +283,20 @@ import TelePilotRecording
             guard generation == playbackGeneration else { return }
             playing = nil; archiveProgramme = nil; paused = false; pendingPause = false; listShown = true
             updateVisibility(); table.reloadData(); window?.makeFirstResponder(section == 2 ? archiveBrowser.programmesTable : table)
-            setStatus("Zatrzymano odtwarzanie.")
+            setStatus(l("Zatrzymano odtwarzanie.", "Playback stopped."))
         }
     }
     @objc func togglePause() {
         let generation = playbackGeneration
         Task { let accepted = await player.pause(!paused)
             guard generation == playbackGeneration else { return }
-            if accepted { paused.toggle(); setStatus(paused ? "Wstrzymano odtwarzanie." : "Wznowiono odtwarzanie.") } else { setStatus("Ta transmisja nie obsługuje pauzy.") } }
+            if accepted { paused.toggle(); setStatus(paused ? l("Wstrzymano odtwarzanie.", "Playback paused.") : l("Wznowiono odtwarzanie.", "Playback resumed.")) } else { setStatus(l("Ta transmisja nie obsługuje pauzy.", "This stream does not support pausing.")) } }
     }
-    @objc func toggleMute() { preferences.muted.toggle(); savePreferences(); Task { await player.mute(preferences.muted) }; setStatus(preferences.muted ? "Dźwięk wyciszony." : "Dźwięk włączony.") }
+    @objc func toggleMute() { preferences.muted.toggle(); savePreferences(); Task { await player.mute(preferences.muted) }; setStatus(preferences.muted ? l("Dźwięk wyciszony.", "Audio muted.") : l("Dźwięk włączony.", "Audio unmuted.")) }
     @objc func volumeChanged() { preferences.volume = volume.integerValue; Task { await player.volume(preferences.volume) }; savePreferences() }
-    func changeVolume(_ delta: Int) { volume.integerValue = min(100,max(0,preferences.volume + delta)); volumeChanged(); setStatus("Głośność \(preferences.volume) procent.") }
+    func changeVolume(_ delta: Int) { volume.integerValue = min(100,max(0,preferences.volume + delta)); volumeChanged(); setStatus(l("Głośność \(preferences.volume) procent.", "Volume \(preferences.volume) percent.")) }
     @objc func fullscreen() { fullscreenFocus = window?.firstResponder; window?.toggleFullScreen(nil) }
-    func windowDidEnterFullScreen(_ notification: Notification) { restoreVisibleFocus(); announce("Pełny ekran", window: window) }
+    func windowDidEnterFullScreen(_ notification: Notification) { restoreVisibleFocus(); announce(l("Pełny ekran", "Full Screen"), window: window) }
     func windowDidExitFullScreen(_ notification: Notification) { restoreVisibleFocus() }
     func restoreVisibleFocus() {
         if let v = fullscreenFocus as? NSView, !v.isHiddenOrHasHiddenAncestor { window?.makeFirstResponder(v) }
@@ -300,16 +307,16 @@ import TelePilotRecording
     func showTracks(subtitles: Bool) {
         Task {
             let tracks = await player.tracks(subtitles: subtitles)
-            guard !tracks.isEmpty else { alert("Brak ścieżek", "Transmisja nie udostępnia obecnie tych ścieżek.", window: window); return }
-            let p = popup(subtitles ? "Napisy" : "Ścieżka dźwiękowa", items: tracks.map { "\($0.name) (\($0.id))" }, target: nil, action: nil)
+            guard !tracks.isEmpty else { alert(l("Brak ścieżek", "No Tracks Available"), l("Transmisja nie udostępnia obecnie tych ścieżek.", "These tracks are currently unavailable in the stream."), window: window); return }
+            let p = popup(subtitles ? l("Napisy", "Subtitles") : l("Ścieżka dźwiękowa", "Audio Track"), items: tracks.map { "\($0.name) (\($0.id))" }, target: nil, action: nil)
             p.selectItem(at: tracks.firstIndex(where: \.selected) ?? 0)
-            if form(subtitles ? "Napisy" : "Ścieżka dźwiękowa", views: [p], confirm: "Wybierz") {
+            if form(subtitles ? l("Napisy", "Subtitles") : l("Ścieżka dźwiękowa", "Audio Track"), views: [p], confirm: l("Wybierz", "Select")) {
                 let ok = await player.selectTrack(tracks[p.indexOfSelectedItem].id, subtitles: subtitles)
                 if ok {
                     if subtitles { wantedSubtitleTrack = tracks[p.indexOfSelectedItem].id }
                     else { wantedAudioTrack = tracks[p.indexOfSelectedItem].id }
                 }
-                setStatus(ok ? "Zmieniono ścieżkę." : "Silnik nie przyjął zmiany ścieżki.")
+                setStatus(ok ? l("Zmieniono ścieżkę.", "Track changed.") : l("Silnik nie przyjął zmiany ścieżki.", "The player could not switch tracks."))
             }
             window?.makeFirstResponder(pauseButton)
         }
@@ -330,11 +337,11 @@ import TelePilotRecording
                         let accepted = await player.pause(true)
                         guard generation == playbackGeneration else { return }
                         paused = accepted
-                        setStatus(accepted ? "Wstrzymano odtwarzanie." : "Ta transmisja nie obsługuje pauzy.")
-                    } else { setStatus("Odtwarzanie: \(channel.name).") }
+                        setStatus(accepted ? l("Wstrzymano odtwarzanie.", "Playback paused.") : l("Ta transmisja nie obsługuje pauzy.", "This stream does not support pausing."))
+                    } else { setStatus(l("Odtwarzanie: \(channel.name).", "Playing: \(channel.name).")) }
                 }
-                else if state == 2 { setStatus("Buforowanie: \(channel.name).") }
-                else if state == 4 { setStatus("Wstrzymano odtwarzanie.") }
+                else if state == 2 { setStatus(l("Buforowanie: \(channel.name).", "Buffering: \(channel.name).")) }
+                else if state == 4 { setStatus(l("Wstrzymano odtwarzanie.", "Playback paused.")) }
             }
             let action = recovery?.evaluate(sample, now: ProcessInfo.processInfo.systemUptime, paused: paused || pendingPause) ?? .none
             await handleRecovery(action, sample: sample, generation: generation)
@@ -349,17 +356,17 @@ import TelePilotRecording
                     }
                 }
             }
-            if archiveProgramme == nil { programmeLabel.stringValue = guide(for: channel).current(for: channel)?.title ?? "Brak danych EPG" }
+            if archiveProgramme == nil { programmeLabel.stringValue = guide(for: channel).current(for: channel)?.title ?? l("Brak danych EPG", "No guide data") }
         }
         if recordingActive {
             do {
                 if try await recorder.finishCompleted() {
-                    recordingActive = false; recordingLabel.stringValue = "Nagranie zapisane."
-                    setStatus("Nagrywanie zakończone. Plik został zapisany.")
+                    recordingActive = false; recordingLabel.stringValue = l("Nagranie zapisane.", "Recording saved.")
+                    setStatus(l("Nagrywanie zakończone. Plik został zapisany.", "Recording finished and saved."))
                 }
             } catch {
-                recordingActive = false; recordingLabel.stringValue = "Nagrywanie przerwane błędem."
-                alert("Nagrywanie przerwane", error.localizedDescription, window: window)
+                recordingActive = false; recordingLabel.stringValue = l("Nagrywanie przerwane błędem.", "Recording interrupted by an error.")
+                alert(l("Nagrywanie przerwane", "Recording Interrupted"), recordingErrorMessage(error), window: window)
             }
         }
     }
