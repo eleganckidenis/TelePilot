@@ -85,7 +85,7 @@ Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip"; DestName: "ffmpeg-9.0.1-essentials_build.zip"; DestDir: "{app}\tools\ffmpeg"; Hash: "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9"; ExternalSize: 321521840; Flags: external download extractarchive recursesubdirs createallsubdirs ignoreversion; Check: ShouldInstallFfmpeg
 #elif Runtime == "win-arm64"
 ; BtbN keeps its month-end builds for two years. Use a fixed archive, never the moving latest tag.
-Source: "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-31-12-59/ffmpeg-n9.0.2-39-g7adfbe40dc-winarm64-lgpl-9.0.zip"; DestName: "ffmpeg-n9.0.2-39-g7adfbe40dc-winarm64-lgpl-9.0.zip"; DestDir: "{app}\tools\ffmpeg-arm64"; Hash: "d1981518b99a1c05d6b864200b1ac9459b09e2ee174feffe84b6e6bb0bfa79e2"; ExternalSize: 117554579; Flags: external download extractarchive recursesubdirs createallsubdirs ignoreversion; Check: ShouldInstallFfmpeg
+Source: "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-31-12-59/ffmpeg-n9.0.2-39-g7adfbe40dc-winarm64-lgpl-9.0.zip"; DestName: "ffmpeg-n9.0.2-39-g7adfbe40dc-winarm64-lgpl-9.0.zip"; DestDir: "{app}\tools\ffmpeg-arm64"; Hash: "d1981518b99a1c05d6b864200b1ac9459b09e2ee174feffe84b6e6bb0bfa79e2"; ExternalSize: 256581782; Flags: external download extractarchive recursesubdirs createallsubdirs ignoreversion; Check: ShouldInstallFfmpeg
 #endif
 
 [Icons]

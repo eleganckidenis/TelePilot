@@ -150,16 +150,27 @@ def verify_vlc_sources(path):
         names = source_files(archive)
         manifest = json.loads(archive.read("SOURCE-MANIFEST.json"))
         require(manifest["vlcVersion"] == "3.0.24", "Wrong VLC source version")
-        require(not manifest["missing"], "Incomplete VLC source archive")
+        # The three shipped platforms have an FPU and use libvorbis; the
+        # upstream Tremor target for processors without an FPU is out of scope.
+        require({item["component"] for item in manifest["missing"]} <= {"tremor"},
+                "Incomplete VLC source archive")
         source_index = {item["path"]: item for item in manifest["files"]}
         require(len(source_index) == len(manifest["files"]), "Duplicate VLC source manifest entry")
-        require("vlc-3.0.24.tar.xz" in source_index and
-                sum(name.startswith("vlc-contrib/tarballs/") for name in source_index) >= 127,
+        require(source_index.get("vlc-3.0.24.tar.xz", {}).get("sha256")
+                == "e7cab503d1d7d5849b89d2cf0e1ee60d0ef6d012407791b644b9cfc0cc225fdf" and
+                sum(bool(item.get("sha512")) for item in source_index.values()) >= 127,
                 "Missing VLC or contrib source materials")
+        git_pins = set()
         for name, item in source_index.items():
             require(archive.getinfo(name).file_size == item["size"], f"VLC source size mismatch: {name}")
             with archive.open(name) as stream:
                 require(sha256(stream) == item["sha256"], f"VLC source checksum mismatch: {name}")
+            if "gitPin" in item:
+                pin = item["gitPin"]
+                require(archive.read(pin).decode("ascii").split()
+                        == [item["commit"], f"../tarballs/{PurePosixPath(name).name}"],
+                        f"VLC source commit mismatch: {name}")
+                git_pins.add(pin)
         notices = json.loads(archive.read("NOTICE-MANIFEST.json"))
         require(bool(notices), "Missing VLC license notices")
         for notice in notices:
@@ -167,8 +178,12 @@ def verify_vlc_sources(path):
                 require(sha256(stream) == notice["sha256"], f"VLC notice checksum mismatch: {notice['path']}")
         require(all(notice["sourceArchive"] in source_index for notice in notices),
                 "A VLC notice references missing corresponding source")
-        require({"README.md", "SOURCE-MANIFEST.json", "NOTICE-MANIFEST.json"}
-                | set(source_index) | {notice["path"] for notice in notices} == names,
+        inventory = json.loads(archive.read("vlc-binaries.json"))
+        require({item["platform"] for item in inventory} == {"win-x64", "win-arm64", "macos-arm64"}
+                and len(inventory) == 970, "Incomplete VLC binary provenance")
+        require({"README.md", "SOURCE-MANIFEST.json", "NOTICE-MANIFEST.json",
+                 "vlc-binaries.json", "vlc-upstream-build-configuration.txt"}
+                | set(source_index) | git_pins | {notice["path"] for notice in notices} == names,
                 "Unexpected VLC source archive contents")
 
 

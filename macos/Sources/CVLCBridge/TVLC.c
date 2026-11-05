@@ -41,7 +41,7 @@ int tvlc_play(TVLC *v,const char *url,void *view,const char *const *options,int 
     FN(void (*)(void *,void *),"libvlc_media_player_set_nsobject")(v->player,view);
     return FN(int (*)(void *),"libvlc_media_player_play")(v->player);
 }
-// libvlc_media_stats_t ABI from the bundled, pinned LibVLC 3.0.23.
+// libvlc_media_stats_t ABI from the bundled, pinned LibVLC.
 typedef struct MediaStats {
     int read_bytes; float input_bitrate; int demux_read_bytes; float demux_bitrate;
     int demux_corrupted, demux_discontinuity, decoded_video, decoded_audio;

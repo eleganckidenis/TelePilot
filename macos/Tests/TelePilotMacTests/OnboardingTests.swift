@@ -135,7 +135,9 @@ struct OnboardingTests {
             controller.table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
             controller.table.keyDown(with: enter)
             #expect(controller.playing?.name == "Second")
-            try await waitForPlaying(player)
+            // Cold LibVLC plugin discovery is separate from opening the stream.
+            await controller.playbackTask?.value
+            try await waitForPlaying(player, channel: "Second")
 
             controller.stopPlayback()
             await controller.playbackTask?.value
@@ -143,7 +145,8 @@ struct OnboardingTests {
             controller.table.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
             controller.table.keyDown(with: enter)
             #expect(controller.playing?.name == "Third")
-            try await waitForPlaying(player)
+            await controller.playbackTask?.value
+            try await waitForPlaying(player, channel: "Third")
             let mainWindow = try #require(controller.window)
             #expect(mainWindow.firstResponder === controller.pauseButton)
             #expect(controller.cycleFocus(in: mainWindow, backward: false))
@@ -180,11 +183,15 @@ struct OnboardingTests {
         #expect(try Preferences.load(from: root.appendingPathComponent("preferences.json")).language == .polish)
     }
 
-    private func waitForPlaying(_ player: Player) async throws {
+    private func waitForPlaying(_ player: Player, channel: String) async throws {
         let deadline = ContinuousClock.now + .seconds(8)
-        while await player.state() != 3 && ContinuousClock.now < deadline {
+        var sample = await player.sample()
+        while (sample.state != 3 || (sample.progress?.displayedVideo ?? 0) == 0) && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(50))
+            sample = await player.sample()
         }
-        try #require(await player.state() == 3)
+        let displayedFrames = sample.progress?.displayedVideo ?? 0
+        try #require(sample.state == 3 && displayedFrames > 0,
+                     "Expected \(channel) to display video after Enter; VLC state: \(sample.state), displayed frames: \(displayedFrames)")
     }
 }

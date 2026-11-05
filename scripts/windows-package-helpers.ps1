@@ -110,6 +110,6 @@ function Get-WindowsFfmpegDownload([string]$Runtime) {
         Archive = $groups['archive'].Value
         RelativeDirectory = $groups['directory'].Value
         Hash = $groups['hash'].Value
-        Size = [long]$groups['size'].Value
+        UncompressedSize = [long]$groups['size'].Value
     }
 }

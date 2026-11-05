@@ -9,8 +9,15 @@ New-Item -ItemType Directory -Path $root -Force | Out-Null
 $package = Get-WindowsFfmpegDownload $Runtime
 $archive = Join-Path $root $package.Archive
 Invoke-WebRequest -Uri $package.Url -OutFile $archive
-if ((Get-Item -LiteralPath $archive).Length -ne $package.Size -or
-    (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $package.Hash) { throw 'FFmpeg archive size or SHA-256 mismatch.' }
+if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $package.Hash) { throw 'FFmpeg SHA-256 mismatch.' }
+# Inno's ExternalSize represents the extracted files when using extractarchive.
+$zip = [IO.Compression.ZipFile]::OpenRead($archive)
+try {
+    $uncompressedSize = ($zip.Entries | Measure-Object -Property Length -Sum).Sum
+    if ($uncompressedSize -ne $package.UncompressedSize) { throw 'Incorrect uncompressed FFmpeg size in the installer.' }
+} finally {
+    $zip.Dispose()
+}
 Expand-Archive -LiteralPath $archive -DestinationPath $root
 $ffmpeg = Join-Path $root (Join-Path ([IO.Path]::GetFileNameWithoutExtension($package.Archive)) 'bin/ffmpeg.exe')
 Assert-WindowsBinaryArchitecture -LiteralPath $ffmpeg -Runtime $Runtime
