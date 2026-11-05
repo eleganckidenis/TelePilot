@@ -30,7 +30,7 @@ public interface IWindowService
 
     Task ShowProgramGuideAsync(ProgramGuideViewModel viewModel);
 
-    Task<AppPreferences?> ShowSettingsAsync(SettingsWindowViewModel viewModel) =>
+    Task<AppPreferences?> ShowSettingsAsync(SettingsWindowViewModel viewModel, Func<AppPreferences, Task> saveAsync) =>
         Task.FromResult<AppPreferences?>(null);
 
     Task<IReadOnlyList<FavoriteChannelPreference>?> ShowFavoritesManagerAsync(FavoritesManagerViewModel viewModel) =>

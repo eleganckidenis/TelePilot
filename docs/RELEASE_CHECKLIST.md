@@ -1,8 +1,8 @@
 # Lista kontrolna wydania TelePilot
 
-## Aktualny zakres 2.0.0
+## Aktualny zakres 2.0.1
 
-- Windows x64: bieżący publiczny kod, pełne testy na Windows, natywne syntetyczne
+- Windows x64 i ARM64: pełne testy na właściwych runnerach Windows, natywne syntetyczne
   odtwarzanie, budowanie instalatora, weryfikacja FFmpeg i SHA-256. Wydanie bez
   Authenticode, zgodnie z dotychczasowym zakresem publikacji; podaj to w Release.
 - macOS 14+ Apple Silicon: natywny projekt `macos/`, jego testy i skrypty pakowania,

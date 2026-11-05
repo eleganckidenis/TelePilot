@@ -1,5 +1,21 @@
 # Changelog / Historia zmian
 
+## 2.0.1
+
+### Polski
+
+- Naprawiono zapisywanie języka wybranego w Ustawieniach. Po ponownym uruchomieniu aplikacja używa zapisanego wyboru.
+- Dodano natywny instalator Windows 11 ARM64. Aktualizator dobiera paczkę do architektury zainstalowanej aplikacji.
+- Usunięcie nieaktywnej playlisty na Windows nie przełącza źródła ani nie czyści bieżącej listy kanałów. Błędy dodawania playlist są wyświetlane w aplikacji.
+- Zaktualizowano silnik odtwarzania VLC do 3.0.24, który zawiera [poprawki bezpieczeństwa VideoLAN](https://images.videolan.org/security/sb-vlc3024.html).
+
+### English
+
+- Fixed language selection in Settings. The app uses the saved choice after restarting.
+- Added a native Windows 11 ARM64 installer. The updater selects the package for the architecture of the installed app.
+- Removing an inactive playlist on Windows keeps the current source and its channel list. Playlist import failures now show a message in the app.
+- Updated the VLC playback engine to 3.0.24, which includes [VideoLAN's security fixes](https://images.videolan.org/security/sb-vlc3024.html).
+
 ## 2.0.0
 
 ### Polski

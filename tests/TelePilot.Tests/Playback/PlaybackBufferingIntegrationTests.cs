@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using TelePilot.Core.Models;
@@ -17,6 +18,12 @@ public sealed class PlaybackBufferingIntegrationTests
         {
             Assert.Skip("Test wymaga Windows i TELEPILOT_RUN_PLAYBACK_INTEGRATION=1; używa wyłącznie syntetycznego strumienia lokalnego.");
             return;
+        }
+        var expectedArchitecture = Environment.GetEnvironmentVariable("TELEPILOT_EXPECTED_WINDOWS_ARCHITECTURE");
+        if (!string.IsNullOrWhiteSpace(expectedArchitecture))
+        {
+            Assert.Equal(expectedArchitecture, RuntimeInformation.OSArchitecture.ToString(), ignoreCase: true);
+            Assert.Equal(expectedArchitecture, RuntimeInformation.ProcessArchitecture.ToString(), ignoreCase: true);
         }
         var ffmpeg = Environment.GetEnvironmentVariable("TELEPILOT_TEST_FFMPEG");
         Assert.True(!string.IsNullOrWhiteSpace(ffmpeg) && File.Exists(ffmpeg), "CI musi wskazać TELEPILOT_TEST_FFMPEG do generowania syntetycznej próbki.");

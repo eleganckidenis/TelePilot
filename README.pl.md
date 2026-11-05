@@ -7,6 +7,7 @@ TelePilot to bezpłatny odtwarzacz IPTV na Windows i macOS, przystosowany do obs
 ## Instalacja
 
 - **Windows 10 (22H2) lub Windows 11, Intel/AMD:** Uruchom instalator `win-x64-setup.exe`. Wymagane są uprawnienia administratora.
+- **Windows 11, ARM64 (Snapdragon i inne procesory ARM):** Uruchom instalator `win-arm64-setup.exe`.
 - **macOS 14 lub nowszy, Apple Silicon:** Otwórz plik `Apple-Silicon.dmg` i przeciągnij TelePilot do folderu Programy.
 
 Instalator Windows nie jest podpisany cyfrowo. Aplikacja na Maca ma podpis ad-hoc bez notaryzacji Apple. Sumy SHA-256 są dostępne na stronie pobierania.

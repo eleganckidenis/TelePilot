@@ -819,6 +819,7 @@ Zhao Zhili
 أحمد المحم ودي (Ahmed El-Mahmoudy)
 Баярсайхан Энхтайван
 Сергей Дарьичев
+Noah Davis
 
 Artwork
 -------
@@ -1071,4 +1072,3 @@ Yoyo - Simplified Chinese
 Yuksel Yildirim - Turkish
 Zabeeh Khan - Pashto
 Zhang Tong - Chinese
-

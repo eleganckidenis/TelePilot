@@ -94,6 +94,15 @@ public sealed class AccessibleComboBox : ContentControl
 
     internal event EventHandler? TabNavigationStarting;
 
+    // Saving can run before a queued Win32 selection notification is processed.
+    internal void SynchronizeNativeSelection()
+    {
+        if (IsUsingNativeSelector)
+        {
+            nativeSelector?.SynchronizeSelection();
+        }
+    }
+
     /// <summary>
     /// Optional explicit targets used for Shift+Tab and Tab respectively.
     /// </summary>

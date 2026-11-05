@@ -13,6 +13,8 @@ The generated harness, logs and extracted files are retained for inspection.
 param(
     [switch]$RunDownloadTest,
     [switch]$TestInvalidHash,
+    [ValidateSet('win-x64', 'win-arm64')]
+    [string]$Runtime = 'win-x64',
     [string]$InnoCompiler,
     [ValidateRange(30, 3600)]
     [int]$TimeoutSeconds = 900
@@ -20,6 +22,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'windows-package-helpers.ps1')
 
 if (-not $RunDownloadTest) {
     throw 'This network test requires explicit opt-in: -RunDownloadTest.'
@@ -45,11 +48,7 @@ if (-not (Test-Path -LiteralPath $InnoCompiler -PathType Leaf)) {
 }
 
 $installerScript = Get-Content -LiteralPath (Join-Path $repositoryRoot 'installer\windows\TelePilot.iss') -Raw
-$fileEntries = [regex]::Matches($installerScript, '(?m)^Source: "https://[^"\r\n]+";[^\r\n]*Check: ShouldInstallFfmpeg[^\r\n]*')
-if ($fileEntries.Count -ne 1) {
-    throw 'Expected exactly one production FFmpeg download entry.'
-}
-$fileEntry = $fileEntries[0].Value
+$package = Get-WindowsFfmpegDownload $Runtime
 $functions = [regex]::Match($installerScript, '(?ms)^function FfmpegExists\(\): Boolean;\r?\n.*?(?=^function LegacyInstallExistsInLoadedHives\()')
 if (-not $functions.Success -or -not $functions.Value.Contains('function ShouldInstallFfmpeg(): Boolean;')) {
     throw 'Could not extract the unchanged production FFmpeg detection functions.'
@@ -57,13 +56,6 @@ if (-not $functions.Success -or -not $functions.Value.Contains('function ShouldI
 if (-not [regex]::IsMatch($installerScript, '(?m)^ArchiveExtraction=full\s*$')) {
     throw 'The production installer must enable full ZIP extraction.'
 }
-$archiveName = [regex]::Match($fileEntry, 'DestName: "([^"\r\n]+\.zip)"').Groups[1].Value
-$expectedHash = [regex]::Match($fileEntry, 'Hash: "([0-9a-fA-F]{64})"').Groups[1].Value
-$sourceUrl = [regex]::Match($fileEntry, '^Source: "([^"\r\n]+)"').Groups[1].Value
-if (-not $archiveName -or -not $expectedHash -or [IO.Path]::GetFileName($archiveName) -ne $archiveName) {
-    throw 'The production entry must specify a plain ZIP filename and SHA-256.'
-}
-
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 $emptyPath = Join-Path $testRoot 'empty-path'
 $temporaryDirectory = Join-Path $testRoot 'temp'
@@ -117,6 +109,7 @@ function New-Harness {
     $defaultDirectory = Join-Path $testRoot "$Name-install"
     $harnessId = 'TelePilotFfmpegSmoke-' + [Guid]::NewGuid().ToString('N')
     $script = @"
+#define Runtime "$Runtime"
 [Setup]
 AppId=$harnessId
 AppName=TelePilot FFmpeg isolated smoke test
@@ -175,16 +168,19 @@ function Get-InstalledManifest {
 }
 
 Write-Host "Testing production FFmpeg download in $testRoot"
-$harness = New-Harness -Name 'download' -DownloadEntry $fileEntry
+$harness = New-Harness -Name 'download' -DownloadEntry $package.Entry
 $installDirectory = Join-Path $testRoot 'download-install'
 $first = Invoke-Harness -Executable $harness -InstallDirectory $installDirectory -LogName 'download.log'
 if ($first.ExitCode -ne 0) { throw "FFmpeg download/extraction failed ($($first.ExitCode)); see $testRoot\download.log" }
-if (-not $first.Log.Contains($sourceUrl)) {
+if (-not $first.Log.Contains($package.Url)) {
     throw 'The first run did not prove the missing-FFmpeg production download branch.'
 }
-$archiveRoot = Join-Path $installDirectory ("tools\ffmpeg\" + [IO.Path]::GetFileNameWithoutExtension($archiveName))
+$archiveRoot = Join-Path (Join-Path $installDirectory $package.RelativeDirectory) ([IO.Path]::GetFileNameWithoutExtension($package.Archive))
 $ffmpeg = Join-Path $archiveRoot 'bin\ffmpeg.exe'
-foreach ($required in @($ffmpeg, (Join-Path $archiveRoot 'LICENSE'), (Join-Path $archiveRoot 'README.txt'))) {
+Assert-WindowsBinaryArchitecture -LiteralPath $ffmpeg -Runtime $Runtime
+$notices = if ($Runtime -eq 'win-arm64') { @('LICENSE.txt') } else { @('LICENSE', 'README.txt') }
+foreach ($notice in $notices) {
+    $required = Join-Path $archiveRoot $notice
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing extracted file: $required" }
 }
 $documentation = Join-Path $archiveRoot 'doc'
@@ -202,14 +198,14 @@ $second = Invoke-Harness -Executable $harness -InstallDirectory $installDirector
 if ($second.ExitCode -ne 0) {
     throw 'The second run did not skip the existing bundled FFmpeg.'
 }
-if ($second.Log.Contains($sourceUrl) -or $before -cne (Get-InstalledManifest -Directory $installDirectory)) {
+if ($second.Log.Contains($package.Url) -or $before -cne (Get-InstalledManifest -Directory $installDirectory)) {
     throw 'The second run downloaded FFmpeg or changed installed file contents.'
 }
 
 $invalidHashRejected = $null
 if ($TestInvalidHash) {
-    $invalidHash = if ($expectedHash[0] -eq '0') { '1' + $expectedHash.Substring(1) } else { '0' + $expectedHash.Substring(1) }
-    $invalidEntry = $fileEntry.Replace($expectedHash, $invalidHash)
+    $invalidHash = if ($package.Hash[0] -eq '0') { '1' + $package.Hash.Substring(1) } else { '0' + $package.Hash.Substring(1) }
+    $invalidEntry = $package.Entry.Replace($package.Hash, $invalidHash)
     $invalidHarness = New-Harness -Name 'invalid-hash' -DownloadEntry $invalidEntry
     $invalidDirectory = Join-Path $testRoot 'invalid-hash-install'
     $negative = Invoke-Harness -Executable $invalidHarness -InstallDirectory $invalidDirectory -LogName 'invalid-hash.log'
@@ -217,7 +213,7 @@ if ($TestInvalidHash) {
         Get-ChildItem -LiteralPath $invalidDirectory -Recurse -File | Select-Object -First 1
     } else { $null }
     if ($negative.ExitCode -eq 0 -or
-        -not $negative.Log.Contains($sourceUrl) -or
+        -not $negative.Log.Contains($package.Url) -or
         -not $negative.Log.Contains('Verification error: File hash is incorrect.') -or $unexpectedFile) {
         throw 'The incorrect SHA-256 was not rejected before extraction.'
     }
@@ -230,7 +226,7 @@ if ($TestInvalidHash) {
     ExistingFfmpegSkipped = 'Passed'
     InstalledFilesUnchangedOnSecondRun = $true
     InvalidHashRejected = $invalidHashRejected
-    ArchiveSha256 = $expectedHash.ToLowerInvariant()
+    ArchiveSha256 = $package.Hash
     Version = ($version.Output -split '\r?\n')[0]
     ChildPath = $emptyPath
 }

@@ -7,21 +7,21 @@ This target uses Swift 6, Foundation, AppKit, CryptoKit, Security and system zli
 Run from the native project directory after the current full test run succeeds:
 
 ```sh
-scripts/package-app.sh --vlc-dmg /path/to/vlc-3.0.23-arm64.dmg
+scripts/package-app.sh --vlc-dmg /path/to/vlc-3.0.24-arm64.dmg
 ```
 
 The default release is read from `VERSION`; output goes to `artifacts/<version>/arm64/`. It contains the installation DMG with an Applications link, a resource-preserving app ZIP, and `SHA256SUMS`. A verified loose `TelePilot.app` is also copied there when the volume permits it. If File Provider immediately restores prohibited Finder metadata, the invalid loose copy is removed and a verified local app is retained under a printed `/tmp/telepilot-native-app-VERSION-ARCH.XXXXXX/TelePilot.app` path; the DMG and ZIP remain the distributable artifacts. Existing output requires explicit `--force`. The selected Apple Silicon release requires its matching image and native host. Historical x86_64 build options and source pins are not tested or delivered.
 
 The script runs the tests, builds the Swift release executable with an app-relative LibVLC runtime search path, generates the app icon from the original TelePilot PNG when no native ICNS exists, and builds/signs in a temporary local directory. Swift module/build caches are under `/tmp`. `--skip-tests` is available after a successful full test run of the same source. Bundle identifier: `pl.telepilot.native`. The plist uses the numeric release version for Apple's bundle version fields and retains the full version in `TelePilotDistributionVersion` and artifact names. `NSAllowsArbitraryLoads` supports user-supplied HTTP IPTV endpoints; it does not grant access to protected streams.
 
-## VLC 3.0.23 / LibVLC
+## VLC 3.0.24 / LibVLC
 
-Only the official VideoLAN 3.0.23 disk images are accepted:
+Only the official VideoLAN 3.0.24 disk images are accepted:
 
 | Native architecture | Official image | SHA-256 |
 | --- | --- | --- |
-| arm64 | [vlc-3.0.23-arm64.dmg](https://download.videolan.org/pub/videolan/vlc/3.0.23/macosx/vlc-3.0.23-arm64.dmg) | `fc6fac08d87f538517d44aca0c5e7a244b67c8c4cb589bf478363a7315fd5e0d` |
-| x86_64 | [vlc-3.0.23-intel64.dmg](https://download.videolan.org/pub/videolan/vlc/3.0.23/macosx/vlc-3.0.23-intel64.dmg) | `ec01530ce69d849dd057fba8876e68ac39bf279dc28de4e9c04e4aec11fc98db` |
+| arm64 | [vlc-3.0.24-arm64.dmg](https://download.videolan.org/pub/videolan/vlc/3.0.24/macosx/vlc-3.0.24-arm64.dmg) | `64a89d93cdd30b0e97131743e246373db82d6826ea882d265d46d74b136da2b7` |
+| x86_64 | [vlc-3.0.24-intel64.dmg](https://download.videolan.org/pub/videolan/vlc/3.0.24/macosx/vlc-3.0.24-intel64.dmg) | `1ef6c903e2dc026d4e58ddf7b2a9ed0eb6f8caf80a9a9f46f96490340b962707` |
 
 The hashes match the upstream TelePilot macOS packaging pins at commit `b727566a4910c1e735340bd150f50a1569ec6b51`. Packaging verifies the image hash before mounting read-only, checks VLC's version, verifies the entire source app's strict code signature and requires `Developer ID Application` with VideoLAN team identifier `75GAHG3SZQ`. A trap detaches the script's own mount when it exits. An arbitrary installed VLC app is not an accepted substitute.
 
@@ -29,14 +29,14 @@ The official `lib`, `plugins` and `share` directories are copied to `Contents/Fr
 
 The package contains a sorted plugin inventory and the exact official DMG checksum in `Contents/Resources/licenses/VLC_PLUGIN_INVENTORY.txt`. LibVLC is LGPL-2.1-or-later; VLC's plugin set includes GPL components and libraries with additional license terms. The official DMG contains no standalone complete third-party contrib notice set. The included upstream COPYING/COPYING.LIB, AUTHORS and THANKS preserve VLC's general license/credit documents; they do not establish the completeness of every statically incorporated contrib notice. Supply the matching full notice set with `--vlc-license-dir DIR` before distributing a release that requires those notices. The script preserves that directory under `licenses/VLC-contrib`.
 
-VLC source and build materials: [VideoLAN 3.0.23 release directory](https://download.videolan.org/pub/videolan/vlc/3.0.23/), [VLC 3.0.23 source tag](https://github.com/videolan/vlc/tree/3.0.23), [contrib build recipes](https://github.com/videolan/vlc/tree/3.0.23/contrib/src). Retain matching source/build materials when redistributing binaries under their applicable terms.
+VLC source and build materials: [VideoLAN 3.0.24 release directory](https://download.videolan.org/pub/videolan/vlc/3.0.24/), [VLC 3.0.24 source tag](https://github.com/videolan/vlc/tree/3.0.24), [contrib build recipes](https://github.com/videolan/vlc/tree/3.0.24/contrib/src). Retain matching source/build materials when redistributing binaries under their applicable terms.
 
 ## Optional FFmpeg recorder
 
 Without `--ffmpeg`, no FFmpeg executable is included. An existing compatible FFmpeg can be selected in application settings. To bundle a verified build, provide all three inputs:
 
 ```sh
-scripts/package-app.sh --vlc-dmg /path/to/vlc-3.0.23-arm64.dmg \
+scripts/package-app.sh --vlc-dmg /path/to/vlc-3.0.24-arm64.dmg \
   --ffmpeg /path/to/ffmpeg \
   --ffmpeg-manifest /path/to/source-manifest.json \
   --ffmpeg-license-dir /path/to/complete-license-notices
@@ -47,14 +47,14 @@ The binary is copied to `Contents/Resources/tools/ffmpeg`. The JSON manifest mus
 ## Project license and retained source documents
 
 Public packages also supply `--vlc-license-dir` with the complete retained
-VLC3.0.23 contrib notices archive from the main repository (including optional
+VLC 3.0.24 contrib notices archive from the main repository (including optional
 source components). The corresponding VLC/contrib source bundle is available in
-[Release v1.0.0](https://github.com/eleganckidenis/TelePilot/releases/tag/v1.0.0).
+[Release v2.0.1](https://github.com/eleganckidenis/TelePilot/releases/tag/v2.0.1).
 The native FFmpeg source archives, manifest, licenses and build recipe accompany
 the GitHub Release as `TelePilot-<version>-macos-third-party-sources.zip`. This is separate from
 the older Windows FFmpeg download, which is supplied directly by its publisher.
 
-`Resources/licenses/TelePilot-LICENSE.txt` (GPL-3.0) and `TelePilot-NOTICE.txt` were fetched from [eleganckidenis/TelePilot](https://github.com/eleganckidenis/TelePilot/tree/b727566a4910c1e735340bd150f50a1569ec6b51). The retained LGPL text comes from the same commit. `VLC-COPYING.txt`, `VLC-COPYING.LIB.txt`, `VLC-AUTHORS.txt` and `VLC-THANKS.txt` come from VideoLAN's `3.0.23` source tag. These files and this document are copied into every native package.
+`Resources/licenses/TelePilot-LICENSE.txt` (GPL-3.0) and `TelePilot-NOTICE.txt` were fetched from [eleganckidenis/TelePilot](https://github.com/eleganckidenis/TelePilot/tree/b727566a4910c1e735340bd150f50a1569ec6b51). The retained LGPL text comes from the same commit. `VLC-COPYING.txt`, `VLC-COPYING.LIB.txt`, `VLC-AUTHORS.txt` and `VLC-THANKS.txt` come from VideoLAN's `3.0.24` source tag. These files and this document are copied into every native package.
 
 ## Signing and notarization
 

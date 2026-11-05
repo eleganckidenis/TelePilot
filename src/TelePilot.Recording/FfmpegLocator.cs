@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace TelePilot.Recording;
 
@@ -25,8 +26,12 @@ public sealed class FfmpegLocator : IFfmpegLocator
             candidates.Add(Path.GetFullPath(configuredPath));
         }
 
-        candidates.Add(Path.Combine(applicationDirectory, "tools", "ffmpeg", executableName));
-        candidates.AddRange(GetBundledCandidates(applicationDirectory, executableName));
+        var bundledDirectoryName = OperatingSystem.IsWindows() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+            ? "ffmpeg-arm64"
+            : "ffmpeg";
+        var bundledDirectory = Path.Combine(applicationDirectory, "tools", bundledDirectoryName);
+        candidates.Add(Path.Combine(bundledDirectory, executableName));
+        candidates.AddRange(GetBundledCandidates(bundledDirectory, executableName));
         candidates.AddRange(GetPathCandidates(executableName));
 
         foreach (var candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
@@ -47,9 +52,8 @@ public sealed class FfmpegLocator : IFfmpegLocator
         return null;
     }
 
-    private static IEnumerable<string> GetBundledCandidates(string applicationDirectory, string executableName)
+    private static IEnumerable<string> GetBundledCandidates(string bundledDirectory, string executableName)
     {
-        var bundledDirectory = Path.Combine(applicationDirectory, "tools", "ffmpeg");
         if (!Directory.Exists(bundledDirectory))
         {
             yield break;

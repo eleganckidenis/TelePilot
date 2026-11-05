@@ -61,5 +61,7 @@ internal static class LanguagePreference
         var culture = Resolve(choice, systemCulture);
         CultureInfo.DefaultThreadCurrentCulture = culture;
         CultureInfo.DefaultThreadCurrentUICulture = culture;
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
     }
 }

@@ -4,7 +4,7 @@ param(
     [string]$Runtime = 'win-x64',
 
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '2.0.0',
+    [string]$Version,
 
     [string]$InnoCompiler,
 
@@ -25,12 +25,18 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'windows-package-helpers.ps1')
 
 $repositoryRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
+$project = Join-Path $repositoryRoot 'src\TelePilot.App\TelePilot.App.csproj'
+if (-not $Version) {
+    [xml]$projectXml = Get-Content -LiteralPath $project -Raw
+    $Version = $projectXml.SelectSingleNode('/Project/PropertyGroup/Version').InnerText
+    if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Nieprawidłowa wersja w projekcie TelePilot.App.' }
+}
 $releaseBase = [IO.Path]::GetFullPath((Join-Path $repositoryRoot 'artifacts\release'))
 $releaseRoot = [IO.Path]::GetFullPath((Join-Path $releaseBase "$Version\$Runtime"))
 $publishDirectory = Join-Path $releaseRoot 'publish'
-$project = Join-Path $repositoryRoot 'src\TelePilot.App\TelePilot.App.csproj'
 $solution = Join-Path $repositoryRoot 'TelePilot.sln'
 $installerScript = Join-Path $repositoryRoot 'installer\windows\TelePilot.iss'
 $localDotnet = Join-Path $repositoryRoot '.dotnet\dotnet.exe'
@@ -154,17 +160,12 @@ if ($productVersionWithoutBuildMetadata -ne $Version -or $applicationVersionInfo
     throw "Metadane TelePilot.exe nie odpowiadają wydaniu $Version (ProductVersion=$($applicationVersionInfo.ProductVersion), FileVersion=$($applicationVersionInfo.FileVersion))."
 }
 
-$expectedLibVlc = Join-Path $publishDirectory "libvlc\$Runtime\libvlc.dll"
-if (-not (Test-Path -LiteralPath $expectedLibVlc)) {
-    throw "Publikacja nie zawiera właściwej biblioteki: $expectedLibVlc"
-}
+Assert-WindowsPayloadArchitecture -Directory $publishDirectory -Runtime $Runtime
 
-$unexpectedVlcRuntimes = @('win-x86', 'win-x64', 'win-arm64') | Where-Object {
-    $_ -ne $Runtime -and (Test-Path -LiteralPath (Join-Path $publishDirectory "libvlc\$_"))
-}
-if ($unexpectedVlcRuntimes) {
-    throw "Publikacja zawiera biblioteki VLC dla niewłaściwej architektury: $($unexpectedVlcRuntimes -join ', ')"
-}
+$vlcDirectory = Join-Path $publishDirectory "libvlc\$Runtime"
+Get-ChildItem -LiteralPath $vlcDirectory -Recurse -File | ForEach-Object {
+    $_.FullName.Substring($vlcDirectory.Length + 1)
+} | Sort-Object | Set-Content -LiteralPath (Join-Path $releaseRoot 'vlc-files.txt') -Encoding utf8
 
 & (Join-Path $PSScriptRoot 'collect-windows-licenses.ps1') -PublishDirectory $publishDirectory -Runtime $Runtime
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination $publishDirectory

@@ -4,7 +4,15 @@ import TelePilotCore
 import TelePilotRecording
 
 @MainActor extension MainController {
-    @objc func settings() { let c = SettingsWindow(appController:self); settingsWindow = c; c.showWindow(nil) }
+    @objc func settings() {
+        if let settingsWindow, settingsWindow.window?.isVisible == true {
+            settingsWindow.showWindow(nil)
+            return
+        }
+        let controller = SettingsWindow(appController: self)
+        settingsWindow = controller
+        controller.showWindow(nil)
+    }
 }
 enum SettingsSecret {
     static func get() throws -> String? {
@@ -101,11 +109,24 @@ enum SettingsSecret {
         let address = epg.stringValue.trimmingCharacters(in:.whitespacesAndNewlines)
         if !address.isEmpty {guard let u = URL(string:address),["http","https"].contains(u.scheme?.lowercased() ?? ""),u.host != nil else {alert(l("Nieprawidłowe EPG", "Invalid TV Guide URL"),l("Podaj pełny adres HTTP lub HTTPS.", "Enter a full HTTP or HTTPS URL."),window:window);window?.makeFirstResponder(epg);return}}
         guard folder.stringValue.hasPrefix("/"),let kbps = Int(bitrate.stringValue),(32...512).contains(kbps), !template.stringValue.isEmpty else {alert(l("Nieprawidłowe ustawienia", "Invalid Settings"),l("Podaj bezwzględną ścieżkę folderu, bitrate 32–512 kb/s oraz szablon nazwy.", "Enter an absolute folder path, a bitrate of 32–512 kb/s, and a filename template."),window:window);return}
-        appController.preferences.language = Language.allCases[language.indexOfSelectedItem]
-        appController.preferences.buffering = PlaybackBufferSettings(seconds: buffer, maximumSeconds: maximum, variantMaxMbps: cap)
-        appController.preferences.externalEPG = address.isEmpty ? nil:address;appController.preferences.recordingsDirectory = folder.stringValue
-        appController.preferences.ffmpegPath = ffmpeg.stringValue;appController.preferences.filenameTemplate = template.stringValue
-        appController.preferences.audioFormat = AudioFormat.allCases[audio.indexOfSelectedItem];appController.preferences.bitrate = kbps;appController.preferences.sortOrder = sort.indexOfSelectedItem
-        appController.savePreferences();appController.applyFilter();appController.refreshEPG();appController.archiveBrowser.reloadChannels();cancel()
+        var draft = appController.preferences
+        draft.language = Language.allCases[language.indexOfSelectedItem]
+        draft.buffering = PlaybackBufferSettings(seconds: buffer, maximumSeconds: maximum, variantMaxMbps: cap)
+        draft.externalEPG = address.isEmpty ? nil : address
+        draft.recordingsDirectory = folder.stringValue
+        draft.ffmpegPath = ffmpeg.stringValue
+        draft.filenameTemplate = template.stringValue
+        draft.audioFormat = AudioFormat.allCases[audio.indexOfSelectedItem]
+        draft.bitrate = kbps
+        draft.sortOrder = sort.indexOfSelectedItem
+        do {
+            try appController.commitPreferences(draft)
+        } catch {
+            alert(l("Nie zapisano ustawień", "Could Not Save Settings"),
+                  l("Sprawdź dostęp do katalogu danych aplikacji i spróbuj ponownie.", "Check access to the app’s data folder and try again."),
+                  window: window)
+            return
+        }
+        appController.applyFilter();appController.refreshEPG();appController.archiveBrowser.reloadChannels();cancel()
     }
 }

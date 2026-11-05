@@ -17,17 +17,19 @@ internal static class UpdateStartup
     internal static void Start(Window owner)
     {
         var version = typeof(UpdateStartup).Assembly.GetName().Version;
-        if (started || !OperatingSystem.IsWindows() || RuntimeInformation.ProcessArchitecture != Architecture.X64
+        // Keep existing x64 installations on their own update path, even under emulation.
+        var architecture = RuntimeInformation.ProcessArchitecture;
+        if (started || !OperatingSystem.IsWindows() || !ReleaseUpdate.Supports(architecture)
             || version is null || version.Build < 0)
         {
             return;
         }
 
         started = true;
-        _ = CheckAndOfferAsync(owner, new Version(version.Major, version.Minor, version.Build));
+        _ = CheckAndOfferAsync(owner, new Version(version.Major, version.Minor, version.Build), architecture);
     }
 
-    private static async Task CheckAndOfferAsync(Window owner, Version version)
+    private static async Task CheckAndOfferAsync(Window owner, Version version, Architecture architecture)
     {
         using var lifetime = new CancellationTokenSource();
         void Cancel(object? sender, EventArgs e) => lifetime.Cancel();
@@ -45,7 +47,7 @@ internal static class UpdateStartup
                     return null;
                 }
 
-                var update = new ReleaseUpdate(client, Path.Combine(localData, "TelePilot", "Updates"));
+                var update = new ReleaseUpdate(client, Path.Combine(localData, "TelePilot", "Updates"), architecture);
                 var asset = await update.CheckAsync(version, token).ConfigureAwait(false);
                 return asset is null ? null : (asset, await update.DownloadAsync(asset, token).ConfigureAwait(false));
             }, token);

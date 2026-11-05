@@ -7,6 +7,7 @@ TelePilot is a free, keyboard-friendly IPTV player for Windows and Mac. Use your
 ## Install
 
 - **Windows 10 (22H2) or Windows 11, Intel/AMD:** Run the `win-x64-setup.exe` installer. Administrator access is required.
+- **Windows 11, ARM64 (Snapdragon and other ARM processors):** Run the `win-arm64-setup.exe` installer.
 - **macOS 14 or later, Apple Silicon:** Open the `Apple-Silicon.dmg` file and drag TelePilot to Applications.
 
 The Windows installer is unsigned. The Mac app is signed ad hoc and has no Apple notarization. SHA-256 checksums are provided on the download page.

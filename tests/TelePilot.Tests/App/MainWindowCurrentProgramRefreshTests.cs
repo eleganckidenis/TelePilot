@@ -374,7 +374,15 @@ public sealed class MainWindowCurrentProgramRefreshTests
 
         public AppPreferences? SettingsResult { get; set; }
 
-        public Task<AppPreferences?> ShowSettingsAsync(SettingsWindowViewModel viewModel) => Task.FromResult(SettingsResult);
+        public async Task<AppPreferences?> ShowSettingsAsync(SettingsWindowViewModel viewModel, Func<AppPreferences, Task> saveAsync)
+        {
+            if (SettingsResult is { } result)
+            {
+                await saveAsync(result);
+            }
+
+            return SettingsResult;
+        }
 
         public Task<IReadOnlyList<LocalPlaylistFileInput>> PickPlaylistFilesAsync() =>
             Task.FromResult<IReadOnlyList<LocalPlaylistFileInput>>([]);

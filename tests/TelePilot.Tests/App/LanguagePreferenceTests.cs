@@ -2,6 +2,8 @@ using System.Globalization;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Interactivity;
+using TelePilot.App.Controls;
 using TelePilot.App.Models;
 using TelePilot.App.Services;
 using TelePilot.App.ViewModels;
@@ -57,6 +59,57 @@ public sealed class LanguagePreferenceTests
         }
         finally
         {
+            if (Directory.Exists(paths.RootDirectory))
+            {
+                Directory.Delete(paths.RootDirectory, recursive: true);
+            }
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task SettingsPicker_SavesExplicitChoiceBeforeClosingAndReloadsIt()
+    {
+        var paths = new AppDataPaths(Path.Combine(Path.GetTempPath(), $"telepilot-language-{Guid.NewGuid():N}"));
+        using var store = LanguagePreference.OpenStore(paths);
+        var preferences = new AppPreferencesService(store);
+        var owner = new Window();
+        var releaseSave = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var windows = new WindowService();
+        windows.SetOwner(owner);
+        owner.Show();
+        try
+        {
+            var viewModel = new SettingsWindowViewModel(preferences.Current);
+            var show = windows.ShowSettingsAsync(viewModel, async draft =>
+            {
+                await releaseSave.Task;
+                await preferences.SaveAsync(draft);
+            });
+            var settings = Assert.Single(owner.OwnedWindows.OfType<SettingsWindow>());
+            var picker = settings.FindControl<AccessibleComboBox>("LanguagePicker")!;
+            var fallback = Assert.IsType<ComboBox>(picker.Content);
+            fallback.SelectedItem = viewModel.LanguageOptions.Single(option => option.Code == "pl");
+            var save = settings.FindControl<Button>("SaveButton")!;
+            save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+            Assert.True(settings.IsVisible);
+            Assert.False(show.IsCompleted);
+            settings.Close();
+            Assert.True(settings.IsVisible);
+
+            releaseSave.SetResult();
+            var saved = Assert.IsType<AppPreferences>(await show);
+            Assert.Equal("pl", saved.Language);
+            using var reloadedStore = LanguagePreference.OpenStore(paths);
+            var reloaded = new AppPreferencesService(reloadedStore);
+            await reloaded.LoadAsync();
+            Assert.Equal("pl", new SettingsWindowViewModel(reloaded.Current).SelectedLanguage.Code);
+            Assert.Equal("pl-PL", LanguagePreference.Resolve(reloaded.Current.Language, CultureInfo.GetCultureInfo("en-US")).Name);
+        }
+        finally
+        {
+            releaseSave.TrySetResult();
+            owner.Close();
             if (Directory.Exists(paths.RootDirectory))
             {
                 Directory.Delete(paths.RootDirectory, recursive: true);

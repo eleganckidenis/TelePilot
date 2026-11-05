@@ -235,7 +235,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public bool IsArchivePlayback => archivePlaybackProgramme is not null;
 
-    public string PlaybackHeading => IsArchivePlayback ? "Odtwarzanie archiwum" : T("Odtwarzanie na żywo", "Live playback");
+    public string PlaybackHeading => IsArchivePlayback ? T("Odtwarzanie archiwum", "Catch-up playback") : T("Odtwarzanie na żywo", "Live playback");
 
     public string ReturnToListText => IsArchiveSection ? T("Przejdź do archiwum", "Go to archive") : T("Przejdź do listy kanałów", "Go to channel list");
 
@@ -657,9 +657,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task OpenSettingsAsync(bool focusArchive = false)
     {
+        var previousEpgUrl = preferencesService.Current.ExternalEpgUrl;
+        var previousArchiveSources = preferencesService.Current.ArchiveSources;
         var result = await windowService.ShowSettingsAsync(
             new SettingsWindowViewModel(preferencesService.Current, Sources.ToArray(), SelectedSource?.Source.Id.Value)
-            { FocusArchiveOnOpen = focusArchive });
+            { FocusArchiveOnOpen = focusArchive }, preferences => preferencesService.SaveAsync(preferences));
         if (result is null)
         {
             return;
@@ -667,9 +669,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
         try
         {
-            var previousEpgUrl = preferencesService.Current.ExternalEpgUrl;
-            var previousArchiveSources = preferencesService.Current.ArchiveSources;
-            await preferencesService.SaveAsync(result);
             bool archiveSettingsChanged = !previousArchiveSources.SequenceEqual(preferencesService.Current.ArchiveSources);
             bool archiveUpdated = false;
             SelectedSort = SortOptions.First(option => option.Mode == preferencesService.Current.ChannelSortMode);
@@ -1112,7 +1111,18 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task AddFileSourcesAsync()
     {
-        var files = await windowService.PickPlaylistFilesAsync();
+        IReadOnlyList<LocalPlaylistFileInput> files;
+        try
+        {
+            files = await windowService.PickPlaylistFilesAsync();
+        }
+        catch (Exception)
+        {
+            await ReportFailureAsync(T("Nie udało się wybrać plików playlist", "Could not select playlist files"),
+                T("Otwórz ponownie wybór plików i spróbuj jeszcze raz.", "Open the file picker and try again."));
+            return;
+        }
+
         if (files.Count == 0)
         {
             return;
@@ -1158,19 +1168,30 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task AddUrlSourceAsync()
     {
-        var input = await windowService.PromptForUrlSourceAsync();
-        if (input is null)
+        PlaylistSource source;
+        try
         {
+            var input = await windowService.PromptForUrlSourceAsync();
+            if (input is null)
+            {
+                return;
+            }
+
+            source = new PlaylistSource(
+                PlaylistSourceId.New(),
+                input.Name,
+                PlaylistSourceKind.Url,
+                input.Address.AbsoluteUri,
+                input.RefreshOnStartup);
+            await sourceStore.SaveAsync(source);
+        }
+        catch (Exception)
+        {
+            await ReportFailureAsync(T("Nie udało się dodać playlisty z URL", "Could not add the playlist from a URL"),
+                T("Sprawdź dostęp do katalogu danych TelePilot i spróbuj ponownie.", "Check access to the TelePilot data folder and try again."));
             return;
         }
 
-        var source = new PlaylistSource(
-            PlaylistSourceId.New(),
-            input.Name,
-            PlaylistSourceKind.Url,
-            input.Address.AbsoluteUri,
-            input.RefreshOnStartup);
-        await sourceStore.SaveAsync(source);
         var item = new PlaylistSourceItemViewModel(source);
         Sources.Add(item);
         SelectedSource = item;
@@ -1198,7 +1219,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
         try
         {
-            var removedIndex = Sources.IndexOf(sourceToRemove);
             if (!await sourceStore.RemoveAsync(sourceToRemove.Source.Id))
             {
                 await ReportFailureAsync(
@@ -1207,35 +1227,32 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            if (removedIndex >= 0)
-            {
-                Sources.RemoveAt(removedIndex);
-            }
-            else
-            {
-                Sources.Remove(sourceToRemove);
-            }
-
+            var removedIndex = Sources.IndexOf(sourceToRemove);
+            Sources.Remove(sourceToRemove);
             var nextIndex = Math.Min(Math.Max(removedIndex, 0), Sources.Count - 1);
             SelectedSource = nextIndex >= 0 ? Sources[nextIndex] : null;
 
-            // Kanały należą do usuniętego źródła. Czyścimy je przed próbą
-            // wczytania następnego wpisu, aby błąd nowej playlisty nie zostawił
-            // na ekranie nieaktualnej listy. Nie zatrzymuje to aktywnego
-            // odtwarzania; natywny odtwarzacz zachowuje bieżący strumień.
-            await ClearLoadedSourceAsync();
-
-            if (SelectedSource is { } nextSource)
+            if (loadedSourceId is { } activeId && activeId != sourceToRemove.Source.Id)
             {
-                accessibleStatus.ReportStatus(T("Usunięto źródło. Wczytywanie następnego źródła playlisty.", "Source removed. Loading the next playlist source."));
-                await LoadSourceAsync(nextSource.Source);
+                accessibleStatus.ReportStatus(T("Usunięto źródło playlisty.", "Playlist source removed."));
             }
             else
             {
-                accessibleStatus.ReportStatus(T("Usunięto źródło. Lista źródeł playlisty jest pusta.", "Source removed. The playlist source list is empty."));
+                // Clear the removed source's channels even if the next playlist fails to load.
+                await ClearLoadedSourceAsync();
+                if (SelectedSource is { } nextSource)
+                {
+                    accessibleStatus.ReportStatus(T("Usunięto źródło. Wczytywanie następnego źródła playlisty.", "Source removed. Loading the next playlist source."));
+                    await LoadSourceAsync(nextSource.Source);
+                }
+                else
+                {
+                    accessibleStatus.ReportStatus(T("Usunięto źródło. Lista źródeł playlisty jest pusta.", "Source removed. The playlist source list is empty."));
+                }
+
+                IsChannelListViewVisible = true;
             }
 
-            IsChannelListViewVisible = true;
             if (playlistManagerOpen)
             {
                 PlaylistSourceRemoved?.Invoke(this, EventArgs.Empty);

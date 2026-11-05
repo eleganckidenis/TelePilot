@@ -3,7 +3,9 @@
 param(
     [Parameter(Mandatory)][string]$Executable,
     [Parameter(Mandatory)][ValidateSet('en', 'pl')][string]$ExpectedLanguage,
-    [switch]$FirstRun
+    [ValidateSet('win-x64', 'win-arm64')][string]$Runtime,
+    [switch]$FirstRun,
+    [switch]$VerifySettingsLanguagePersistence
 )
 
 Set-StrictMode -Version Latest
@@ -12,6 +14,84 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hoste
     throw 'This test requires a disposable GitHub-hosted Windows runner.'
 }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+if ($Runtime) { . (Join-Path $PSScriptRoot 'windows-package-helpers.ps1') }
+if ($VerifySettingsLanguagePersistence) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class NativeLanguagePicker
+{
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wParam,
+        IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wParam,
+        StringBuilder lParam, uint flags, uint timeout, out IntPtr result);
+
+    private delegate bool EnumChildProc(IntPtr window, IntPtr state);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumChildWindows(IntPtr parent, EnumChildProc callback, IntPtr state);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr window, StringBuilder className, int maxCount);
+
+    public static int FindLanguagePicker(int settingsWindow)
+    {
+        int picker = 0;
+        EnumChildWindows(new IntPtr(settingsWindow), (window, state) =>
+        {
+            var className = new StringBuilder(64);
+            GetClassName(window, className, className.Capacity);
+            if (className.ToString() != "ComboBox" || Send(window.ToInt32(), 0x0146, 0, 0) != 3)
+                return true; // CB_GETCOUNT
+
+            if (ReadOption(window, 1) != "Polski" || ReadOption(window, 2) != "English")
+                return true;
+
+            picker = window.ToInt32();
+            return false;
+        }, IntPtr.Zero);
+        return picker;
+    }
+
+    private static string ReadOption(IntPtr window, int index)
+    {
+        int length = Send(window.ToInt32(), 0x0149, index, 0); // CB_GETLBTEXTLEN
+        if (length < 0 || length > 1000)
+            return "";
+        var text = new StringBuilder(length + 1);
+        IntPtr result;
+        return SendMessageTimeout(window, 0x0148, new IntPtr(index), text, 2, 2000, out result) != IntPtr.Zero
+            ? text.ToString() : ""; // CB_GETLBTEXT
+    }
+
+    public static int ReadSelection(int window)
+    {
+        return Send(window, 0x0147, 0, 0); // CB_GETCURSEL
+    }
+
+    public static void MoveSelection(int window, bool down)
+    {
+        int key = down ? 0x28 : 0x26;
+        Send(window, 0x0100, key, 1); // WM_KEYDOWN
+        Send(window, 0x0101, key, unchecked((int)0xC0000001)); // WM_KEYUP
+    }
+
+    private static int Send(int window, uint message, int wParam, int lParam)
+    {
+        IntPtr result;
+        if (SendMessageTimeout(new IntPtr(window), message, new IntPtr(wParam), new IntPtr(lParam),
+                2, 2000, out result) == IntPtr.Zero)
+            throw new InvalidOperationException("The native Settings combo box did not respond.");
+        return result.ToInt32();
+    }
+}
+'@
+}
 
 function Find-Control($Window, [string]$Id) {
     $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty, $Id)
@@ -46,6 +126,40 @@ function Invoke-Button($Control) {
     $invoke.Invoke()
 }
 
+function Assert-MainLanguage([Diagnostics.Process]$Process, [string]$Language) {
+    $main = Find-AppControl $Process 'tab-live'
+    if ($null -eq $main) { throw 'The main window did not open.' }
+    $liveLabel = if ($Language -eq 'pl') { 'TV na ?ywo' } else { 'Live TV' }
+    if ($main.Control.Current.Name -cnotlike $liveLabel) { throw 'The main window is in the wrong language.' }
+    return $main
+}
+
+function Close-App([Diagnostics.Process]$Process, $Window) {
+    $close = $Window.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern)
+    $close.Close()
+    if (-not $Process.WaitForExit(10000) -or $Process.ExitCode -ne 0) { throw 'TelePilot did not shut down cleanly.' }
+}
+
+function Open-AppSettings([Diagnostics.Process]$Process, $MainWindow) {
+    $menu = Find-Control $MainWindow 'menu-file'
+    if ($null -eq $menu) { throw 'The File menu was not found.' }
+    $pattern = $null
+    if ($menu.TryGetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern, [ref]$pattern)) {
+        $pattern.Expand()
+    } else {
+        Invoke-Button $menu
+    }
+    $menuItem = Find-AppControl $Process 'menu-settings' -TimeoutSeconds 5
+    if ($null -eq $menuItem) { throw 'Settings was not found in the File menu.' }
+    Invoke-Button $menuItem.Control
+    $settings = Find-AppControl $Process 'settings-save'
+    if ($null -eq $settings) { throw 'The Settings window did not open.' }
+
+    $picker = [NativeLanguagePicker]::FindLanguagePicker($settings.Window.Current.NativeWindowHandle)
+    if ($picker -eq 0) { throw 'The native Settings language picker was not found.' }
+    return @{ Settings = $settings; PickerHandle = $picker }
+}
+
 $app = Start-Process -FilePath $Executable -WorkingDirectory (Split-Path -Parent $Executable) -PassThru
 try {
     if ($FirstRun) {
@@ -68,10 +182,8 @@ try {
         Invoke-Button $manager.Control
     }
 
-    $main = Find-AppControl $app 'tab-live'
-    if ($null -eq $main) { throw 'The main window did not open.' }
-    $liveLabel = if ($ExpectedLanguage -eq 'pl') { 'TV na ?ywo' } else { 'Live TV' }
-    if ($main.Control.Current.Name -cnotlike $liveLabel) { throw 'The main window is in the wrong language.' }
+    $main = Assert-MainLanguage $app $ExpectedLanguage
+    if ($Runtime) { Assert-WindowsProcessArchitecture -Process $app -Runtime $Runtime }
     if ($null -ne (Find-Control $main.Window 'playlist-source-selector')) {
         throw 'The main window still exposes the playlist selector.'
     }
@@ -79,9 +191,37 @@ try {
         throw 'The manager unexpectedly opened on an existing profile.'
     }
 
-    $close = $main.Window.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern)
-    $close.Close()
-    if (-not $app.WaitForExit(10000) -or $app.ExitCode -ne 0) { throw 'TelePilot did not shut down cleanly.' }
+    if ($VerifySettingsLanguagePersistence) {
+        $settings = Open-AppSettings $app $main.Window
+        $newLanguage = if ($ExpectedLanguage -eq 'pl') { 'en' } else { 'pl' }
+        $previousIndex = if ($ExpectedLanguage -eq 'pl') { 1 } else { 2 }
+        $newIndex = if ($newLanguage -eq 'pl') { 1 } else { 2 }
+        $pickerHandle = $settings.PickerHandle
+        if ([NativeLanguagePicker]::ReadSelection($pickerHandle) -ne $previousIndex) {
+            throw 'The settings picker does not display the explicit language of the existing profile.'
+        }
+        [NativeLanguagePicker]::MoveSelection($pickerHandle, ($newIndex -gt $previousIndex))
+        if ([NativeLanguagePicker]::ReadSelection($pickerHandle) -ne $newIndex) {
+            throw 'The native language picker did not select the requested language.'
+        }
+        Invoke-Button $settings.Settings.Control
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        while ($null -ne (Find-AppControl $app 'settings-save' -TimeoutSeconds 1)) {
+            if ($timer.Elapsed.TotalSeconds -ge 15) { throw 'Settings did not close after saving the language.' }
+        }
+        Close-App $app $main.Window
+        $app = Start-Process -FilePath $Executable -WorkingDirectory (Split-Path -Parent $Executable) -PassThru
+        $main = Assert-MainLanguage $app $newLanguage
+        if ($Runtime) { Assert-WindowsProcessArchitecture -Process $app -Runtime $Runtime }
+        $settings = Open-AppSettings $app $main.Window
+        if ([NativeLanguagePicker]::ReadSelection($settings.PickerHandle) -ne $newIndex) {
+            throw 'The explicit language was not selected in Settings after restart.'
+        }
+        Invoke-Button (Find-Control $settings.Settings.Window 'settings-cancel')
+        Write-Host "Verified the explicit Settings language after restarting TelePilot: $newLanguage."
+    }
+
+    Close-App $app $main.Window
     Write-Host "Verified native Windows UI Automation (first run: $FirstRun; language: $ExpectedLanguage)."
 } finally {
     if (-not $app.HasExited) { $app.Kill(); $app.WaitForExit() }

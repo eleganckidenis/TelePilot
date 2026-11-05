@@ -122,19 +122,53 @@ public sealed class WindowService : IWindowService
         await window.ShowDialog(GetOwner());
     }
 
-    public async Task<AppPreferences?> ShowSettingsAsync(SettingsWindowViewModel viewModel)
+    public async Task<AppPreferences?> ShowSettingsAsync(SettingsWindowViewModel viewModel, Func<AppPreferences, Task> saveAsync)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
+        ArgumentNullException.ThrowIfNull(saveAsync);
         var window = new SettingsWindow { DataContext = viewModel };
-        EventHandler<AppPreferences?> closeHandler = (_, result) => window.Close(result);
-        viewModel.CloseRequested += closeHandler;
+        var saving = false;
+        window.Closing += (_, e) => e.Cancel = saving;
+        async void CloseHandler(object? sender, AppPreferences? result)
+        {
+            if (saving)
+            {
+                return;
+            }
+
+            if (result is null)
+            {
+                window.Close();
+                return;
+            }
+
+            saving = true;
+            window.IsEnabled = false;
+            try
+            {
+                await saveAsync(result);
+            }
+            catch (Exception)
+            {
+                viewModel.ReportSaveFailure();
+                return;
+            }
+            finally
+            {
+                saving = false;
+                window.IsEnabled = true;
+            }
+
+            window.Close(result);
+        }
+        viewModel.CloseRequested += CloseHandler;
         try
         {
             return await window.ShowDialog<AppPreferences?>(GetOwner());
         }
         finally
         {
-            viewModel.CloseRequested -= closeHandler;
+            viewModel.CloseRequested -= CloseHandler;
         }
     }
 

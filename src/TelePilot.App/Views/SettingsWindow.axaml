@@ -240,7 +240,6 @@
           x:Name="SaveButton"
           Classes="primary-action"
           Content="{x:Static loc:ViewText.Save}"
-          Command="{Binding SaveCommand}"
           automation:AutomationProperties.Name="{x:Static loc:ViewText.SaveSettings}"
           automation:AutomationProperties.AutomationId="settings-save" />
     </StackPanel>

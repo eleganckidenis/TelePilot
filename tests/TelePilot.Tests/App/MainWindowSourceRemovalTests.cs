@@ -91,6 +91,65 @@ public sealed class MainWindowSourceRemovalTests
     }
 
     [AvaloniaFact]
+    public async Task AddFileSources_WhenFilePickerFailsReportsSafeError()
+    {
+        const string privatePath = "C:\\prywatne\\playlista.m3u";
+        var windowService = new ConfirmationWindowService(confirmResult: false)
+        {
+            PickerException = new IOException(privatePath),
+        };
+        var status = new RecordingAccessibleStatusService();
+        using var viewModel = new MainWindowViewModel(
+            new SourceAwarePlaylistService(),
+            new MutablePlaylistSourceStore(),
+            new NoOpPlaybackService(),
+            new EmptyEpgSourceManager(),
+            windowService,
+            status,
+            new FocusCoordinator());
+
+        await viewModel.AddFileSourceCommand.ExecuteAsync(null);
+
+        Assert.Empty(viewModel.Sources);
+        Assert.Contains("Nie udało się wybrać plików playlist", status.AlertMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain(privatePath, status.AlertMessage, StringComparison.Ordinal);
+        Assert.NotEmpty(windowService.Message);
+        Assert.DoesNotContain(privatePath, windowService.Message, StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact]
+    public async Task AddUrlSource_WhenSavingFailsKeepsCurrentChannelsAndReportsSafeError()
+    {
+        var source = new PlaylistSource(PlaylistSourceId.New(), "Domowa", PlaylistSourceKind.Url, "https://example.test/home.m3u");
+        const string privateUrl = "https://example.test/playlist.m3u?token=secret";
+        var store = new MutablePlaylistSourceStore(source) { SaveException = new IOException(privateUrl) };
+        var windowService = new ConfirmationWindowService(confirmResult: false)
+        {
+            UrlSource = new PlaylistSourceInput("Nowa", new Uri(privateUrl), true),
+        };
+        var status = new RecordingAccessibleStatusService();
+        using var viewModel = new MainWindowViewModel(
+            new SourceAwarePlaylistService(),
+            store,
+            new NoOpPlaybackService(),
+            new EmptyEpgSourceManager(),
+            windowService,
+            status,
+            new FocusCoordinator());
+        await viewModel.InitializeAsync();
+        var activeChannel = Assert.Single(viewModel.Channels);
+
+        await viewModel.AddUrlSourceCommand.ExecuteAsync(null);
+
+        Assert.Equal(source.Id, Assert.Single(viewModel.Sources).Source.Id);
+        Assert.Same(activeChannel, Assert.Single(viewModel.Channels));
+        Assert.Contains("Nie udało się dodać playlisty z URL", status.AlertMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain(privateUrl, status.AlertMessage, StringComparison.Ordinal);
+        Assert.NotEmpty(windowService.Message);
+        Assert.DoesNotContain(privateUrl, windowService.Message, StringComparison.Ordinal);
+    }
+
+    [AvaloniaFact]
     public async Task RefreshSource_RefreshesManagedFileBeforeReloadingPlaylist()
     {
         var source = new PlaylistSource(
@@ -206,6 +265,36 @@ public sealed class MainWindowSourceRemovalTests
         Assert.Single(viewModel.Channels);
         Assert.Contains("Drugie źródło", viewModel.Channels[0].Name, StringComparison.Ordinal);
         Assert.Equal(FocusTarget.PlaylistSourceSelector, focusRequests.Last().Target);
+    }
+
+    [AvaloniaFact]
+    public async Task RemoveSource_WhenSelectionIsInactivePreservesActivePlaylistAndGuide()
+    {
+        var active = new PlaylistSource(PlaylistSourceId.New(), "Aktywna", PlaylistSourceKind.Url, "https://example.test/active.m3u");
+        var inactive = new PlaylistSource(PlaylistSourceId.New(), "Do usunięcia", PlaylistSourceKind.Url, "https://example.test/inactive.m3u");
+        var next = new PlaylistSource(PlaylistSourceId.New(), "Niedostępna", PlaylistSourceKind.Url, "https://example.test/next.m3u");
+        var store = new MutablePlaylistSourceStore(active, inactive, next);
+        var playlistService = new SourceAwarePlaylistService(next.Id);
+        var epgService = new EmptyEpgSourceManager();
+        using var viewModel = new MainWindowViewModel(
+            playlistService,
+            store,
+            new NoOpPlaybackService(),
+            epgService,
+            new ConfirmationWindowService(confirmResult: true),
+            new RecordingAccessibleStatusService(),
+            new FocusCoordinator());
+        await viewModel.InitializeAsync();
+        var activeChannel = Assert.Single(viewModel.Channels);
+        viewModel.SelectedSource = viewModel.Sources[1];
+
+        await viewModel.RemoveSourceCommand.ExecuteAsync(null);
+
+        Assert.Equal([inactive.Id], store.RemovedSourceIds);
+        Assert.Equal([active.Id, next.Id], viewModel.Sources.Select(item => item.Source.Id));
+        Assert.Equal([active.Id], playlistService.LoadedSourceIds);
+        Assert.Same(activeChannel, Assert.Single(viewModel.Channels));
+        Assert.NotEmpty(Assert.Single(epgService.SetSourceCalls));
     }
 
     [AvaloniaFact]
@@ -332,6 +421,8 @@ public sealed class MainWindowSourceRemovalTests
 
         public Exception? RefreshException { get; init; }
 
+        public Exception? SaveException { get; init; }
+
         public Task<IReadOnlyList<PlaylistSource>> GetAllAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<PlaylistSource>>([.. sourceItems]);
 
@@ -370,6 +461,11 @@ public sealed class MainWindowSourceRemovalTests
 
         public Task SaveAsync(PlaylistSource source, CancellationToken cancellationToken = default)
         {
+            if (SaveException is not null)
+            {
+                return Task.FromException(SaveException);
+            }
+
             sourceItems.RemoveAll(candidate => candidate.Id == source.Id);
             sourceItems.Add(source);
             return Task.CompletedTask;
@@ -429,11 +525,17 @@ public sealed class MainWindowSourceRemovalTests
 
         public string Message { get; private set; } = string.Empty;
 
+        public Exception? PickerException { get; init; }
+
+        public PlaylistSourceInput? UrlSource { get; init; }
+
         public Task<IReadOnlyList<LocalPlaylistFileInput>> PickPlaylistFilesAsync() =>
-            Task.FromResult(pickedFiles ?? (IReadOnlyList<LocalPlaylistFileInput>)[]);
+            PickerException is null
+                ? Task.FromResult(pickedFiles ?? (IReadOnlyList<LocalPlaylistFileInput>)[])
+                : Task.FromException<IReadOnlyList<LocalPlaylistFileInput>>(PickerException);
 
         public Task<PlaylistSourceInput?> PromptForUrlSourceAsync() =>
-            Task.FromResult<PlaylistSourceInput?>(null);
+            Task.FromResult(UrlSource);
 
         public Task<bool> ShowConfirmationAsync(
             string title,

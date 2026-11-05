@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -8,17 +9,26 @@ namespace TelePilot.App.Services;
 
 internal sealed record UpdateAsset(Version Version, string Name, Uri Uri, long Size, byte[] Digest);
 
-internal sealed class ReleaseUpdate(HttpClient client, string directory)
+internal sealed class ReleaseUpdate(HttpClient client, string directory, Architecture architecture)
 {
     internal const long MaximumAssetBytes = 512L * 1024 * 1024;
     private const int MaximumMetadataBytes = 1024 * 1024;
     private const int BufferBytes = 64 * 1024;
     private const string Repository = "eleganckidenis/TelePilot";
-    private const string AssetSuffix = "-win-x64-setup.exe";
+    private readonly string? assetSuffix = AssetSuffixFor(architecture);
 
     private static readonly SearchValues<char> HexDigits = SearchValues.Create("0123456789abcdefABCDEF");
 
     internal static Uri LatestReleaseUri { get; } = new($"https://api.github.com/repos/{Repository}/releases/latest");
+
+    internal static bool Supports(Architecture architecture) => AssetSuffixFor(architecture) is not null;
+
+    private static string? AssetSuffixFor(Architecture architecture) => architecture switch
+    {
+        Architecture.X64 => "-win-x64-setup.exe",
+        Architecture.Arm64 => "-win-arm64-setup.exe",
+        _ => null,
+    };
 
     internal static HttpClient CreateClient() => new(new SocketsHttpHandler
     {
@@ -29,6 +39,11 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory)
 
     internal async Task<UpdateAsset?> CheckAsync(Version current, CancellationToken cancellationToken)
     {
+        if (assetSuffix is null)
+        {
+            return null;
+        }
+
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
         using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseUri);
@@ -55,7 +70,7 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory)
             metadata.Write(buffer, 0, count);
         }
 
-        return SelectAsset(JsonSerializer.Deserialize<Release>(metadata.GetBuffer().AsSpan(0, (int)metadata.Length)), current);
+        return SelectAsset(JsonSerializer.Deserialize<Release>(metadata.GetBuffer().AsSpan(0, (int)metadata.Length)), current, assetSuffix);
     }
 
     internal async Task<string> DownloadAsync(UpdateAsset asset, CancellationToken cancellationToken)
@@ -116,7 +131,7 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory)
             && await VerifyStreamAsync(input, null, asset, cancellationToken).ConfigureAwait(false);
     }
 
-    private static UpdateAsset? SelectAsset(Release? release, Version current)
+    private static UpdateAsset? SelectAsset(Release? release, Version current, string suffix)
     {
         if (release is not { Draft: false, Prerelease: false, Tag: { } tag, Assets: { } assets }
             || !tag.StartsWith('v')
@@ -126,7 +141,7 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory)
             return null;
         }
 
-        var name = $"TelePilot-{version}{AssetSuffix}";
+        var name = $"TelePilot-{version}{suffix}";
         var url = $"https://github.com/{Repository}/releases/download/{tag}/{name}";
         var matches = assets.Where(asset => asset?.Name == name).ToArray();
         if (matches.Length != 1
@@ -224,10 +239,11 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory)
             foreach (var path in Directory.EnumerateFiles(directory))
             {
                 var name = Path.GetFileName(path);
-                if (name != keep && ((name.StartsWith("TelePilot-", StringComparison.Ordinal)
-                        && name.EndsWith(AssetSuffix, StringComparison.Ordinal)
-                        && name.Length > 10 + AssetSuffix.Length
-                        && TryReleaseVersion(name[10..^AssetSuffix.Length], out _))
+                if (name != keep && ((assetSuffix is { } suffix
+                        && name.StartsWith("TelePilot-", StringComparison.Ordinal)
+                        && name.EndsWith(suffix, StringComparison.Ordinal)
+                        && name.Length > 10 + suffix.Length
+                        && TryReleaseVersion(name[10..^suffix.Length], out _))
                     || (name.Length == 47 && name.StartsWith("TelePilot-", StringComparison.Ordinal)
                         && name.EndsWith(".part", StringComparison.Ordinal)
                         && Guid.TryParseExact(name.AsSpan(10, 32), "N", out _)

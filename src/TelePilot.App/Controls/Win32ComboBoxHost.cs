@@ -335,14 +335,19 @@ internal sealed class Win32ComboBoxHost : NativeControlHost
             () =>
             {
                 isSelectionReadQueued = false;
-                int currentIndex = ReadSelectedIndex();
-                if (selectedIndex != currentIndex)
-                {
-                    selectedIndex = currentIndex;
-                    NativeSelectionChanged?.Invoke(this, currentIndex);
-                }
+                SynchronizeSelection();
             },
             DispatcherPriority.Input);
+    }
+
+    internal void SynchronizeSelection()
+    {
+        int currentIndex = ReadSelectedIndex();
+        if (selectedIndex != currentIndex)
+        {
+            selectedIndex = currentIndex;
+            NativeSelectionChanged?.Invoke(this, currentIndex);
+        }
     }
 
     private int ReadSelectedIndex()

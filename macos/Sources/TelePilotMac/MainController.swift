@@ -189,6 +189,10 @@ import TelePilotRecording
         do { try preferences.save(to: dataDirectory.appendingPathComponent("preferences.json")) }
         catch { alert(l("Nie zapisano ustawień", "Could Not Save Settings"), l("Sprawdź dostęp do katalogu danych aplikacji.", "Check access to the app’s data folder."), window: window) }
     }
+    func commitPreferences(_ draft: Preferences) throws {
+        try draft.save(to: dataDirectory.appendingPathComponent("preferences.json"))
+        preferences = draft
+    }
     func setStatus(_ text: String, speak: Bool = true) {
         guard status.stringValue != text else { return }
         status.stringValue = text

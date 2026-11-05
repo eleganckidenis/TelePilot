@@ -17,7 +17,7 @@ Usage: scripts/package-app.sh --vlc-dmg FILE [options]
   --force                  Replace this version/architecture's existing output.
   --help
 Output: artifacts/VERSION/ARCH/TelePilot.app and matching DMG, ZIP, SHA256SUMS.
-Only the official, SHA-256-pinned VLC 3.0.23 image is accepted.
+Only the official, SHA-256-pinned VLC 3.0.24 image is accepted.
 USAGE
 }
 fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
@@ -44,7 +44,7 @@ done
 [[ "$ARCH" == "$(uname -m)" ]] || fail "Build and test on a native $ARCH Mac; cross release refused"
 [[ "$(sysctl -n sysctl.proc_translated 2>/dev/null || true)" != 1 ]] || fail "Run from a native terminal, outside Rosetta"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || fail "Invalid version"
-[[ -f "$VLC_DMG" ]] || fail "--vlc-dmg must name the official VLC 3.0.23 image"
+[[ -f "$VLC_DMG" ]] || fail "--vlc-dmg must name the official VLC 3.0.24 image"
 [[ -z "$NOTARY_PROFILE" || -n "$SIGN_IDENTITY" ]] || fail "Notarization requires a Developer ID identity"
 [[ -z "$SIGN_IDENTITY" || "$SIGN_IDENTITY" == 'Developer ID Application:'* ]] || fail "Expected Developer ID Application identity"
 if [[ -n "$FFMPEG" ]]; then
@@ -57,8 +57,8 @@ fi
 for tool in swift xcrun codesign ditto hdiutil iconutil lipo plutil shasum sips file otool python3 xattr; do
   command -v "$tool" >/dev/null || fail "Required tool missing: $tool"
 done
-EXPECTED_SHA=fc6fac08d87f538517d44aca0c5e7a244b67c8c4cb589bf478363a7315fd5e0d
-[[ "$ARCH" == arm64 ]] || EXPECTED_SHA=ec01530ce69d849dd057fba8876e68ac39bf279dc28de4e9c04e4aec11fc98db
+EXPECTED_SHA=64a89d93cdd30b0e97131743e246373db82d6826ea882d265d46d74b136da2b7
+[[ "$ARCH" == arm64 ]] || EXPECTED_SHA=1ef6c903e2dc026d4e58ddf7b2a9ed0eb6f8caf80a9a9f46f96490340b962707
 ACTUAL_SHA="$(shasum -a 256 "$VLC_DMG")"; ACTUAL_SHA="${ACTUAL_SHA%% *}"
 [[ "$ACTUAL_SHA" == "$EXPECTED_SHA" ]] || fail "VLC image SHA-256 mismatch for $ARCH"
 OUT="$ROOT/artifacts/$VERSION/$ARCH"
@@ -80,7 +80,7 @@ mkdir -p "$MOUNT"
 hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" "$VLC_DMG" >/dev/null
 MOUNTED=true
 VLC_APP="$MOUNT/VLC.app"; VLC_ROOT="$VLC_APP/Contents/MacOS"
-[[ "$(plutil -extract CFBundleShortVersionString raw -o - "$VLC_APP/Contents/Info.plist")" == 3.0.23 ]] || fail "Unexpected VLC version"
+[[ "$(plutil -extract CFBundleShortVersionString raw -o - "$VLC_APP/Contents/Info.plist")" == 3.0.24 ]] || fail "Unexpected VLC version"
 codesign --verify --deep --strict "$VLC_APP"
 VLC_SIGNATURE="$(codesign -dv --verbose=4 "$VLC_APP" 2>&1)"
 grep -q '^Authority=Developer ID Application:' <<< "$VLC_SIGNATURE" || fail "VLC lacks Developer ID signature"
@@ -178,7 +178,7 @@ PLIST
 plutil -lint "$CONTENTS/Info.plist"
 {
   printf 'Excluded: libosx_notifications_plugin.dylib (obsolete Growl notifications; TelePilot uses AppKit announcements)\n\n'
-  printf 'TelePilot %s; VLC 3.0.23; architecture %s\nOfficial DMG SHA256: %s\n\n' "$VERSION" "$ARCH" "$EXPECTED_SHA"
+  printf 'TelePilot %s; VLC 3.0.24; architecture %s\nOfficial DMG SHA256: %s\n\n' "$VERSION" "$ARCH" "$EXPECTED_SHA"
   find "$LIBVLC/plugins" -type f -name '*.dylib' -exec basename {} \; | LC_ALL=C sort
 } > "$RESOURCES/licenses/VLC_PLUGIN_INVENTORY.txt"
 find "$LIBVLC/plugins" -type f -name '*.dylib' -print -quit | grep -q . || fail "No bundled VLC plugins"

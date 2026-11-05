@@ -4,6 +4,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using System.ComponentModel;
+using TelePilot.App.Services;
 using TelePilot.App.ViewModels;
 using static TelePilot.Core.Localization.Localizer;
 
@@ -16,6 +17,7 @@ public sealed partial class SettingsWindow : Window
     public SettingsWindow()
     {
         InitializeComponent();
+        SaveButton.Click += OnSaveClicked;
         LanguagePicker.PreviousTabTarget = SaveButton;
         LanguagePicker.NextTabTarget = SortPicker;
         SortPicker.PreviousTabTarget = LanguagePicker;
@@ -55,6 +57,22 @@ public sealed partial class SettingsWindow : Window
         Opened += OnOpened;
         DataContextChanged += OnDataContextChanged;
         Closed += (_, _) => ObserveViewModel(null);
+    }
+
+    private void OnSaveClicked(object? sender, RoutedEventArgs e)
+    {
+        if (observedViewModel is not { } viewModel)
+        {
+            return;
+        }
+
+        LanguagePicker.SynchronizeNativeSelection();
+        if (LanguagePicker.SelectedItem is LanguageOption option)
+        {
+            viewModel.SelectedLanguage = option;
+        }
+
+        viewModel.SaveCommand.Execute(null);
     }
 
     private void OnSaveButtonKeyDown(object? sender, KeyEventArgs e)

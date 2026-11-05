@@ -1,4 +1,5 @@
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using TelePilot.App.Services;
@@ -12,8 +13,13 @@ public sealed class ReleaseUpdateTests
     private static readonly byte[] Payload = "test installer payload"u8.ToArray();
     private static string Digest => "sha256:" + Convert.ToHexString(SHA256.HashData(Payload)).ToLowerInvariant();
 
-    [Fact]
-    public async Task SelectsExactNewerWindowsAssetByNumericVersion()
+    private const string ArmName = "TelePilot-2.10.0-win-arm64-setup.exe";
+    private const string ArmUrl = "https://github.com/eleganckidenis/TelePilot/releases/download/v2.10.0/" + ArmName;
+
+    [Theory]
+    [InlineData(Architecture.X64, Name)]
+    [InlineData(Architecture.Arm64, ArmName)]
+    public async Task SelectsExactNewerWindowsAssetByNumericVersion(Architecture architecture, string expectedName)
     {
         using var client = new HttpClient(new MockHttp(request =>
         {
@@ -21,13 +27,13 @@ public sealed class ReleaseUpdateTests
             Assert.Null(request.Headers.Authorization);
             Assert.Null(request.Headers.Referrer);
             return TextResponse(Release(
-                assets: [Asset(name: "TelePilot-2.10.0-Apple-Silicon.dmg"), Asset(), Asset(name: Name + ".sha256")]));
+                assets: [Asset(name: "TelePilot-2.10.0-Apple-Silicon.dmg"), Asset(name: ArmName, url: ArmUrl), Asset(), Asset(name: Name + ".sha256")]));
         }));
 
-        var asset = await new ReleaseUpdate(client, "").CheckAsync(new Version(2, 9, 99), CancellationToken.None);
+        var asset = await new ReleaseUpdate(client, "", architecture).CheckAsync(new Version(2, 9, 99), CancellationToken.None);
 
         Assert.NotNull(asset);
-        Assert.Equal(Name, asset.Name);
+        Assert.Equal(expectedName, asset.Name);
         Assert.Equal(new Version(2, 10, 0), asset.Version);
         Assert.Equal(SHA256.HashData(Payload), asset.Digest);
     }
@@ -70,7 +76,24 @@ public sealed class ReleaseUpdateTests
             _ => Release(),
         };
         using var client = new HttpClient(new MockHttp(_ => TextResponse(release)));
-        Assert.Null(await new ReleaseUpdate(client, "").CheckAsync(current, CancellationToken.None));
+        Assert.Null(await new ReleaseUpdate(client, "", Architecture.X64).CheckAsync(current, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Arm64DoesNotFallBackToTheX64Installer()
+    {
+        using var client = new HttpClient(new MockHttp(_ => TextResponse(Release())));
+        var update = new ReleaseUpdate(client, "", Architecture.Arm64);
+        Assert.Null(await update.CheckAsync(new Version(2, 0, 0), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UnsupportedArchitectureDoesNotQueryTheRelease()
+    {
+        using var client = new HttpClient(new MockHttp(_ => throw new InvalidOperationException("Unexpected request.")));
+        var update = new ReleaseUpdate(client, "", Architecture.X86);
+        Assert.False(ReleaseUpdate.Supports(Architecture.X86));
+        Assert.Null(await update.CheckAsync(new Version(2, 0, 0), CancellationToken.None));
     }
 
     [Fact]
@@ -84,7 +107,7 @@ public sealed class ReleaseUpdateTests
             "release-assets.githubusercontent.com" => ByteResponse(Payload),
             _ => throw new InvalidOperationException(),
         }));
-        var update = new ReleaseUpdate(client, folder.Path);
+        var update = new ReleaseUpdate(client, folder.Path, Architecture.X64);
         var asset = await update.CheckAsync(new Version(2, 0, 0), CancellationToken.None);
         Assert.NotNull(asset);
 
@@ -98,7 +121,7 @@ public sealed class ReleaseUpdateTests
         }
 
         using var offline = new HttpClient(new MockHttp(_ => throw new InvalidOperationException("A verified cache hit should not make a request.")));
-        Assert.Equal(saved, await new ReleaseUpdate(offline, folder.Path).DownloadAsync(asset, CancellationToken.None));
+        Assert.Equal(saved, await new ReleaseUpdate(offline, folder.Path, Architecture.X64).DownloadAsync(asset, CancellationToken.None));
 
         await File.WriteAllBytesAsync(saved, new byte[Payload.Length]);
         Assert.False(await ReleaseUpdate.VerifyAsync(saved, asset, CancellationToken.None));
@@ -129,7 +152,7 @@ public sealed class ReleaseUpdateTests
             _ => throw new InvalidOperationException("Untrusted redirect followed."),
         }));
 
-        var update = new ReleaseUpdate(client, folder.Path);
+        var update = new ReleaseUpdate(client, folder.Path, Architecture.X64);
         var asset = await update.CheckAsync(new Version(2, 0, 0), CancellationToken.None);
         Assert.NotNull(asset);
         await Assert.ThrowsAsync<InvalidDataException>(() => update.DownloadAsync(asset, CancellationToken.None));
@@ -147,7 +170,14 @@ public sealed class ReleaseUpdateTests
 
         using var folder = new TemporaryFolder();
         using var client = ReleaseUpdate.CreateClient();
-        var update = new ReleaseUpdate(client, folder.Path);
+        var architecture = Environment.GetEnvironmentVariable("TELEPILOT_UPDATER_TEST_WINDOWS_ARCH") switch
+        {
+            "arm64" => Architecture.Arm64,
+            "x64" => Architecture.X64,
+            null => OperatingSystem.IsWindows() ? RuntimeInformation.ProcessArchitecture : Architecture.X64,
+            _ => throw new InvalidOperationException("Expected x64 or arm64."),
+        };
+        var update = new ReleaseUpdate(client, folder.Path, architecture);
         var asset = await update.CheckAsync(Version.Parse(installed), CancellationToken.None);
         Assert.NotNull(asset);
         var expected = Environment.GetEnvironmentVariable("TELEPILOT_UPDATER_TEST_EXPECTED_VERSION");

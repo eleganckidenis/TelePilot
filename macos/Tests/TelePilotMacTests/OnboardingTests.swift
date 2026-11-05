@@ -68,6 +68,7 @@ struct OnboardingTests {
             if let monitor = controller.keyMonitor { NSEvent.removeMonitor(monitor) }
             controller.pollTask?.cancel()
             controller.epgTask?.cancel()
+            controller.settingsWindow?.window?.orderOut(nil)
             controller.playlistManager?.window?.orderOut(nil)
             controller.window?.orderOut(nil)
         }
@@ -152,6 +153,31 @@ struct OnboardingTests {
             await controller.playbackTask?.value
             await player.shutdown()
         }
+
+        // Exercise the real Settings popup and Save action, then load from the
+        // profile just as the next process does before building its windows.
+        controller.settings()
+        let settings = try #require(controller.settingsWindow)
+        #expect(settings.language.titleOfSelectedItem == "English")
+        settings.language.selectItem(withTitle: "Polski")
+        controller.settings()
+        #expect(controller.settingsWindow === settings)
+        #expect(settings.language.titleOfSelectedItem == "Polski")
+        #expect(NSApp.sendAction(#selector(SettingsWindow.save), to: settings, from: nil))
+        #expect(settings.window?.isVisible == false)
+        #expect(Localization.language == .english)
+
+        let persisted = try Preferences.load(from: root.appendingPathComponent("preferences.json"))
+        #expect(persisted.language == .polish)
+        #expect(persisted.selectedPlaylistID == controller.selectedSource?.id)
+        Localization.configure(persisted.language ?? .system)
+        controller.settings()
+        let reopened = try #require(controller.settingsWindow)
+        #expect(reopened.window?.title == "Ustawienia TelePilota")
+        #expect(reopened.language.titleOfSelectedItem == "Polski")
+        reopened.language.selectItem(withTitle: "Język systemu")
+        reopened.cancel()
+        #expect(try Preferences.load(from: root.appendingPathComponent("preferences.json")).language == .polish)
     }
 
     private func waitForPlaying(_ player: Player) async throws {

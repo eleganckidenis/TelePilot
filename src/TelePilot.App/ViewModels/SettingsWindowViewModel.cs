@@ -246,6 +246,10 @@ public sealed class SettingsWindowViewModel : ObservableObject
 
     public IRelayCommand CancelCommand { get; }
 
+    internal void ReportSaveFailure() =>
+        ValidationMessage = T("Nie udało się zapisać ustawień. Sprawdź dostęp do katalogu danych TelePilot i spróbuj ponownie.",
+            "Could not save settings. Check access to the TelePilot data folder and try again.");
+
     private void Save()
     {
         if (!TryReadArchiveNumber(BufferSeconds, out var seconds) || seconds <= 0 ||
