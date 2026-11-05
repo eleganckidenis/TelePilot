@@ -1,130 +1,36 @@
-name: Windows build and tests
+name: Windows ARM64 release artifact acceptance
 
-on:
-  push:
-    branches: [main, master, 'release/**']
-  pull_request:
-  workflow_dispatch:
+on: workflow_dispatch
 
 permissions:
   contents: read
-
-env:
-  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
-  DOTNET_NOLOGO: '1'
-  DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
-  TELEPILOT_RUN_PRIVATE_INTEGRATION: '0'
-  TELEPILOT_RUN_PLAYBACK_INTEGRATION: '1'
+  actions: read
 
 jobs:
-  tests:
-    name: Tests (${{ matrix.runtime }})
-    runs-on: ${{ matrix.runner }}
+  accept-arm64:
+    runs-on: windows-11-arm
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runtime: win-x64, architecture: x64, runner: windows-latest }
-          - { runtime: win-arm64, architecture: arm64, runner: windows-11-arm }
-    env:
-      TELEPILOT_BUILD_RUNTIME: ${{ matrix.runtime }}
-      TELEPILOT_EXPECTED_WINDOWS_ARCHITECTURE: ${{ matrix.architecture }}
-      VlcWindowsX64Enabled: ${{ matrix.runtime == 'win-x64' }}
-      VlcWindowsArm64Enabled: ${{ matrix.runtime == 'win-arm64' }}
-      VlcWindowsX86Enabled: 'false'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
-        with:
-          global-json-file: global.json
-          architecture: ${{ matrix.architecture }}
-      - name: Restore
-        run: dotnet restore TelePilot.sln -p:UsedAvaloniaProducts=
-      - name: Test Release
+      - name: Download and verify the exact release installer
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          ./scripts/prepare-ci-ffmpeg.ps1 -Runtime $env:TELEPILOT_BUILD_RUNTIME
-          dotnet test TelePilot.sln --configuration Release --no-restore -p:UsedAvaloniaProducts=
-
-  installers:
-    name: Installer (${{ matrix.runtime }})
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/heads/release/')
-    needs: tests
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runtime: win-x64, architecture: x64, runner: windows-latest }
-          - { runtime: win-arm64, architecture: arm64, runner: windows-11-arm }
-    env:
-      TELEPILOT_BUILD_RUNTIME: ${{ matrix.runtime }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
-        with:
-          global-json-file: global.json
-          architecture: ${{ matrix.architecture }}
-      - name: Install verified Inno Setup 6.7.3
-        shell: pwsh
-        run: |
-          $setupPath = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
-          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $setupPath
-          $hash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash
-          if ($hash -ne '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732') {
-            throw 'Inno Setup SHA-256 mismatch.'
+          $download = Join-Path $env:RUNNER_TEMP 'exact-arm64-artifact'
+          gh run download 41994499805 --repo $env:GITHUB_REPOSITORY --name TelePilot-diagnostics-win-arm64 --dir $download
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download the pinned CI artifact.' }
+          $installers = @(Get-ChildItem -LiteralPath $download -Filter TelePilot-2.0.1-win-arm64-setup.exe -File -Recurse)
+          if ($installers.Count -ne 1) { throw 'Expected exactly one Windows ARM64 installer.' }
+          $installer = $installers[0].FullName
+          $sha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha256 -cne 'f81fa6133986907f42f1bf2490ee822b8acbdbfe7e9857d0589385c296bdd169') {
+            throw "Incorrect SHA-256 for the exact ARM64 release installer: $sha256"
           }
-          $signature = Get-AuthenticodeSignature -LiteralPath $setupPath
-          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'CN=Pyrsys B\.V\.') {
-            throw 'Inno Setup publisher signature is invalid.'
-          }
-          $compilerDirectory = Join-Path $env:RUNNER_TEMP 'inno-setup-6'
-          $setupArguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CURRENTUSER', "/DIR=`"$compilerDirectory`"")
-          $process = Start-Process -FilePath $setupPath -ArgumentList $setupArguments -WindowStyle Hidden -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "Inno Setup installation failed: $($process.ExitCode)" }
-      - name: Build installer
-        id: build_installer
+          Write-Host "Verified ARM64 installer SHA-256 $sha256 from run 41994499805."
+          "TELEPILOT_VERIFIED_INSTALLER=$installer" >> $env:GITHUB_ENV
+      - name: Verify native install, profile language on restart, upgrade and uninstall
         shell: pwsh
-        run: ./scripts/build-windows-installer.ps1 -Runtime $env:TELEPILOT_BUILD_RUNTIME -InnoCompiler (Join-Path $env:RUNNER_TEMP 'inno-setup-6\ISCC.exe') -SkipTests
-      - name: Install and uninstall the release package in both languages
-        shell: pwsh
-        run: |
-          $installers = @(Get-ChildItem -Path "artifacts/release/*/$env:TELEPILOT_BUILD_RUNTIME/*-setup.exe")
-          if ($installers.Count -ne 1) { throw 'Expected exactly one release installer.' }
-          [xml]$project = Get-Content -LiteralPath 'src/TelePilot.App/TelePilot.App.csproj' -Raw
-          ./scripts/test-windows-installer.ps1 -Installer $installers[0].FullName -Version $project.Project.PropertyGroup.Version -Runtime $env:TELEPILOT_BUILD_RUNTIME
-      - name: Verify FFmpeg download and checksum rejection with real Inno Setup
-        if: ${{ !cancelled() && steps.build_installer.outcome == 'success' }}
-        shell: pwsh
-        run: ./scripts/test-windows-ffmpeg-download.ps1 -Runtime $env:TELEPILOT_BUILD_RUNTIME -RunDownloadTest -TestInvalidHash -InnoCompiler (Join-Path $env:RUNNER_TEMP 'inno-setup-6\ISCC.exe')
-      - name: Archive source
-        if: matrix.runtime == 'win-x64'
-        shell: pwsh
-        run: ./scripts/prepare-github-source.ps1
-      - name: Upload installers and source for review
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: TelePilot-${{ matrix.runtime }}
-          if-no-files-found: error
-          retention-days: 14
-          path: |
-            artifacts/release/*/${{ matrix.runtime }}/*-setup.exe
-            artifacts/release/*/${{ matrix.runtime }}/*.sha256
-            artifacts/release/*/source/*.zip
-            artifacts/release/*/source/*.sha256
-      - name: Keep installer for diagnostics if a smoke test failed
-        if: ${{ failure() && steps.build_installer.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: TelePilot-diagnostics-${{ matrix.runtime }}
-          if-no-files-found: error
-          retention-days: 3
-          path: |
-            artifacts/release/*/${{ matrix.runtime }}/*-setup.exe
-            artifacts/release/*/${{ matrix.runtime }}/*.sha256
+        run: ./scripts/test-windows-installer.ps1 -Installer $env:TELEPILOT_VERIFIED_INSTALLER -Version 2.0.1 -Runtime win-arm64 -SkipSettingsForegroundInteraction

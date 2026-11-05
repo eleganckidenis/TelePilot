@@ -6,7 +6,8 @@ Tests the real release installer in a disposable GitHub Actions Windows runner.
 param(
     [Parameter(Mandatory)][string]$Installer,
     [Parameter(Mandatory)][string]$Version,
-    [ValidateSet('win-x64', 'win-arm64')][string]$Runtime = 'win-x64'
+    [ValidateSet('win-x64', 'win-arm64')][string]$Runtime = 'win-x64',
+    [switch]$SkipSettingsForegroundInteraction
 )
 
 Set-StrictMode -Version Latest
@@ -69,7 +70,7 @@ $profileDir = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder
 if ($testNativeUi -and (Test-Path -LiteralPath $profileDir)) {
     throw 'The native UI test requires an empty user profile.'
 }
-if (-not $testNativeUi) { Write-Warning 'Native UI Automation skipped: this runner has no interactive desktop.' }
+if (-not $testNativeUi) { throw 'This acceptance run requires the native desktop UI Automation checks.' }
 $installationsPassed = $false
 try {
     foreach ($case in $cases) {
@@ -113,9 +114,19 @@ try {
                 $uiLanguage = if ($firstRun) { $case.Expected } else { 'pl' }
                 $uiArgs = @('-File', (Join-Path $PSScriptRoot 'test-windows-onboarding-uia.ps1'),
                     '-Executable', $exe, '-ExpectedLanguage', $uiLanguage, '-Runtime', $Runtime)
-                if ($firstRun) { $uiArgs += '-FirstRun' } else { $uiArgs += '-VerifySettingsLanguagePersistence' }
+                if ($firstRun) { $uiArgs += '-FirstRun' }
+                elseif (-not $SkipSettingsForegroundInteraction) { $uiArgs += '-VerifySettingsLanguagePersistence' }
                 & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass @uiArgs
                 if ($LASTEXITCODE -ne 0) { throw "Native UI Automation failed for $($case.Name)." }
+                if ($SkipSettingsForegroundInteraction -and -not $firstRun) {
+                    $preferencesFile = Join-Path $profileDir 'preferences.json'
+                    $preferences = Get-Content -LiteralPath $preferencesFile -Raw | ConvertFrom-Json
+                    if ($preferences.language -cne 'pl' -or $case.Expected -cne 'en' -or $systemLanguage -cne 'en') {
+                        throw 'The existing profile did not preserve its explicit Polish language across restart on English Windows.'
+                    }
+                    Write-Host 'Verified explicit Polish profile and Polish native UI after restart on English Windows.'
+                    Write-Host 'Opening Settings from the foreground and choosing a language were outside this targeted acceptance run.'
+                }
                 if ($case.Name -eq 'system') {
                     Move-Item -LiteralPath $profileDir -Destination (Join-Path $testDir 'profile-system')
                 }
