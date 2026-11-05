@@ -19,10 +19,16 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+verify_app_version() {
+  local info="$1/Contents/Info.plist"
+  [[ "$(plutil -extract TelePilotDistributionVersion raw -o - "$info")" == "$VERSION" ]]
+  [[ "$(plutil -extract CFBundleShortVersionString raw -o - "$info")" == "${VERSION%%-*}" ]]
+}
 mkdir -p "$TEMP_ROOT/stage" "$MOUNT"
 ditto -x -k "$SOURCE_ZIP" "$TEMP_ROOT/stage"
 APP="$TEMP_ROOT/stage/TelePilot.app"
 [[ -x "$APP/Contents/MacOS/TelePilot" ]]
+verify_app_version "$APP"
 codesign --verify --deep --strict "$APP"
 lipo "$APP/Contents/MacOS/TelePilot" -verify_arch arm64
 ln -s /Applications "$TEMP_ROOT/stage/Applications"
@@ -70,6 +76,7 @@ hdiutil create -volname TelePilot -srcfolder "$TEMP_ROOT/stage" -format UDZO "$O
 hdiutil verify "$OUTPUT" >/dev/null
 hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" "$OUTPUT" >/dev/null
 MOUNTED=true
+verify_app_version "$MOUNT/TelePilot.app"
 codesign --verify --deep --strict "$MOUNT/TelePilot.app"
 lipo "$MOUNT/TelePilot.app/Contents/MacOS/TelePilot" -verify_arch arm64
 [[ "$(readlink "$MOUNT/Applications")" == /Applications ]]

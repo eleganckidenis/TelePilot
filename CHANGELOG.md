@@ -1,4 +1,18 @@
-# Historia zmian
+# Changelog / Historia zmian
+
+## 2.0.0
+
+### Polski
+
+- Przeniesiono wybór, dodawanie, odświeżanie i usuwanie playlist do **Plik → Menedżer playlist**. Okno otwiera się automatycznie przy pierwszym uruchomieniu.
+- Dodano angielski interfejs na Windows i macOS oraz wybór języka przy pierwszym uruchomieniu i w ustawieniach. Instalator Windows proponuje język systemu i pozwala wybrać polski lub angielski.
+- TelePilot sprawdza dostępność nowej stabilnej wersji przy każdym uruchomieniu, pobiera odpowiednią paczkę z GitHub Releases i weryfikuje jej sumę SHA-256 przed zaproponowaniem instalacji.
+
+### English
+
+- Playlist selection, import, refresh and removal now live in **File → Playlist Manager**. The manager opens automatically on first launch.
+- The Windows and macOS apps are available in English and Polish, with a language choice at first launch and in Settings. The Windows installer suggests the system language and lets you choose English or Polish.
+- TelePilot checks for a new stable version on every launch, downloads the right package from GitHub Releases and verifies its SHA-256 checksum before offering installation.
 
 ## 1.2.0 — 2026-11-02
 

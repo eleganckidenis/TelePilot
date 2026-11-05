@@ -1,6 +1,6 @@
 # Lista kontrolna wydania TelePilot
 
-## Aktualny zakres 1.2.0
+## Aktualny zakres 2.0.0
 
 - Windows x64: bieżący publiczny kod, pełne testy na Windows, natywne syntetyczne
   odtwarzanie, budowanie instalatora, weryfikacja FFmpeg i SHA-256. Wydanie bez
@@ -12,6 +12,9 @@
   Sprawdź zgodność paczek z kodem przeznaczonym do tagowania i brak danych prywatnych.
 - Rzeczywisty zakres ręcznej weryfikacji NVDA/VoiceOver i czystej instalacji zapisz
   uczciwie w raporcie; testy automatyczne nie dowodzą odsłuchu czytnika ekranu.
+
+- Sprawdź pierwszy start, oba języki, ustawienia po restarcie i powrót fokusu z Menedżera playlist. Zweryfikuj automatyczne pobranie na obu platformach oraz odrzucenie uszkodzonej paczki.
+- Przed publikacją porównaj wszystkie paczki ze szkicem GitHub. Po publikacji pobierz publiczne załączniki i podaj odpowiedź z `/releases/latest` do `scripts/verify-release-assets.py --published`.
 
 Niższe sekcje zachowują historyczne scenariusze i dawne numery robocze.
 Nie zastępują aktualnych skryptów ani jawnych decyzji zakresu powyżej.

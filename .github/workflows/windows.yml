@@ -73,6 +73,13 @@ jobs:
         env:
           TELEPILOT_BUILD_RUNTIME: ${{ matrix.runtime }}
         run: ./scripts/build-windows-installer.ps1 -Runtime $env:TELEPILOT_BUILD_RUNTIME -InnoCompiler (Join-Path $env:RUNNER_TEMP 'inno-setup-6\ISCC.exe') -SkipTests
+      - name: Install and uninstall the release package in both languages
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem -Path 'artifacts/release/*/win-x64/*-setup.exe')
+          if ($installers.Count -ne 1) { throw 'Expected exactly one release installer.' }
+          [xml]$project = Get-Content -LiteralPath 'src/TelePilot.App/TelePilot.App.csproj' -Raw
+          ./scripts/test-windows-installer.ps1 -Installer $installers[0].FullName -Version $project.Project.PropertyGroup.Version
       - name: Verify FFmpeg download and checksum rejection with real Inno Setup
         shell: pwsh
         run: ./scripts/test-windows-ffmpeg-download.ps1 -RunDownloadTest -TestInvalidHash -InnoCompiler (Join-Path $env:RUNNER_TEMP 'inno-setup-6\ISCC.exe')

@@ -4,49 +4,41 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
-[xml]$appProject = Get-Content -LiteralPath (Join-Path $repositoryRoot 'src\TelePilot.App\TelePilot.App.csproj') -Raw
+$commit = & git -C $repositoryRoot rev-parse --verify HEAD
+if ($LASTEXITCODE -ne 0) { throw 'Could not identify the release commit.' }
+[xml]$appProject = (& git -C $repositoryRoot show "${commit}:src/TelePilot.App/TelePilot.App.csproj") -join "`n"
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the application version at the release commit.' }
 $version = $appProject.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
-if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Nieprawidłowy numer wersji projektu.' }
-$outputDirectory = Join-Path $repositoryRoot "artifacts\release\$version\source"
-$archivePath = Join-Path $outputDirectory "TelePilot-$version-source.zip"
-if (Test-Path -LiteralPath $archivePath) { throw "Archiwum już istnieje: $archivePath" }
-New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid application version.' }
 
-$rootFiles = @('.gitattributes', '.gitignore', 'AGENTS.md', 'CHANGELOG.md',
-    'Directory.Build.props', 'Directory.Packages.props', 'IMPLEMENTATION_PLAN.md',
-    'LICENSE', 'NOTICE', 'README.md', 'TelePilot.sln', 'global.json')
-$allowedFolders = @('.github', 'docs', 'installer', 'macos', 'samples', 'scripts', 'src', 'tests')
-$candidates = @(& git -C $repositoryRoot -c core.quotepath=false ls-files --cached --others --exclude-standard)
-if ($LASTEXITCODE -ne 0) { throw 'Nie udało się odczytać listy plików Git.' }
-$sourceFiles = @($candidates | Sort-Object -Unique | Where-Object {
-    $parts = $_ -split '/'
-    ($rootFiles -contains $_ -or $allowedFolders -contains $parts[0]) -and
-    $_ -notmatch '(^|/)(bin|obj|logs|recordings|app-data|\.git|\.dotnet|\.tools|\.build|\.swiftpm|artifacts|\.artifacts)(/|$)' -and
-    $_ -notmatch '(?i)(^|/)(url\.txt|settings[^/]*\.json|\.env[^/]*)$' -and
-    $_ -notmatch '(?i)\.(pfx|p12|key|log|pdb|exe|dll|nupkg)$' -and
-    ($_ -notmatch '(?i)\.m3u8?$' -or $_ -match '^samples/')
+# Archive committed bytes only. Reject private or generated files rather than silently
+# producing an incomplete source archive if one was accidentally committed.
+$entries = @(& git -C $repositoryRoot -c core.quotepath=false ls-tree -r $commit)
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the release tree.' }
+$sourceFiles = @(foreach ($entry in $entries) {
+    if ($entry -notmatch '^100(?:644|755) blob [a-f0-9]+\t(.+)$') {
+        throw 'The source archive requires regular files.'
+    }
+    $path = $Matches[1]
+    if ($path -match '(?i)(^|/)(bin|obj|logs|recordings|app-data|\.git|\.dotnet|\.tools|\.build|\.swiftpm|artifacts|\.artifacts)(/|$)' -or
+        $path -match '(?i)(^|/)(url\.txt|settings[^/]*\.json|\.env[^/]*|\.DS_Store)$' -or
+        $path -match '(?i)\.(pfx|p12|key|log|pdb|exe|dll|nupkg)$' -or
+        ($path -match '(?i)\.m3u8?$' -and $path -notmatch '^samples/')) {
+        throw "Unexpected path in the release tree: $path"
+    }
+    $path
 })
-foreach ($required in @('README.md', 'LICENSE', 'NOTICE', 'src/TelePilot.App/TelePilot.App.csproj', '.github/workflows/windows.yml')) {
-    if ($sourceFiles -notcontains $required) { throw "Archiwum nie zawiera wymaganego pliku $required." }
+foreach ($required in @('README.md', 'README.pl.md', 'LICENSE', 'NOTICE', 'macos/VERSION', 'src/TelePilot.App/TelePilot.App.csproj')) {
+    if ($sourceFiles -notcontains $required) { throw "Missing required source: $required" }
 }
-Add-Type -AssemblyName System.IO.Compression
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$stream = [IO.File]::Open($archivePath, [IO.FileMode]::CreateNew)
-try {
-    $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create, $true)
-    try {
-        foreach ($relativePath in $sourceFiles) {
-            $fullPath = [IO.Path]::GetFullPath((Join-Path $repositoryRoot $relativePath))
-            if (-not $fullPath.StartsWith($repositoryRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-                throw 'Plik źródłowy jest poza repozytorium.'
-            }
-            $sourceItem = Get-Item -LiteralPath $fullPath
-            if ($sourceItem.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Archiwum nie przyjmuje dowiązań.' }
-            [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                $archive, $fullPath, "TelePilot-$version/$relativePath", [IO.Compression.CompressionLevel]::Optimal) | Out-Null
-        }
-    } finally { $archive.Dispose() }
-} finally { $stream.Dispose() }
+
+$outputDirectory = Join-Path $repositoryRoot "artifacts/release/$version/source"
+$archiveName = "TelePilot-$version-source.zip"
+$archivePath = Join-Path $outputDirectory $archiveName
+if (Test-Path -LiteralPath $archivePath) { throw "Archive already exists: $archivePath" }
+New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+& git -C $repositoryRoot archive --format=zip "--prefix=TelePilot-$version/" "--output=$archivePath" $commit
+if ($LASTEXITCODE -ne 0) { throw 'Git could not archive the release commit.' }
 $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-Set-Content -LiteralPath "$archivePath.sha256" -Value "$hash  $([IO.Path]::GetFileName($archivePath))" -Encoding ascii
-[pscustomobject]@{ Archive = $archivePath; Files = $sourceFiles.Count; Sha256 = $hash }
+Set-Content -LiteralPath "$archivePath.sha256" -Value "$hash  $archiveName" -Encoding ascii
+[pscustomobject]@{ Commit = $commit; Archive = $archivePath; Files = $sourceFiles.Count; Sha256 = $hash }
