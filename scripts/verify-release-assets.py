@@ -75,7 +75,8 @@ def main():
             "Binary asset exceeds the updater's size limit")
 
     reference = subprocess.check_output(
-        ["git", "-C", str(ROOT), "archive", "--format=zip", f"--prefix={stem}/", args.commit]
+        ["git", "-C", str(ROOT), "-c", "core.autocrlf=false", "-c", "core.eol=lf",
+         "archive", "--format=zip", f"--prefix={stem}/", args.commit]
     )
     with zipfile.ZipFile(io.BytesIO(reference)) as tracked, zipfile.ZipFile(args.directory / names[2]) as shipped:
         tracked_names = source_files(tracked)

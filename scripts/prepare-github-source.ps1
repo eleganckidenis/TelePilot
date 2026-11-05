@@ -37,7 +37,8 @@ $archiveName = "TelePilot-$version-source.zip"
 $archivePath = Join-Path $outputDirectory $archiveName
 if (Test-Path -LiteralPath $archivePath) { throw "Archive already exists: $archivePath" }
 New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
-& git -C $repositoryRoot archive --format=zip "--prefix=TelePilot-$version/" "--output=$archivePath" $commit
+# git archive applies text conversions too. Ignore Windows' checkout defaults.
+& git -C $repositoryRoot -c core.autocrlf=false -c core.eol=lf archive --format=zip "--prefix=TelePilot-$version/" "--output=$archivePath" $commit
 if ($LASTEXITCODE -ne 0) { throw 'Git could not archive the release commit.' }
 $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -LiteralPath "$archivePath.sha256" -Value "$hash  $archiveName" -Encoding ascii
