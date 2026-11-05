@@ -456,7 +456,7 @@ public sealed class MainWindowSectionsTests
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(PlaybackState.Connecting, fixture.Playback.Current.State);
 
-        fixture.ViewModel.Archive.SelectedDate = DateTime.Today.AddDays(-1);
+        fixture.ViewModel.Archive.SelectedDate = fixture.ViewModel.Archive.SelectedDate!.Value.AddDays(-1);
         await play;
         Assert.Equal(PlaybackState.Idle, fixture.Playback.Current.State);
         Assert.DoesNotContain("Uruchomiono archiwum", fixture.ViewModel.Archive.StatusMessage, StringComparison.Ordinal);
@@ -485,7 +485,7 @@ public sealed class MainWindowSectionsTests
         var play = fixture.ViewModel.Archive.PlayCommand.ExecuteAsync(null);
         Dispatcher.UIThread.RunJobs();
         fixture.Playback.EmitState(PlaybackState.Playing);
-        fixture.ViewModel.Archive.SelectedDate = DateTime.Today.AddDays(-1);
+        fixture.ViewModel.Archive.SelectedDate = fixture.ViewModel.Archive.SelectedDate!.Value.AddDays(-1);
         await play;
         Assert.Equal(PlaybackState.Idle, fixture.Playback.Current.State);
         Assert.DoesNotContain("Uruchomiono archiwum", fixture.ViewModel.Archive.StatusMessage, StringComparison.Ordinal);
