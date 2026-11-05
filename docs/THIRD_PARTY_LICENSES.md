@@ -51,7 +51,8 @@ Instalator zachowuje pełną paczkę FFmpeg, w tym jej dokumentację i oryginaln
 W [wydaniu 2.0.1](https://github.com/eleganckidenis/TelePilot/releases/tag/v2.0.1) archiwum
 `TelePilot-2.0.1-vlc-third-party-sources.zip` obejmuje VLC 3.0.24, jego zależności
 i reguły budowania oraz LibVLCSharp. Obejmuje dołączone biblioteki dla Windows
-x64, Windows ARM64 i macOS Apple Silicon. Odrębne archiwum
+x64, Windows ARM64 i macOS Apple Silicon. To samo [archiwum źródeł VLC](https://github.com/eleganckidenis/TelePilot/releases/download/v2.0.1/TelePilot-2.0.1-vlc-third-party-sources.zip)
+odpowiada bibliotekom VLC w wersji 2.0.2. Odrębne archiwum
 `TelePilot-2.0.1-macos-third-party-sources.zip` zawiera źródła dołączonego na Macu
 programu FFmpeg do nagrywania.
 

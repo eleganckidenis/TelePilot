@@ -135,7 +135,15 @@ public actor Recorder {
     private var session: ProcessSession?
     private var stopping = false
     private var preparing = false
-    public init() {}
+    private let waitForStartup: @Sendable () async throws -> Void
+
+    public init() {
+        waitForStartup = { try await Task.sleep(for: .milliseconds(150)) }
+    }
+
+    init(waitForStartup: @escaping @Sendable () async throws -> Void) {
+        self.waitForStartup = waitForStartup
+    }
     public static func locateFFmpeg(preferred: String? = nil) -> URL? {
         let bundled = Bundle.main.resourceURL.map { $0.appendingPathComponent("tools/ffmpeg").path }
         let candidates = preferred.map { [$0] } ?? (bundled.map { [$0] } ?? []) + (["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/local/bin/ffmpeg", "/usr/bin/ffmpeg"] + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { "\($0)/ffmpeg" })
@@ -176,8 +184,9 @@ public actor Recorder {
         }
         let task = try ProcessSession(executable: executable, arguments: request.arguments(output: output))
         session = task
-        do { try await Task.sleep(for: .milliseconds(150)) }
+        do { try await waitForStartup() }
         catch { await task.stopAfterCancellation(); if session === task { session = nil }; task.close(); throw error }
+        guard session === task, !stopping else { throw CancellationError() }
         if !task.process.isRunning && task.process.terminationStatus != 0 {
             if session === task { session = nil }; task.close()
             throw RecordingError.processFailed(task.process.terminationStatus)

@@ -43,6 +43,7 @@ enum SettingsSecret {
     let audio = popup(l("Format audio", "Audio format"),items:AudioFormat.allCases.map{$0.rawValue.uppercased()},target:nil,action:nil)
     let sort = popup(l("Sortowanie kanałów", "Channel sort order"),items:[l("Kolejność playlisty", "Playlist Order"),l("Alfabetycznie", "Alphabetical"),l("Grupa i nazwa", "Group and Name")],target:nil,action:nil)
     let language = popup(l("Język aplikacji", "App language"), items: Language.allCases.map(\.title), target: nil, action: nil)
+    private var saveButton: NSButton!
     let ffmpegStatus = label("")
     let bufferSeconds = namedField(l("Docelowy bufor sieciowy w sekundach", "Target network buffer in seconds"))
     let bufferMaximum = namedField(l("Maksymalny bufor sieciowy w sekundach", "Maximum network buffer in seconds"))
@@ -60,6 +61,7 @@ enum SettingsSecret {
         template.stringValue = p.filenameTemplate;bitrate.stringValue = String(p.bitrate);sort.selectItem(at:p.sortOrder)
         audio.selectItem(at:AudioFormat.allCases.firstIndex(of:p.audioFormat) ?? 0)
         language.selectItem(at: Language.allCases.firstIndex(of: p.language ?? .system) ?? 0)
+        language.target = self; language.action = #selector(languageChanged)
         let body = FlippedDocumentStack(views: [
             label(l("Język aplikacji (po ponownym uruchomieniu)", "App language (after restart)")), language,
             label(l("Lista kanałów", "Channel List")),sort,
@@ -82,12 +84,25 @@ enum SettingsSecret {
         body.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([body.leadingAnchor.constraint(equalTo:scroll.contentView.leadingAnchor),body.topAnchor.constraint(equalTo:scroll.contentView.topAnchor),body.widthAnchor.constraint(equalTo:scroll.widthAnchor,constant:-24)])
         for v in body.arrangedSubviews {v.widthAnchor.constraint(equalTo:body.widthAnchor).isActive = true}
-        let actions = stack([button(l("Zapisz", "Save"),self,#selector(save)),button(l("Anuluj", "Cancel"),self,#selector(cancel))])
+        saveButton = button(l("Zapisz", "Save"), self, #selector(save))
+        saveButton.keyEquivalent = "\r"
+        let actions = stack([saveButton, button(l("Anuluj", "Cancel"),self,#selector(cancel))])
         let root = stack([scroll,actions],vertical:true)
         scroll.widthAnchor.constraint(equalTo:root.widthAnchor).isActive = true;scroll.heightAnchor.constraint(greaterThanOrEqualToConstant:300).isActive = true
         fill(root,in:w.contentView!,margin:16);w.makeFirstResponder(language)
     }
     required init?(coder:NSCoder){fatalError("init(coder:) unavailable")}
+    private var selectedLanguage: Language? {
+        let index = language.indexOfSelectedItem
+        return Language.allCases.indices.contains(index) ? Language.allCases[index] : nil
+    }
+    @objc func languageChanged() {
+        let changed = selectedLanguage != (appController?.preferences.language ?? .system)
+        let title = changed ? l("Zapisz i uruchom ponownie", "Save and Restart") : l("Zapisz", "Save")
+        saveButton.title = title
+        saveButton.setAccessibilityLabel(title)
+        if changed { announce(title, window: window) }
+    }
     @objc func chooseFolder(){let p = NSOpenPanel();p.canChooseDirectories = true;p.canChooseFiles = false;p.canCreateDirectories = true;if p.runModal() == .OK,let u = p.url {folder.stringValue = u.path}}
     @objc func chooseFFmpeg(){let p = NSOpenPanel();p.canChooseDirectories = false;p.canChooseFiles = true;if p.runModal() == .OK,let u = p.url {ffmpeg.stringValue = u.path}}
     @objc func checkFFmpeg(){let preferred = ffmpeg.stringValue.isEmpty ? nil:ffmpeg.stringValue
@@ -99,7 +114,7 @@ enum SettingsSecret {
     func windowWillClose(_ notification: Notification) { appController?.restoreActiveFocus() }
     override func cancelOperation(_ sender: Any?) { cancel() }
     @objc func cancel(){close();appController?.restoreActiveFocus()}
-    @objc func save(){guard let appController else{return}
+    @objc func save(){guard let appController, let selectedLanguage else{return}
         func number(_ field: NSTextField) -> Double? { Double(field.stringValue.replacingOccurrences(of: ",", with: ".")) }
         guard let buffer = number(bufferSeconds), buffer.isFinite, buffer > 0, let maximum = number(bufferMaximum), maximum.isFinite,
               maximum >= buffer, maximum <= 300, let cap = number(variantCap), cap.isFinite, cap >= 0, cap <= 500 else {
@@ -110,7 +125,8 @@ enum SettingsSecret {
         if !address.isEmpty {guard let u = URL(string:address),["http","https"].contains(u.scheme?.lowercased() ?? ""),u.host != nil else {alert(l("Nieprawidłowe EPG", "Invalid TV Guide URL"),l("Podaj pełny adres HTTP lub HTTPS.", "Enter a full HTTP or HTTPS URL."),window:window);window?.makeFirstResponder(epg);return}}
         guard folder.stringValue.hasPrefix("/"),let kbps = Int(bitrate.stringValue),(32...512).contains(kbps), !template.stringValue.isEmpty else {alert(l("Nieprawidłowe ustawienia", "Invalid Settings"),l("Podaj bezwzględną ścieżkę folderu, bitrate 32–512 kb/s oraz szablon nazwy.", "Enter an absolute folder path, a bitrate of 32–512 kb/s, and a filename template."),window:window);return}
         var draft = appController.preferences
-        draft.language = Language.allCases[language.indexOfSelectedItem]
+        let restart = selectedLanguage != (draft.language ?? .system)
+        draft.language = selectedLanguage
         draft.buffering = PlaybackBufferSettings(seconds: buffer, maximumSeconds: maximum, variantMaxMbps: cap)
         draft.externalEPG = address.isEmpty ? nil : address
         draft.recordingsDirectory = folder.stringValue
@@ -128,5 +144,6 @@ enum SettingsSecret {
             return
         }
         appController.applyFilter();appController.refreshEPG();appController.archiveBrowser.reloadChannels();cancel()
+        if restart { (NSApp.delegate as? AppDelegate)?.restartAfterLanguageChange() }
     }
 }

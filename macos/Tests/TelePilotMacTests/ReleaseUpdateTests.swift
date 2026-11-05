@@ -1,3 +1,4 @@
+import AppKit
 import CryptoKit
 import Foundation
 import Testing
@@ -20,6 +21,38 @@ import Testing
         #expect(selected.url.absoluteString == Self.url)
         #expect(selected.version == UpdateVersion("2.10.0"))
         #expect(selected.sha256 == Self.digest)
+    }
+
+    @MainActor
+    @Test(arguments: ["dismissed", "invalid", "cannot open", "accepted"])
+    func onlyAcceptedVerifiedAndOpenedDownloadRequestsQuit(_ scenario: String) async {
+        let file = URL(fileURLWithPath: "/tmp/\(Self.name)")
+        var actions: [String] = []
+        let response: NSApplication.ModalResponse = scenario == "dismissed" ? .abort : .alertFirstButtonReturn
+        let result = await UpdateStartup.finishOffer(response, file: file, verify: { candidate in
+            #expect(candidate == file)
+            actions.append("verify")
+            return scenario != "invalid"
+        }, open: { candidate in
+            #expect(candidate == file)
+            actions.append("open")
+            return scenario != "cannot open"
+        }, terminate: { actions.append("terminate") })
+
+        switch scenario {
+        case "dismissed":
+            #expect(result == .dismissed)
+            #expect(actions.isEmpty)
+        case "invalid":
+            #expect(result == .failed)
+            #expect(actions == ["verify"])
+        case "cannot open":
+            #expect(result == .failed)
+            #expect(actions == ["verify", "open"])
+        default:
+            #expect(result == .opened)
+            #expect(actions == ["verify", "open", "terminate"])
+        }
     }
 
     @Test(arguments: [

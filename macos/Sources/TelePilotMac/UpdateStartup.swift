@@ -1,6 +1,8 @@
 import AppKit
 
 @MainActor enum UpdateStartup {
+    enum OfferResult { case dismissed, failed, opened }
+
     private static var started = false
 
     static func start(window: NSWindow) {
@@ -26,20 +28,21 @@ import AppKit
             }
 
             let alert = NSAlert()
+            alert.alertStyle = .informational
             alert.messageText = l("Aktualizacja TelePilot", "TelePilot update")
             alert.informativeText = l(
-                "Pobrano wersję \(asset.version). Otworzyć obraz instalacyjny?",
-                "Version \(asset.version) has been downloaded. Open the installer disk image?")
-            alert.addButton(withTitle: l("Później", "Later"))
-            alert.buttons[0].keyEquivalent = "\u{1b}"
-            alert.addButton(withTitle: l("Otwórz obraz instalacyjny", "Open installer disk image"))
-            guard await alert.beginSheetModal(for: presenter) == .alertSecondButtonReturn else { return }
+                "Pobrano obraz instalacyjny wersji \(asset.version). Wybierz OK, aby otworzyć obraz i zamknąć TelePilot.",
+                "The installer disk image for version \(asset.version) has been downloaded. Choose OK to open it and quit TelePilot.")
+            alert.addButton(withTitle: "OK")
+            let response = await alert.beginSheetModal(for: presenter)
 
             // Recheck the bytes if the prompt has been waiting for a response.
-            let valid = await Task.detached(priority: .utility) {
-                (try? ReleaseUpdate.verify(file, asset: asset)) == true
-            }.value
-            guard !valid || !NSWorkspace.shared.open(file) else { return }
+            let result = await finishOffer(response, file: file, verify: { file in
+                await Task.detached(priority: .utility) {
+                    (try? ReleaseUpdate.verify(file, asset: asset)) == true
+                }.value
+            }, open: { NSWorkspace.shared.open($0) }, terminate: { NSApp.terminate(nil) })
+            guard result == .failed else { return }
 
             let failure = NSAlert()
             failure.messageText = l("Aktualizacja TelePilot", "TelePilot update")
@@ -50,6 +53,14 @@ import AppKit
                 await failure.beginSheetModal(for: presenter)
             }
         }
+    }
+
+    static func finishOffer(_ response: NSApplication.ModalResponse, file: URL,
+                            verify: (URL) async -> Bool, open: (URL) -> Bool, terminate: () -> Void) async -> OfferResult {
+        guard response == .alertFirstButtonReturn else { return .dismissed }
+        guard await verify(file), open(file) else { return .failed }
+        terminate()
+        return .opened
     }
 
     nonisolated private static func checkAndDownload(version: UpdateVersion) async throws -> (UpdateAsset, URL)? {

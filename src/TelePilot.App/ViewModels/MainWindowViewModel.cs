@@ -440,11 +440,13 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         ? T("Usuń z ulubionych", "Remove from favorites")
         : T("Dodaj do ulubionych", "Add to favorites");
 
-    public string RecordingButtonText => IsRecording ? T("Nagrywanie — zatrzymaj lub wybierz opcję…", "Recording — stop or choose an option…") : "Nagrywanie…";
+    public string RecordingButtonText => IsRecording
+        ? T("Nagrywanie — zatrzymaj lub wybierz opcję…", "Recording — stop or choose an option…")
+        : T("Nagrywanie…", "Recording…");
 
     public string VolumeText => IsMuted ? T($"Głośność {Volume} procent, wyciszona", $"Volume {Volume} percent, muted") : T($"Głośność {Volume} procent", $"Volume {Volume} percent");
 
-    public string MuteButtonText => IsMuted ? T("Włącz dźwięk", "Unmute") : "Wycisz";
+    public string MuteButtonText => IsMuted ? T("Włącz dźwięk", "Unmute") : T("Wycisz", "Mute");
 
     public string ChannelCountText => Channels.Count switch
     {

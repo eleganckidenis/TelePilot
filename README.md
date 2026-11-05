@@ -14,11 +14,11 @@ The Windows installer is unsigned. The Mac app is signed ad hoc and has no Apple
 
 ## Get started
 
-1. On your first launch, choose a language. TelePilot uses the system language by default, with English as the fallback. You can change this in **Settings** and restart TelePilot to apply it.
+1. On your first launch, choose a language. TelePilot uses the system language by default, with English as the fallback. To change it later, open **Settings**. On Mac, use **Save and Restart**. On Windows, save your choice and reopen TelePilot.
 2. In **File → Playlist Manager**, add a playlist from a file or web address. This window opens automatically the first time you use TelePilot.
 3. Choose a channel and press **Enter**. See **Help** for keyboard shortcuts.
 
-TelePilot checks for a new release at startup. It downloads and verifies the right package, then offers to open it for installation.
+TelePilot checks for a new release at startup and verifies the downloaded installer. On Mac, click **OK** in the download confirmation to open the disk image and quit TelePilot.
 
 TelePilot does not provide channels, playlists or IPTV subscriptions.
 

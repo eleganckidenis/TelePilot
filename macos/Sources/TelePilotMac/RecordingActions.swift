@@ -5,7 +5,7 @@ import TelePilotRecording
 extension MainController {
     var recordingActions: [(String, Selector)] { [
         (l("Nagraj wideo w formacie TS", "Record TS Video"), #selector(recordVideo)), (l("Nagraj audio", "Record Audio"), #selector(recordAudio)),
-        (l("Zatrzymaj nagrywanie", "Stop Recording"), #selector(stopRecording)), ("Zaplanuj nagrywanie…", #selector(scheduleSelected)),
+        (l("Zatrzymaj nagrywanie", "Stop Recording"), #selector(stopRecording)), (l("Zaplanuj nagrywanie…", "Schedule Recording…"), #selector(scheduleSelected)),
         (l("Zaplanowane nagrania…", "Scheduled Recordings…"), #selector(showJobs))
     ] }
     func request(for channel: Channel, mode: RecordingMode, programme: Programme? = nil, url: URL? = nil) -> RecordingRequest {
@@ -17,8 +17,11 @@ extension MainController {
         guard let channel = activeChannel else { setStatus(l("Najpierw wybierz kanał.", "Select a channel first.")); return }
         let request = request(for: channel, mode: mode, programme: archiveProgramme, url: playing == nil ? nil : playingURL)
         Task {
+            guard !terminating else { return }
             do { recordingURL = try await recorder.start(request, ffmpegPath: preferences.ffmpegPath.isEmpty ? nil : preferences.ffmpegPath)
                 recordingActive = true; recordingLabel.stringValue = l("Nagrywanie: \(channel.name)", "Recording: \(channel.name)"); setStatus(l("Rozpoczęto nagrywanie: \(channel.name).", "Recording started: \(channel.name)."))
+            } catch is CancellationError {
+                // Stop already owns the outcome of this recording.
             } catch { alert(l("Nie rozpoczęto nagrywania", "Could Not Start Recording"), recordingErrorMessage(error), window: window) }
         }
     }

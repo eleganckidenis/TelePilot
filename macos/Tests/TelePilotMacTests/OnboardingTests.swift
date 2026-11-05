@@ -62,8 +62,10 @@ struct OnboardingTests {
         let player = Player(library: vlc.appendingPathComponent("lib/libvlc.dylib"), plugins: vlc.appendingPathComponent("plugins"))
         Localization.configure(.english)
         defer { Localization.configure(.system) }
+        var savedGuideChanges: [String?] = []
         let controller = MainController(repository: repository, scheduler: scheduler, player: player,
-                                        directory: root, preferences: Preferences(volume: 0, muted: true, language: .english), firstRun: true)
+                                        directory: root, preferences: Preferences(volume: 0, muted: true, language: .english), firstRun: true,
+                                        persistExternalGuide: { savedGuideChanges.append($0) })
         defer {
             if let monitor = controller.keyMonitor { NSEvent.removeMonitor(monitor) }
             controller.pollTask?.cancel()
@@ -163,12 +165,19 @@ struct OnboardingTests {
         let settings = try #require(controller.settingsWindow)
         #expect(settings.language.titleOfSelectedItem == "English")
         settings.language.selectItem(withTitle: "Polski")
+        #expect(NSApp.sendAction(settings.language.action!, to: settings.language.target, from: settings.language))
         controller.settings()
         #expect(controller.settingsWindow === settings)
         #expect(settings.language.titleOfSelectedItem == "Polski")
-        #expect(NSApp.sendAction(#selector(SettingsWindow.save), to: settings, from: nil))
+        let settingsView = try #require(settings.window?.contentView)
+        let save = try #require(controller.focusableViews(settingsView).compactMap { $0 as? NSButton }
+            .first { $0.title == "Save and Restart" })
+        #expect(save.accessibilityLabel() == "Save and Restart")
+        #expect(save.keyEquivalent == "\r")
+        save.performClick(nil)
         #expect(settings.window?.isVisible == false)
         #expect(Localization.language == .english)
+        #expect(savedGuideChanges.isEmpty)
 
         let persisted = try Preferences.load(from: root.appendingPathComponent("preferences.json"))
         #expect(persisted.language == .polish)
@@ -181,6 +190,17 @@ struct OnboardingTests {
         reopened.language.selectItem(withTitle: "Język systemu")
         reopened.cancel()
         #expect(try Preferences.load(from: root.appendingPathComponent("preferences.json")).language == .polish)
+
+        // Store only the sensitive guide URL in the secret store, and clear it
+        // there too when the user chooses to use the playlist guide again.
+        var draft = controller.preferences
+        draft.externalEPG = "https://example.invalid/guide"
+        try controller.commitPreferences(draft)
+        #expect(savedGuideChanges == [draft.externalEPG])
+        #expect(try Preferences.load(from: root.appendingPathComponent("preferences.json")).externalEPG == nil)
+        draft.externalEPG = nil
+        try controller.commitPreferences(draft)
+        #expect(savedGuideChanges == ["https://example.invalid/guide", nil])
     }
 
     private func waitForPlaying(_ player: Player, channel: String) async throws {

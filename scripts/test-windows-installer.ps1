@@ -64,12 +64,14 @@ $marker = Join-Path $appDir 'telepilot-smoke-marker.txt'
 $obsoletePlugin = Join-Path $appDir "libvlc\$Runtime\plugins\access\libtelepilot_stale_plugin.dll"
 $otherRuntime = if ($Runtime -eq 'win-arm64') { 'win-x64' } else { 'win-arm64' }
 $otherVlcDirectory = Join-Path $appDir "libvlc\$otherRuntime"
-$testNativeUi = [Environment]::UserInteractive
+if (-not [Environment]::UserInteractive) {
+    throw 'The Windows installer test requires the native desktop for UI Automation.'
+}
 $profileDir = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'TelePilot'
-if ($testNativeUi -and (Test-Path -LiteralPath $profileDir)) {
+$preferencesFile = Join-Path $profileDir 'preferences.json'
+if (Test-Path -LiteralPath $profileDir) {
     throw 'The native UI test requires an empty user profile.'
 }
-if (-not $testNativeUi) { Write-Warning 'Native UI Automation skipped: this runner has no interactive desktop.' }
 $installationsPassed = $false
 try {
     foreach ($case in $cases) {
@@ -108,19 +110,27 @@ try {
                 }
             }
             Write-Host "Verified Windows installation: $($case.Name)."
-            if ($testNativeUi) {
-                $firstRun = $case.Name -ne 'english'
-                $uiLanguage = if ($firstRun) { $case.Expected } else { 'pl' }
-                $uiArgs = @('-File', (Join-Path $PSScriptRoot 'test-windows-onboarding-uia.ps1'),
-                    '-Executable', $exe, '-ExpectedLanguage', $uiLanguage, '-Runtime', $Runtime)
-                if ($firstRun) { $uiArgs += '-FirstRun' } else { $uiArgs += '-VerifySettingsLanguagePersistence' }
-                & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass @uiArgs
-                if ($LASTEXITCODE -ne 0) { throw "Native UI Automation failed for $($case.Name)." }
-                if ($case.Name -eq 'system') {
-                    Move-Item -LiteralPath $profileDir -Destination (Join-Path $testDir 'profile-system')
+            $firstRun = $case.Name -ne 'english'
+            $uiLanguage = if ($firstRun) { $case.Expected } else { 'pl' }
+            $uiArgs = @('-File', (Join-Path $PSScriptRoot 'test-windows-onboarding-uia.ps1'),
+                '-Executable', $exe, '-ExpectedLanguage', $uiLanguage, '-Runtime', $Runtime)
+            if ($firstRun) {
+                $uiArgs += '-FirstRun'
+            } elseif ($Runtime -eq 'win-x64') {
+                # The ARM64 runner can deny foreground input. Its existing-profile test verifies the saved language at startup.
+                $uiArgs += '-VerifySettingsLanguagePersistence'
+            }
+            & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass @uiArgs
+            if ($LASTEXITCODE -ne 0) { throw "Native UI Automation failed for $($case.Name)." }
+            if (-not $firstRun -and $Runtime -eq 'win-arm64') {
+                $preferences = Get-Content -LiteralPath $preferencesFile -Raw | ConvertFrom-Json
+                if ($preferences.language -cne $uiLanguage) {
+                    throw 'The explicit profile language was not preserved across the ARM64 reinstall and restart.'
                 }
+                Write-Host 'Verified the saved Polish profile and Polish native UI after restart with the English installer.'
             }
             if ($case.Name -eq 'system') {
+                Move-Item -LiteralPath $profileDir -Destination (Join-Path $testDir 'profile-system')
                 Set-Content -LiteralPath $obsoletePlugin -Value 'obsolete plugin fixture'
                 New-Item -ItemType Directory -Path $otherVlcDirectory | Out-Null
                 Set-Content -LiteralPath (Join-Path $otherVlcDirectory 'libvlc.dll') -Value 'old architecture fixture'
@@ -143,7 +153,7 @@ try {
         }
         if ($installationsPassed -and (
             -not (Test-Path -LiteralPath $marker -PathType Leaf) -or
-            ($testNativeUi -and -not (Test-Path -LiteralPath (Join-Path $profileDir 'preferences.json') -PathType Leaf))
+            -not (Test-Path -LiteralPath $preferencesFile -PathType Leaf)
         )) {
             throw 'Uninstall removed files owned by the user.'
         }

@@ -1,5 +1,9 @@
 # Historia zmian — TelePilot dla Apple Silicon
 
+## 2.0.2
+
+[Release notes in English and Polish / opis zmian po angielsku i po polsku](../CHANGELOG.md#202).
+
 ## 2.0.1
 
 - Fixed saving the language from Settings and updated the bundled VLC to 3.0.24.

@@ -85,6 +85,27 @@ struct RecordingTests {
     catch { #expect(error is RecordingError) }
 }
 
+@Test(.timeLimit(.minutes(1))) func testStopDuringStartupCancelsPendingRecording() async throws {
+    let directory = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
+    let working = try executable(directory, body: "read command\n[ \"$command\" = q ]\n")
+    let (probeStarted, reachedProbe) = AsyncStream<Void>.makeStream()
+    let (probeCompleted, releaseProbe) = AsyncStream<Void>.makeStream()
+    let recorder = Recorder(waitForStartup: {
+        reachedProbe.finish()
+        for await _ in probeCompleted {}
+    })
+    let start = Task { try await recorder.start(request(directory), ffmpegPath: working.path) }
+    defer { start.cancel(); releaseProbe.finish() }
+    for await _ in probeStarted {}
+    #expect(await recorder.isRecording())
+
+    try await recorder.stop()
+    releaseProbe.finish()
+    await #expect(throws: CancellationError.self) { try await start.value }
+    #expect(await !recorder.isRecording())
+    #expect(try await !recorder.finishCompleted())
+}
+
 @Test func testFinishCompletedReportsDelayedFailureOnceAndAllowsRestart() async throws {
     let directory = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
     let release = directory.appendingPathComponent("release-delayed-failure")

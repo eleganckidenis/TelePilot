@@ -1,5 +1,21 @@
 # Changelog / Historia zmian
 
+## 2.0.2
+
+### Polski
+
+- Na macOS po wyborze języka w Ustawieniach przycisk **Zapisz i uruchom ponownie** zapisuje wybór i otwiera aplikację w nowym języku. Zapis działa również klawiszem Enter.
+- Po pobraniu i zweryfikowaniu aktualizacji na macOS TelePilot pokazuje komunikat w aplikacji. **OK** otwiera obraz instalacyjny i zamyka TelePilota.
+- Naprawiono zapisywanie zewnętrznego adresu EPG i stan nagrywania po szybkim zatrzymaniu na macOS.
+- Uzupełniono tłumaczenia przycisków wyciszenia i nagrywania w angielskim odtwarzaczu Windows.
+
+### English
+
+- On macOS, **Save and Restart** in Settings saves your language choice and reopens the app in the selected language. You can also press Enter to save.
+- On macOS, TelePilot confirms when an update has downloaded and passed verification. **OK** opens the installer disk image and quits TelePilot.
+- Fixed saving the external TV guide URL and the status shown when a recording is stopped immediately after starting on macOS.
+- Fixed the English labels for the mute and recording controls in the Windows player.
+
 ## 2.0.1
 
 ### Polski

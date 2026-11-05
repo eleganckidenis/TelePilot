@@ -8,6 +8,7 @@ import TelePilotRecording
     let recorder = Recorder()
     let player: Player
     let dataDirectory: URL
+    let persistExternalGuide: (String?) throws -> Void
     var preferences: Preferences
     var sources: [PlaylistSource] = []
     var playlists: [UUID: Playlist] = [:]
@@ -69,9 +70,11 @@ import TelePilotRecording
     var terminating = false
 
     init(repository: PlaylistRepository, scheduler: RecordingScheduler, player: Player,
-         directory: URL, preferences: Preferences, firstRun: Bool) {
+         directory: URL, preferences: Preferences, firstRun: Bool,
+         persistExternalGuide: @escaping (String?) throws -> Void = SettingsSecret.set) {
         self.repository = repository; self.scheduler = scheduler; self.player = player; dataDirectory = directory
         self.preferences = preferences
+        self.persistExternalGuide = persistExternalGuide
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760), styleMask: [.titled,.closable,.miniaturizable,.resizable], backing: .buffered, defer: false)
         w.title = "TelePilot — macOS"; w.minSize = NSSize(width: 840, height: 640)
         w.setFrameAutosaveName("NativeMainWindow"); w.isReleasedWhenClosed = false
@@ -190,7 +193,13 @@ import TelePilotRecording
         catch { alert(l("Nie zapisano ustawień", "Could Not Save Settings"), l("Sprawdź dostęp do katalogu danych aplikacji.", "Check access to the app’s data folder."), window: window) }
     }
     func commitPreferences(_ draft: Preferences) throws {
-        try draft.save(to: dataDirectory.appendingPathComponent("preferences.json"))
+        let guideChanged = draft.externalEPG != preferences.externalEPG
+        if guideChanged { try persistExternalGuide(draft.externalEPG) }
+        do { try draft.save(to: dataDirectory.appendingPathComponent("preferences.json")) }
+        catch {
+            if guideChanged { try? persistExternalGuide(preferences.externalEPG) }
+            throw error
+        }
         preferences = draft
     }
     func setStatus(_ text: String, speak: Bool = true) {

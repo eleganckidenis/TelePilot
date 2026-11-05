@@ -14,11 +14,11 @@ Instalator Windows nie jest podpisany cyfrowo. Aplikacja na Maca ma podpis ad-ho
 
 ## Pierwsze uruchomienie
 
-1. Wybierz język. Domyślnie TelePilot korzysta z języka systemu, a dla pozostałych języków używa angielskiego. Wybór możesz zmienić w **Ustawieniach**. Zmiana zadziała po ponownym uruchomieniu.
+1. Wybierz język. Domyślnie TelePilot korzysta z języka systemu, a dla pozostałych języków używa angielskiego. Wybór możesz zmienić w **Ustawieniach**. Na Macu wybierz **Zapisz i uruchom ponownie**. Na Windows zapisz wybór i otwórz TelePilot ponownie.
 2. W **Plik → Menedżer playlist** dodaj playlistę z pliku lub adresu internetowego. To okno otwiera się automatycznie przy pierwszym uruchomieniu.
 3. Wybierz kanał i naciśnij **Enter**. Listę skrótów znajdziesz w menu **Pomoc**.
 
-TelePilot sprawdza aktualizacje przy uruchomieniu. Pobiera i weryfikuje odpowiednią paczkę, a następnie proponuje jej otwarcie w celu instalacji.
+TelePilot sprawdza aktualizacje przy uruchomieniu i weryfikuje pobrany instalator. Na Macu kliknij **OK** w komunikacie o pobraniu, aby otworzyć obraz instalacyjny i zamknąć TelePilota.
 
 TelePilot nie dostarcza kanałów, playlist ani abonamentu IPTV.
 

@@ -12,6 +12,8 @@ import zipfile
 
 REPOSITORY = "eleganckidenis/TelePilot"
 ROOT = Path(__file__).resolve().parents[1]
+SHARED_VLC_SOURCES = "TelePilot-2.0.1-vlc-third-party-sources.zip"
+SHARED_VLC_SHA256 = "800818898a94ce8ebaa5bfbbbe1246251ca19ef990e735b60ae26d1ab0e8df93"
 
 
 def require(condition, message):
@@ -52,6 +54,7 @@ def main():
     parser.add_argument("--windows-rid", action="append", choices=("win-x64", "win-arm64"),
                         help="Windows package to verify; defaults to both architectures")
     parser.add_argument("--github-json", type=Path, help="Release object from GitHub REST API")
+    parser.add_argument("--shared-vlc-sources", type=Path, help="Local copy of the 2.0.1 VLC source asset reused in 2.0.2")
     parser.add_argument("--published", action="store_true", help="Require a public release in GitHub metadata")
     args = parser.parse_args()
     version = args.version
@@ -66,7 +69,10 @@ def main():
     mac_sources_zip = f"{stem}-macos-third-party-sources.zip"
     names = [*windows_installers, mac_installer, source_zip, mac_sources_zip]
     vlc_sources_zip = None
-    if tuple(map(int, version.split("."))) >= (2, 0, 1):
+    if version == "2.0.2":
+        require(args.shared_vlc_sources is not None, "Provide the shared VLC source archive for 2.0.2")
+        require(file_digest(args.shared_vlc_sources) == SHARED_VLC_SHA256, "Shared VLC archive differs from v2.0.1")
+    elif tuple(map(int, version.split("."))) >= (2, 0, 1):
         vlc_sources_zip = f"{stem}-vlc-third-party-sources.zip"
         names.append(vlc_sources_zip)
     expected = {name + suffix for name in names for suffix in ("", ".sha256")}
@@ -122,10 +128,16 @@ def main():
 
     if vlc_sources_zip is not None:
         verify_vlc_sources(args.directory / vlc_sources_zip)
+    elif version == "2.0.2":
+        verify_vlc_sources(args.shared_vlc_sources)
 
     if args.github_json is not None:
         release = json.loads(args.github_json.read_text(encoding="utf-8"))
         require(release["tag_name"] == tag and release["prerelease"] is False, "Wrong GitHub release")
+        if version == "2.0.2":
+            base = f"https://github.com/{REPOSITORY}/releases/download/v2.0.1/{SHARED_VLC_SOURCES}"
+            links = re.findall(r"\]\((https://[^\s)]+)\)", release["body"] or "")
+            require(base in links and f"{base}.sha256" in links, "Release notes must link to the shared VLC sources and checksum")
         if args.published:
             require(release["draft"] is False and bool(release["published_at"]), "Release is still a draft")
         assets = release["assets"]

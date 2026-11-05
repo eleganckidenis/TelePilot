@@ -1,5 +1,7 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Reflection;
+using Avalonia.Automation;
 using Avalonia.Automation.Peers;
 using Avalonia.Automation.Provider;
 using Avalonia.Controls;
@@ -7,6 +9,7 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using TelePilot.App.Accessibility;
 using TelePilot.App.Controls;
 using TelePilot.App.Models;
@@ -25,6 +28,66 @@ namespace TelePilot.Tests.App;
 
 public sealed class MainWindowPlaybackNavigationTests
 {
+    [AvaloniaTheory]
+    [InlineData("en-US", "Mute", "Unmute", "Recording…", "Recording — stop or choose an option…")]
+    [InlineData("pl-PL", "Wycisz", "Włącz dźwięk", "Nagrywanie…", "Nagrywanie — zatrzymaj lub wybierz opcję…")]
+    public async Task PlayerButtons_LocalizeVisibleAndAccessibleLabelsInBothStates(
+        string culture, string muteLabel, string unmuteLabel, string recordLabel, string recordingLabel)
+    {
+        var previousCulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(culture);
+            var source = new PlaylistSource(PlaylistSourceId.New(), "Test playlist", PlaylistSourceKind.File, "test.m3u");
+            var recording = new ControllableRecordingCoordinator();
+            using var viewModel = new MainWindowViewModel(
+                new FixedPlaylistService(CreatePlaylist(source, "Test channel")),
+                new FixedPlaylistSourceStore(source), new ImmediatePlaybackService(), new EmptyEpgSourceManager(),
+                new NoOpWindowService(), new RecordingAccessibleStatusService(), new FocusCoordinator(),
+                recordingCoordinator: recording);
+            var window = new MainWindow { DataContext = viewModel };
+            try
+            {
+                window.Show();
+                await viewModel.InitializeAsync();
+                await viewModel.PlaySelectedCommand.ExecuteAsync(null);
+                Dispatcher.UIThread.RunJobs();
+                var buttons = window.GetVisualDescendants().OfType<Button>().ToArray();
+                var mute = Assert.Single(buttons, button => AutomationProperties.GetAutomationId(button) == "toggle-mute");
+                var record = Assert.Single(buttons, button => AutomationProperties.GetAutomationId(button) == "recording-menu-button");
+                AssertButtonLabel(mute, muteLabel);
+                AssertButtonLabel(record, recordLabel);
+
+                Assert.IsAssignableFrom<IInvokeProvider>(ControlAutomationPeer.CreatePeerForElement(mute)).Invoke();
+                recording.Publish(RecordingState.Recording);
+                Dispatcher.UIThread.RunJobs();
+                AssertButtonLabel(mute, unmuteLabel);
+                AssertButtonLabel(record, recordingLabel);
+
+                Assert.IsAssignableFrom<IInvokeProvider>(ControlAutomationPeer.CreatePeerForElement(mute)).Invoke();
+                recording.Publish(RecordingState.Completed);
+                Dispatcher.UIThread.RunJobs();
+                AssertButtonLabel(mute, muteLabel);
+                AssertButtonLabel(record, recordLabel);
+            }
+            finally
+            {
+                window.Close();
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = previousCulture;
+        }
+    }
+
+    private static void AssertButtonLabel(Button button, string expected)
+    {
+        Assert.True(button.IsEffectivelyVisible);
+        Assert.Equal(expected, button.Content);
+        Assert.Equal(expected, ControlAutomationPeer.CreatePeerForElement(button).GetName());
+    }
+
     [AvaloniaFact]
     public async Task Startup_FocusesSearchBeforeSourcesOrPlaybackPreparationComplete()
     {
