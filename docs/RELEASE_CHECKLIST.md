@@ -67,11 +67,11 @@ Nie zastępują aktualnych skryptów ani jawnych decyzji zakresu powyżej.
       natywnego HWND VLC, a fokus UIA musi pozostać na kontrolkach Avalonia;
     - uruchom NVDA z logowaniem debug i potwierdź, że cykle oraz strzałki nie
       zapisują błędu `gainFocus` w `_get_UIASelectionItemPattern`.
-11. Uruchom `scripts/test-windows-ffmpeg-download.ps1 -RunDownloadTest -TestInvalidHash`, aby sprawdzić rzeczywisty mechanizm pobierania i rozpakowania Inno w izolowanym katalogu z pustym `PATH` procesu testowego. Następnie na komputerze bez FFmpeg w `PATH` uruchom instalator z dostępem do sieci:
-    - potwierdź pobranie przypiętego FFmpeg 9.0.1 Essentials z oficjalnego archiwum GyanD/codexffmpeg na GitHubie;
+11. Uruchom `scripts/test-windows-ffmpeg-download.ps1 -RunDownloadTest -TestInvalidHash` na x64 i z parametrem `-Runtime win-arm64` na ARM64, aby sprawdzić pobieranie i rozpakowanie Inno w izolowanym katalogu z pustym `PATH`. Następnie na komputerze bez FFmpeg w `PATH` uruchom instalator z dostępem do sieci:
+    - potwierdź pobranie przypiętej paczki FFmpeg od GyanD na x64 lub od BtbN na ARM64;
     - potwierdź widoczny pasek postępu pobierania i poprawne rozpakowanie ZIP;
     - potwierdź, że niezgodna suma SHA-256 lub przerwane pobieranie przerywa instalację;
-    - sprawdź wykrycie zagnieżdżonego `tools\ffmpeg\...\bin\ffmpeg.exe` oraz obecność `LICENSE`, `README.txt` i dokumentacji;
+    - sprawdź architekturę zagnieżdżonego `bin/ffmpeg.exe` oraz obecność oryginalnej licencji i dokumentacji;
     - uruchom instalator ponownie i potwierdź pominięcie pobierania, gdy FFmpeg już istnieje.
 12. Wykonaj rzeczywiste nagranie wideo TS i audio w każdym formacie, zatrzymaj je przyciskiem i zamknij program podczas nagrywania po potwierdzeniu; każdy plik musi być niepusty i odtwarzalny.
 13. Utwórz odległe zadanie nagrywania w Harmonogramie Windows, sprawdź tryb bez okna, chroniony zapis URL, początek/koniec, opcję wybudzania, anulowanie i automatyczne wygaśnięcie zadania.

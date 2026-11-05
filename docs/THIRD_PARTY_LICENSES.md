@@ -36,7 +36,7 @@ FFmpeg jest pobierany bezpośrednio od dostawcy przez instalator i uruchamiany j
 - Windows x64: [GyanD 9.0.1](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.1), `fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9`.
 - Windows ARM64: [BtbN LGPL, 2026-10-31](https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-10-31-12-59), `d1981518b99a1c05d6b864200b1ac9459b09e2ee174feffe84b6e6bb0bfa79e2`, [źródła FFmpeg](https://github.com/FFmpeg/FFmpeg/commit/7adfbe40dc).
 
-Instalator zachowuje pełną paczkę FFmpeg, w tym `LICENSE`, `README.txt` i dokumentację. Własna kopia FFmpeg wskazana przez użytkownika zachowuje warunki jej dostawcy.
+Instalator zachowuje pełną paczkę FFmpeg, w tym jej dokumentację i oryginalną licencję (`LICENSE` w paczce GyanD, `LICENSE.txt` w paczce BtbN). Własna kopia FFmpeg wskazana przez użytkownika zachowuje warunki jej dostawcy.
 
 ## Źródła komponentów
 

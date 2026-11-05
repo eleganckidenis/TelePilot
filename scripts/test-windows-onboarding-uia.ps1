@@ -23,6 +23,28 @@ using System.Text;
 
 public static class NativeLanguagePicker
 {
+    [DllImport("user32.dll")]
+    private static extern bool SetPhysicalCursorPos(int x, int y);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+
+    public static void ActivateWindow(int window)
+    {
+        SetForegroundWindow(new IntPtr(window));
+    }
+
+    public static void ClickMenuItem(int x, int y)
+    {
+        if (!SetPhysicalCursorPos(x, y))
+            throw new InvalidOperationException("Could not move the pointer to the menu item.");
+        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); // MOUSEEVENTF_LEFTDOWN
+        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero); // MOUSEEVENTF_LEFTUP
+    }
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wParam,
         IntPtr lParam, uint flags, uint timeout, out IntPtr result);
@@ -93,12 +115,16 @@ public static class NativeLanguagePicker
 '@
 }
 
-function Find-Control($Window, [string]$Id) {
+function Find-Control($Window, [string]$Id, [switch]$OnScreen) {
     $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty, $Id)
+    if ($OnScreen) {
+        $visible = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::IsOffscreenProperty, $false)
+        $condition = [Windows.Automation.AndCondition]::new([Windows.Automation.Condition[]]@($condition, $visible))
+    }
     $Window.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
 }
 
-function Find-AppControl([Diagnostics.Process]$Process, [string]$Id, [int]$TimeoutSeconds = 30) {
+function Find-AppControl([Diagnostics.Process]$Process, [string]$Id, [int]$TimeoutSeconds = 30, [switch]$OnScreen) {
     $condition = [Windows.Automation.PropertyCondition]::new(
         [Windows.Automation.AutomationElement]::ProcessIdProperty, $Process.Id)
     $timer = [Diagnostics.Stopwatch]::StartNew()
@@ -108,7 +134,7 @@ function Find-AppControl([Diagnostics.Process]$Process, [string]$Id, [int]$Timeo
             $windows = [Windows.Automation.AutomationElement]::RootElement.FindAll(
                 [Windows.Automation.TreeScope]::Children, $condition)
             foreach ($window in $windows) {
-                $found = Find-Control $window $Id
+                $found = Find-Control $window $Id -OnScreen:$OnScreen
                 if ($null -ne $found) {
                     return @{ Window = $window; Control = $found }
                 }
@@ -121,9 +147,26 @@ function Find-AppControl([Diagnostics.Process]$Process, [string]$Id, [int]$Timeo
     return $null
 }
 
-function Invoke-Button($Control) {
-    $invoke = $Control.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern)
+function Invoke-Button($Control, [string]$Stage) {
+    $invoke = $null
+    if ($null -eq $Control -or -not $Control.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) {
+        throw "The button for '$Stage' is missing or does not support UI Automation Invoke."
+    }
     $invoke.Invoke()
+}
+
+function Click-MenuItem($Control, [string]$Stage) {
+    # Avalonia menu items do not expose Invoke or ExpandCollapse.
+    $bounds = $Control.Current.BoundingRectangle
+    if ($bounds.IsEmpty -or $bounds.Width -le 0 -or $bounds.Height -le 0 -or $Control.Current.IsOffscreen) {
+        throw "The menu item for '$Stage' is not visible."
+    }
+    try {
+        [NativeLanguagePicker]::ClickMenuItem(
+            [int]($bounds.Left + $bounds.Width / 2), [int]($bounds.Top + $bounds.Height / 2))
+    } catch {
+        throw "Could not click the menu item for '$Stage': $_"
+    }
 }
 
 function Assert-MainLanguage([Diagnostics.Process]$Process, [string]$Language) {
@@ -135,7 +178,10 @@ function Assert-MainLanguage([Diagnostics.Process]$Process, [string]$Language) {
 }
 
 function Close-App([Diagnostics.Process]$Process, $Window) {
-    $close = $Window.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern)
+    $close = $null
+    if (-not $Window.TryGetCurrentPattern([Windows.Automation.WindowPattern]::Pattern, [ref]$close)) {
+        throw 'The main window does not support UI Automation Window.Close.'
+    }
     $close.Close()
     if (-not $Process.WaitForExit(10000) -or $Process.ExitCode -ne 0) { throw 'TelePilot did not shut down cleanly.' }
 }
@@ -143,19 +189,20 @@ function Close-App([Diagnostics.Process]$Process, $Window) {
 function Open-AppSettings([Diagnostics.Process]$Process, $MainWindow) {
     $menu = Find-Control $MainWindow 'menu-file'
     if ($null -eq $menu) { throw 'The File menu was not found.' }
-    $pattern = $null
-    if ($menu.TryGetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern, [ref]$pattern)) {
-        $pattern.Expand()
-    } else {
-        Invoke-Button $menu
-    }
-    $menuItem = Find-AppControl $Process 'menu-settings' -TimeoutSeconds 5
-    if ($null -eq $menuItem) { throw 'Settings was not found in the File menu.' }
-    Invoke-Button $menuItem.Control
-    $settings = Find-AppControl $Process 'settings-save'
-    if ($null -eq $settings) { throw 'The Settings window did not open.' }
+    [NativeLanguagePicker]::ActivateWindow($MainWindow.Current.NativeWindowHandle)
+    Click-MenuItem $menu 'open File menu'
+    $menuItem = Find-AppControl $Process 'menu-settings' -TimeoutSeconds 5 -OnScreen
+    if ($null -eq $menuItem) { throw 'Settings did not become visible after clicking File.' }
+    Click-MenuItem $menuItem.Control 'open Settings'
+    $settings = Find-AppControl $Process 'settings-save' -OnScreen
+    if ($null -eq $settings) { throw 'The Settings window did not open after clicking its menu item.' }
 
-    $picker = [NativeLanguagePicker]::FindLanguagePicker($settings.Window.Current.NativeWindowHandle)
+    $settingsHandle = $settings.Window.Current.NativeWindowHandle
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $picker = [NativeLanguagePicker]::FindLanguagePicker($settingsHandle)
+        if ($picker -eq 0) { Start-Sleep -Milliseconds 100 }
+    } while ($picker -eq 0 -and $timer.Elapsed.TotalSeconds -lt 5)
     if ($picker -eq 0) { throw 'The native Settings language picker was not found.' }
     return @{ Settings = $settings; PickerHandle = $picker }
 }
@@ -170,7 +217,7 @@ try {
             $null -eq (Find-Control $onboarding.Window 'first-run-language-picker')) {
             throw 'The first-run language controls are missing or in the wrong language.'
         }
-        Invoke-Button $onboarding.Control
+        Invoke-Button $onboarding.Control 'confirm first-run language'
 
         $manager = Find-AppControl $app 'close-playlist-manager'
         if ($null -eq $manager) { throw 'The Playlist Manager did not open automatically.' }
@@ -179,7 +226,7 @@ try {
         if ($null -eq $add -or $add.Current.Name -cnotlike $addLabel) {
             throw 'The Playlist Manager add control is missing or in the wrong language.'
         }
-        Invoke-Button $manager.Control
+        Invoke-Button $manager.Control 'close first-run Playlist Manager'
     }
 
     $main = Assert-MainLanguage $app $ExpectedLanguage
@@ -204,7 +251,7 @@ try {
         if ([NativeLanguagePicker]::ReadSelection($pickerHandle) -ne $newIndex) {
             throw 'The native language picker did not select the requested language.'
         }
-        Invoke-Button $settings.Settings.Control
+        Invoke-Button $settings.Settings.Control 'save Settings language'
         $timer = [Diagnostics.Stopwatch]::StartNew()
         while ($null -ne (Find-AppControl $app 'settings-save' -TimeoutSeconds 1)) {
             if ($timer.Elapsed.TotalSeconds -ge 15) { throw 'Settings did not close after saving the language.' }
@@ -217,7 +264,7 @@ try {
         if ([NativeLanguagePicker]::ReadSelection($settings.PickerHandle) -ne $newIndex) {
             throw 'The explicit language was not selected in Settings after restart.'
         }
-        Invoke-Button (Find-Control $settings.Settings.Window 'settings-cancel')
+        Invoke-Button (Find-Control $settings.Settings.Window 'settings-cancel') 'close Settings after restart'
         Write-Host "Verified the explicit Settings language after restarting TelePilot: $newLanguage."
     }
 

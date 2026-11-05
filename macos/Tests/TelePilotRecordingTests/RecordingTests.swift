@@ -172,9 +172,16 @@ extension RecordingTests {
 @Test func testScheduledRunStopsAtWallClockDeadlineAndCleansUp() async throws {
     let directory = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
     let secrets = MemorySecrets()
-    let scheduler = try RecordingScheduler(directory: directory.appendingPathComponent("metadata"), executableURL: URL(fileURLWithPath: "/tmp/TelePilot"), agentsDirectory: directory.appendingPathComponent("agents"), secrets: secrets, control: FakeAgents())
+    let metadata = directory.appendingPathComponent("metadata")
+    let scheduler = try RecordingScheduler(directory: metadata, executableURL: URL(fileURLWithPath: "/tmp/TelePilot"), agentsDirectory: directory.appendingPathComponent("agents"), secrets: secrets, control: FakeAgents())
     let working = try executable(directory, body: "read command\n[ \"$command\" = q ]\n")
-    let item = try await scheduler.schedule(request(directory), start: Date().addingTimeInterval(0.1), end: Date().addingTimeInterval(0.6), ffmpegPath: working.path)
+    let item = try await scheduler.schedule(request(directory), start: Date().addingTimeInterval(60), end: Date().addingTimeInterval(120), ffmpegPath: working.path)
+    // Simulate launchd delivering a due job without racing schedule() against a
+    // 100 ms start time on busy runners.
+    let now = Date()
+    let due = ScheduledRecording(id: item.id, channelName: item.channelName,
+                                 start: now.addingTimeInterval(-1), end: now.addingTimeInterval(2))
+    try JSONEncoder().encode(due).write(to: metadata.appendingPathComponent(item.id.uuidString + ".json"))
     try await scheduler.run(item.id)
     #expect(secrets.count == 0)
     let remaining = try await scheduler.list(); #expect(remaining.isEmpty)
