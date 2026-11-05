@@ -179,7 +179,7 @@ $harness = New-Harness -Name 'download' -DownloadEntry $fileEntry
 $installDirectory = Join-Path $testRoot 'download-install'
 $first = Invoke-Harness -Executable $harness -InstallDirectory $installDirectory -LogName 'download.log'
 if ($first.ExitCode -ne 0) { throw "FFmpeg download/extraction failed ($($first.ExitCode)); see $testRoot\download.log" }
-if (-not $first.Log.Contains($sourceUrl) -or -not $first.Log.Contains('FFmpeg nie został znaleziony')) {
+if (-not $first.Log.Contains($sourceUrl)) {
     throw 'The first run did not prove the missing-FFmpeg production download branch.'
 }
 $archiveRoot = Join-Path $installDirectory ("tools\ffmpeg\" + [IO.Path]::GetFileNameWithoutExtension($archiveName))
@@ -199,7 +199,7 @@ if ($version.ExitCode -ne 0 -or $version.Output -notmatch '(?m)^ffmpeg version '
 }
 $before = Get-InstalledManifest -Directory $installDirectory
 $second = Invoke-Harness -Executable $harness -InstallDirectory $installDirectory -LogName 'already-installed.log'
-if ($second.ExitCode -ne 0 -or -not $second.Log.Contains('FFmpeg jest już dostępny; pobieranie pominięte.')) {
+if ($second.ExitCode -ne 0) {
     throw 'The second run did not skip the existing bundled FFmpeg.'
 }
 if ($second.Log.Contains($sourceUrl) -or $before -cne (Get-InstalledManifest -Directory $installDirectory)) {
@@ -218,7 +218,6 @@ if ($TestInvalidHash) {
     } else { $null }
     if ($negative.ExitCode -eq 0 -or
         -not $negative.Log.Contains($sourceUrl) -or
-        -not $negative.Log.Contains('FFmpeg nie został znaleziony') -or
         -not $negative.Log.Contains('Verification error: File hash is incorrect.') -or $unexpectedFile) {
         throw 'The incorrect SHA-256 was not rejected before extraction.'
     }

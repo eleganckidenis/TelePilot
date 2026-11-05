@@ -5,7 +5,7 @@ Kod TelePilot: **GPL-3.0-or-later**, pełny tekst w `LICENSE`, informacja o auto
 | Komponent | Wersja przypięta w projekcie | Licencja / informacje |
 |---|---|---|
 | Zasady buforowania Accessible IPTV Client | commit 6afe6014fa773a5489d4c43ccafad5726386d931 | MIT, Copyright (c) 2025 serrebi; pełny tekst Accessible-IPTV-Client-MIT.txt |
-| .NET runtime i Microsoft.Extensions | 10.0.10 | MIT i informacje o komponentach zewnętrznych środowiska .NET |
+| .NET runtime i Microsoft.Extensions | runtime z publikacji (dokładna wersja w inwentarzu instalatora), Microsoft.Extensions 10.0.10 | MIT i informacje o komponentach zewnętrznych środowiska .NET |
 | Avalonia UI | 12.1.1 | MIT; osobne informacje o ANGLE |
 | CommunityToolkit.Mvvm | 8.4.2 | MIT |
 | SkiaSharp i natywne Skia | 3.119.4 | MIT i dołączone THIRD-PARTY-NOTICES |
