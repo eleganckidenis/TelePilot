@@ -1,5 +1,6 @@
 using TelePilot.Core.Channels;
 using TelePilot.Core.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.ViewModels;
 
@@ -16,9 +17,9 @@ public sealed class PlaylistSourceItemViewModel
 
     public string Name => Source.Name;
 
-    public string KindLabel => Source.Kind == PlaylistSourceKind.File ? "plik" : "adres URL";
+    public string KindLabel => Source.Kind == PlaylistSourceKind.File ? T("plik", "file") : T("adres URL", "URL");
 
-    public string AccessibleName => $"{Name}, źródło: {KindLabel}";
+    public string AccessibleName => T($"{Name}, źródło: {KindLabel}", $"{Name}, source: {KindLabel}");
 
     public string AutomationId => $"playlist-source-{Source.Id}";
 

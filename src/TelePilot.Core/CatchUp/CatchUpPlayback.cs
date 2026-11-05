@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using TelePilot.Core.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Core.CatchUp;
 
@@ -21,7 +22,7 @@ public enum CatchUpSupportStatus
 public static class CatchUpPlayback
 {
     private const int MaximumTemplateLength = 32768;
-    private const string Unsupported = "Playlista nie zawiera obsługiwanych ustawień archiwum dla tego kanału.";
+    private static string Unsupported => T("Playlista nie zawiera obsługiwanych ustawień archiwum dla tego kanału.", "The playlist has no supported archive settings for this channel.");
     private static readonly string[] ArchiveAttributes =
     [
         "catchup", "catchup-type", "catchup-source", "catchup-days", "catchup-time",
@@ -177,15 +178,15 @@ public static class CatchUpPlayback
 
         if (end <= start || start >= now || end > now)
         {
-            error = "Archiwum jest dostępne dla zakończonych audycji z prawidłowym czasem początku i końca.";
+            error = T("Archiwum jest dostępne dla zakończonych audycji z prawidłowym czasem początku i końca.", "The archive is available for completed programs with valid start and end times.");
             return false;
         }
 
         if ((now - start).TotalDays > days)
         {
             error = Attribute(channel, "telepilot-catchup-profile") == "manual"
-                ? "Audycja znajduje się poza ustawionym okresem archiwum."
-                : "Audycja znajduje się poza okresem archiwum podanym w playliście.";
+                ? T("Audycja znajduje się poza ustawionym okresem archiwum.", "The program is outside the configured archive period.")
+                : T("Audycja znajduje się poza okresem archiwum podanym w playliście.", "The program is outside the archive period declared in the playlist.");
             return false;
         }
 
@@ -197,7 +198,7 @@ public static class CatchUpPlayback
             !TryExpand(template, correctedStart, correctedEnd, now, out var url) ||
             !IsHttpUrl(url))
         {
-            error = "Ustawienia adresu archiwum w playliście są nieprawidłowe lub nieobsługiwane.";
+            error = T("Ustawienia adresu archiwum w playliście są nieprawidłowe lub nieobsługiwane.", "The playlist archive address settings are invalid or unsupported.");
             return false;
         }
 

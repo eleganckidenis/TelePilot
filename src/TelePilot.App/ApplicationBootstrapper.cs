@@ -13,6 +13,7 @@ using TelePilot.Infrastructure;
 using TelePilot.Playback;
 using TelePilot.Playlists;
 using TelePilot.Recording;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App;
 
@@ -30,7 +31,7 @@ public static class ApplicationBootstrapper
         {
             if (host is not null)
             {
-                throw new InvalidOperationException("Aplikacja została już uruchomiona.");
+                throw new InvalidOperationException(T("Aplikacja została już uruchomiona.", "The application has already started."));
             }
 
             shuttingDown = false;

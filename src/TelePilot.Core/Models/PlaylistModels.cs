@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Core.Models;
 
@@ -44,7 +45,7 @@ public sealed class PlaylistHeader
 
     public IReadOnlyList<string> EpgUrls { get; }
 
-    public override string ToString() => $"Nagłówek playlisty, źródła EPG: {EpgUrls.Count}";
+    public override string ToString() => T($"Nagłówek playlisty, źródła EPG: {EpgUrls.Count}", $"Playlist header, EPG sources: {EpgUrls.Count}");
 
     private static ReadOnlyDictionary<string, string> CopyAttributes(
         IReadOnlyDictionary<string, string>? attributes)
@@ -97,7 +98,7 @@ public sealed class PlaylistParseResult
         item.Severity == PlaylistDiagnosticSeverity.Error);
 
     public override string ToString() =>
-        $"Kanały: {Channels.Count}, pominięte wpisy: {SkippedEntryCount}, diagnostyka: {Diagnostics.Count}";
+        T($"Kanały: {Channels.Count}, pominięte wpisy: {SkippedEntryCount}, diagnostyka: {Diagnostics.Count}", $"Channels: {Channels.Count}, skipped entries: {SkippedEntryCount}, diagnostics: {Diagnostics.Count}");
 }
 
 public enum PlaylistLoadErrorCode

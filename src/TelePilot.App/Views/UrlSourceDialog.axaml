@@ -3,6 +3,7 @@
     x:DataType="vm:UrlSourceDialogViewModel"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="using:TelePilot.App.Localization"
     xmlns:automation="using:Avalonia.Automation"
     xmlns:controls="using:TelePilot.App.Controls"
     xmlns:vm="using:TelePilot.App.ViewModels"
@@ -12,9 +13,9 @@
     MinHeight="350"
     CanResize="False"
     ShowInTaskbar="False"
-    Title="Dodaj playlistę z adresu URL"
+    Title="{x:Static loc:ViewText.AddPlaylistFromURL}"
     WindowStartupLocation="CenterOwner"
-    automation:AutomationProperties.Name="Dodaj playlistę z adresu URL"
+    automation:AutomationProperties.Name="{x:Static loc:ViewText.AddPlaylistFromURL}"
     automation:AutomationProperties.AutomationId="url-source-dialog">
 
   <Window.KeyBindings>
@@ -29,37 +30,37 @@
       KeyboardNavigation.TabNavigation="Cycle">
     <TextBlock
         Classes="section-heading"
-        Text="Dodaj playlistę z adresu URL"
+        Text="{x:Static loc:ViewText.AddPlaylistFromURL}"
         automation:AutomationProperties.HeadingLevel="1" />
 
     <StackPanel Grid.Row="1">
-      <Label Classes="field-label" Content="_Nazwa źródła (opcjonalna)" Target="SourceNameTextBox" />
+      <Label Classes="field-label" Content="{x:Static loc:ViewText.SourceNameOptional}" Target="SourceNameTextBox" />
       <controls:AccessibleTextBox
           x:Name="SourceNameTextBox"
           Text="{Binding SourceName}"
-          Watermark="Na przykład Telewizja domowa"
-          automation:AutomationProperties.Name="Nazwa źródła"
-          automation:AutomationProperties.HelpText="Własna nazwa ułatwiająca rozpoznanie playlisty."
+          Watermark="{x:Static loc:ViewText.ExampleHomeTV}"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.SourceName}"
+          automation:AutomationProperties.HelpText="{x:Static loc:ViewText.ANameToHelpYouRecognize}"
           automation:AutomationProperties.AutomationId="url-source-name" />
     </StackPanel>
 
     <StackPanel Grid.Row="2">
-      <Label Classes="field-label" Content="_Adres playlisty" Target="AddressTextBox" />
+      <Label Classes="field-label" Content="{x:Static loc:ViewText.PlaylistAddress}" Target="AddressTextBox" />
       <controls:AccessibleTextBox
           x:Name="AddressTextBox"
           Text="{Binding Address}"
           Watermark="https://example.org/playlist.m3u8"
-          automation:AutomationProperties.Name="Adres playlisty"
-          automation:AutomationProperties.HelpText="Pełny adres HTTP lub HTTPS do pliku M3U albo M3U8."
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.PlaylistAddress2}"
+          automation:AutomationProperties.HelpText="{x:Static loc:ViewText.FullHTTPOrHTTPSAddressTo}"
           automation:AutomationProperties.AutomationId="url-source-address" />
     </StackPanel>
 
     <CheckBox
         x:Name="RefreshOnStartupCheckBox"
         Grid.Row="3"
-        Content="Odświeżaj to źródło przy uruchomieniu programu"
+        Content="{x:Static loc:ViewText.RefreshThisSourceWhenTheApp}"
         IsChecked="{Binding RefreshOnStartup}"
-        automation:AutomationProperties.Name="Odświeżaj źródło przy uruchomieniu"
+        automation:AutomationProperties.Name="{x:Static loc:ViewText.RefreshSourceAtStartup}"
         automation:AutomationProperties.AutomationId="url-source-refresh-on-startup" />
 
     <TextBlock
@@ -67,7 +68,7 @@
         Text="{Binding ValidationMessage}"
         TextWrapping="Wrap"
         Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"
-        automation:AutomationProperties.Name="Błąd formularza źródła"
+        automation:AutomationProperties.Name="{x:Static loc:ViewText.PlaylistSourceFormError}"
         automation:AutomationProperties.AutomationId="url-source-validation"
         automation:AutomationProperties.LiveSetting="Assertive" />
 
@@ -75,17 +76,17 @@
       <Button
           x:Name="CancelButton"
           Classes="primary-action"
-          Content="Anuluj"
+          Content="{x:Static loc:ViewText.Cancel}"
           Command="{Binding CancelCommand}"
-          automation:AutomationProperties.Name="Anuluj dodawanie źródła"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.CancelAddingTheSource}"
           automation:AutomationProperties.AutomationId="url-source-cancel" />
       <Button
           x:Name="SubmitButton"
           Classes="primary-action"
-          Content="Dodaj"
+          Content="{x:Static loc:ViewText.Add}"
           Command="{Binding SubmitCommand}"
-          automation:AutomationProperties.Name="Dodaj źródło URL"
-          automation:AutomationProperties.HelpText="Sprawdza adres i dodaje playlistę."
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.AddURLSource}"
+          automation:AutomationProperties.HelpText="{x:Static loc:ViewText.ValidatesTheAddressAndAddsThe}"
           automation:AutomationProperties.AutomationId="url-source-submit" />
     </StackPanel>
   </Grid>

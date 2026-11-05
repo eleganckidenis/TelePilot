@@ -1,0 +1,66 @@
+<Window
+    x:Class="TelePilot.App.Views.PlaylistManagerWindow"
+    x:DataType="vm:MainWindowViewModel"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="using:TelePilot.App.Localization"
+    xmlns:automation="using:Avalonia.Automation"
+    xmlns:vm="using:TelePilot.App.ViewModels"
+    Title="{x:Static loc:ViewText.PlaylistManagerTelePilot}"
+    Width="690" Height="420" MinWidth="560" MinHeight="350"
+    WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+    automation:AutomationProperties.Name="{x:Static loc:ViewText.PlaylistManager2}"
+    automation:AutomationProperties.AutomationId="playlist-manager-window">
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+O" Command="{Binding AddFileSourceCommand}" />
+    <KeyBinding Gesture="Ctrl+U" Command="{Binding AddUrlSourceCommand}" />
+    <KeyBinding Gesture="F5" Command="{Binding RefreshSourceCommand}" />
+    <KeyBinding Gesture="Ctrl+Delete" Command="{Binding RemoveSourceCommand}" />
+  </Window.KeyBindings>
+  <Grid Margin="20" RowDefinitions="Auto,*,Auto,Auto,Auto" RowSpacing="10" KeyboardNavigation.TabNavigation="Cycle">
+    <StackPanel>
+      <TextBlock Text="{x:Static loc:ViewText.PlaylistSources}" Classes="section-heading" automation:AutomationProperties.HeadingLevel="1" />
+      <TextBlock Text="{Binding ActivePlaylistName}" TextWrapping="Wrap" />
+    </StackPanel>
+    <ListBox x:Name="SourcesList" Grid.Row="1" ItemsSource="{Binding Sources}" SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
+        automation:AutomationProperties.Name="{x:Static loc:ViewText.PlaylistSources}"
+        automation:AutomationProperties.HelpText="{x:Static loc:ViewText.UseTheArrowKeysToSelect8}"
+        automation:AutomationProperties.AutomationId="playlist-source-selector">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:PlaylistSourceItemViewModel">
+          <TextBlock Text="{Binding AccessibleName}" automation:AutomationProperties.AccessibilityView="Raw" />
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+      <ListBox.Styles>
+        <Style Selector="ListBoxItem" x:DataType="vm:PlaylistSourceItemViewModel">
+          <Setter Property="automation:AutomationProperties.Name" Value="{Binding AccessibleName}" />
+          <Setter Property="automation:AutomationProperties.AutomationId" Value="{Binding AutomationId}" />
+        </Style>
+      </ListBox.Styles>
+    </ListBox>
+    <WrapPanel Grid.Row="2" Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
+      <Button x:Name="AddFileSourceButton" Content="{x:Static loc:ViewText.AddFile}" Command="{Binding AddFileSourceCommand}"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.AddPlaylistFromFile}" automation:AutomationProperties.AutomationId="add-file-source" />
+      <Button x:Name="AddUrlSourceButton" Content="{x:Static loc:ViewText.AddURL}" Command="{Binding AddUrlSourceCommand}"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.AddPlaylistFromURL}" automation:AutomationProperties.AutomationId="add-url-source" />
+      <Button Content="{x:Static loc:ViewText.LoadSource}" Command="{Binding ActivateSourceCommand}"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.LoadSelectedSource}" automation:AutomationProperties.AutomationId="activate-source" />
+      <Button Content="{x:Static loc:ViewText.RefreshSource}" Command="{Binding RefreshSourceCommand}"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.RefreshSelectedSource}" automation:AutomationProperties.AutomationId="refresh-source" />
+      <Button x:Name="RemoveSourceButton" Content="{x:Static loc:ViewText.RemoveSource}" Command="{Binding RemoveSourceCommand}"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.RemoveSelectedSource}" automation:AutomationProperties.AutomationId="remove-source" />
+      <Button Content="{x:Static loc:ViewText.CancelLoading}" Command="{Binding CancelLoadingCommand}"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.CancelLoadingThePlaylist}" automation:AutomationProperties.AutomationId="cancel-playlist-load" />
+      <Button Content="{x:Static loc:ViewText.ArchiveSettingsButton}" Command="{Binding OpenArchiveSettingsCommand}"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.ArchiveSettingsSelectedPlaylist}" automation:AutomationProperties.AutomationId="playlist-archive-settings" />
+    </WrapPanel>
+    <StackPanel Grid.Row="3">
+      <TextBlock Text="{Binding AccessibleStatus.StatusMessage}" TextWrapping="Wrap"
+          automation:AutomationProperties.LiveSetting="Polite" automation:AutomationProperties.AutomationId="playlist-manager-status" />
+      <TextBlock Text="{Binding AccessibleStatus.AlertMessage}" TextWrapping="Wrap"
+          automation:AutomationProperties.LiveSetting="Assertive" automation:AutomationProperties.AutomationId="playlist-manager-alert" />
+    </StackPanel>
+    <Button Grid.Row="4" x:Name="CloseButton" HorizontalAlignment="Right" Content="{x:Static loc:ViewText.Close}" IsCancel="True"
+        automation:AutomationProperties.AutomationId="close-playlist-manager" />
+  </Grid>
+</Window>

@@ -1,3 +1,5 @@
+using static TelePilot.Core.Localization.Localizer;
+
 namespace TelePilot.Core.Models;
 
 public enum PlaylistSourceKind
@@ -27,7 +29,7 @@ public sealed class PlaylistSource
         {
             throw new ArgumentOutOfRangeException(
                 nameof(downloadTimeout),
-                "Limit czasu musi być większy od zera i nie może przekraczać godziny.");
+                T("Limit czasu musi być większy od zera i nie może przekraczać godziny.", "The timeout must be greater than zero and no more than one hour."));
         }
 
         Id = id;

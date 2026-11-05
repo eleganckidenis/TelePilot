@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Recording;
 
@@ -39,7 +40,7 @@ public sealed partial class FfmpegRecordingService : IAsyncDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_process is { HasExited: false })
             {
-                throw new InvalidOperationException("Nagrywanie już trwa.");
+                throw new InvalidOperationException(T("Nagrywanie już trwa.", "A recording is already in progress."));
             }
 
             if (_process is not null)
@@ -54,7 +55,7 @@ public sealed partial class FfmpegRecordingService : IAsyncDisposable
             _outputPath = null;
             try
             {
-                Report(RecordingState.Preparing, "Przygotowywanie nagrywania.");
+                Report(RecordingState.Preparing, T("Przygotowywanie nagrywania.", "Preparing recording."));
                 Directory.CreateDirectory(request.OutputDirectory);
                 var baseName = SafeFileNameGenerator.CreateBaseName(request);
                 _outputPath = CreateUniquePath(request.OutputDirectory, baseName, SafeFileNameGenerator.GetExtension(request));
@@ -79,7 +80,7 @@ public sealed partial class FfmpegRecordingService : IAsyncDisposable
                 {
                     if (!process.Start())
                     {
-                        throw new InvalidOperationException("Nie udało się uruchomić FFmpeg.");
+                        throw new InvalidOperationException(T("Nie udało się uruchomić FFmpeg.", "Could not start FFmpeg."));
                     }
                 }
                 catch
@@ -92,7 +93,7 @@ public sealed partial class FfmpegRecordingService : IAsyncDisposable
                 _process = process;
                 _ = DrainAsync(process.StandardOutput, CancellationToken.None);
                 _ = DrainAsync(process.StandardError, CancellationToken.None);
-                Report(RecordingState.Recording, "Rozpoczęto nagrywanie.");
+                Report(RecordingState.Recording, T("Rozpoczęto nagrywanie.", "Recording started."));
                 var outputFileName = Path.GetFileName(_outputPath);
                 if (_logger.IsEnabled(LogLevel.Information))
                 {
@@ -102,7 +103,7 @@ public sealed partial class FfmpegRecordingService : IAsyncDisposable
             }
             catch
             {
-                Report(RecordingState.Error, "Nie udało się rozpocząć nagrywania.");
+                Report(RecordingState.Error, T("Nie udało się rozpocząć nagrywania.", "Could not start recording."));
                 throw;
             }
         }
@@ -121,7 +122,7 @@ public sealed partial class FfmpegRecordingService : IAsyncDisposable
         try
         {
             completion = _completionSource?.Task
-                ?? throw new InvalidOperationException("Nagrywanie nie zostało rozpoczęte.");
+                ?? throw new InvalidOperationException(T("Nagrywanie nie zostało rozpoczęte.", "The recording did not start."));
         }
         finally
         {
@@ -144,7 +145,7 @@ public sealed partial class FfmpegRecordingService : IAsyncDisposable
 
             if (!process.HasExited)
             {
-                Report(RecordingState.Stopping, "Zatrzymywanie nagrywania.");
+                Report(RecordingState.Stopping, T("Zatrzymywanie nagrywania.", "Stopping recording."));
                 try
                 {
                     using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -175,7 +176,7 @@ public sealed partial class FfmpegRecordingService : IAsyncDisposable
             CompleteProcess(process);
             if (process.ExitCode != 0)
             {
-                throw new InvalidOperationException("FFmpeg zakończył nagrywanie błędem; plik może być niekompletny.");
+                throw new InvalidOperationException(T("FFmpeg zakończył nagrywanie błędem; plik może być niekompletny.", "FFmpeg encountered an error while recording. The file may be incomplete."));
             }
         }
         finally
@@ -244,7 +245,7 @@ public sealed partial class FfmpegRecordingService : IAsyncDisposable
 
         var state = process.ExitCode == 0 ? RecordingState.Completed : RecordingState.Error;
         Report(state, state == RecordingState.Completed
-            ? "Nagrywanie zakończone." : "FFmpeg zakończył nagrywanie błędem.");
+            ? T("Nagrywanie zakończone.", "Recording complete.") : T("FFmpeg zakończył nagrywanie błędem.", "FFmpeg encountered an error while recording."));
     }
 
     private void Report(RecordingState state, string message)
@@ -303,12 +304,12 @@ public sealed partial class FfmpegRecordingService : IAsyncDisposable
     [LoggerMessage(
         EventId = 1001,
         Level = LogLevel.Information,
-        Message = "Rozpoczęto nagrywanie kanału {ChannelName} do {OutputFileName}.")]
+        Message = "Started recording channel {ChannelName} to {OutputFileName}.")]
     private static partial void LogRecordingStarted(ILogger logger, string channelName, string outputFileName);
 
     [LoggerMessage(
         EventId = 1002,
         Level = LogLevel.Warning,
-        Message = "FFmpeg nie zakończył się w limicie czasu; proces zostanie zakończony.")]
+        Message = "FFmpeg did not exit in time. The process will be stopped.")]
     private static partial void LogForcedTermination(ILogger logger);
 }

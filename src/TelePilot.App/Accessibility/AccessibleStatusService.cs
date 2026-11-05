@@ -1,5 +1,6 @@
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Accessibility;
 
@@ -24,7 +25,7 @@ public sealed class AccessibleStatusService : ObservableObject, IAccessibleStatu
     private CancellationTokenSource? pendingAnnouncement;
     private DateTimeOffset lastPoliteAnnouncementAt = DateTimeOffset.MinValue;
     private string lastPoliteAnnouncement = string.Empty;
-    private string statusMessage = "Gotowy.";
+    private string statusMessage = T("Gotowy.", "Ready.");
     private string alertMessage = string.Empty;
     private bool disposed;
 

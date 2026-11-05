@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using TelePilot.App.ViewModels;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Views;
 
@@ -135,7 +136,7 @@ public sealed partial class ArchiveView : UserControl
         {
             AutomationProperties.SetName(container, programme.AccessibleName);
             AutomationProperties.SetAutomationId(container, programme.AutomationId);
-            AutomationProperties.SetHelpText(container, "Enter odtwarza audycję z archiwum.");
+            AutomationProperties.SetHelpText(container, T("Enter odtwarza audycję z archiwum.", "Press Enter to play the program from the archive."));
         }
     }
 }

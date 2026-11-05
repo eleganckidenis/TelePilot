@@ -1,4 +1,5 @@
 using System.Globalization;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Recording;
 
@@ -108,19 +109,19 @@ public sealed class FfmpegArgumentBuilder : IFfmpegArgumentBuilder
     {
         if (!request.InputUri.IsAbsoluteUri)
         {
-            throw new ArgumentException("Adres źródła nagrania musi być bezwzględny.", nameof(request));
+            throw new ArgumentException(T("Adres źródła nagrania musi być bezwzględny.", "The recording source must have an absolute address."), nameof(request));
         }
 
         if (request.TrackSelection == AudioTrackSelection.Specific && request.AudioTrackIndex is null or < 0)
         {
-            throw new ArgumentException("Dla konkretnej ścieżki wymagany jest nieujemny indeks.", nameof(request));
+            throw new ArgumentException(T("Dla konkretnej ścieżki wymagany jest nieujemny indeks.", "A specific track requires a nonnegative index."), nameof(request));
         }
 
         if (request.Mode == RecordingMode.AudioOnly &&
             request.AudioFormat is AudioOutputFormat.Mp3 or AudioOutputFormat.M4aAac or AudioOutputFormat.Opus &&
             request.LossyBitrateKbps is < 32 or > 512)
         {
-            throw new ArgumentOutOfRangeException(nameof(request), "Przepływność musi mieścić się w zakresie 32–512 kb/s.");
+            throw new ArgumentOutOfRangeException(nameof(request), T("Przepływność musi mieścić się w zakresie 32–512 kb/s.", "The bitrate must be between 32 and 512 kbps."));
         }
     }
 }

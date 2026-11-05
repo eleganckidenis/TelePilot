@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
 using TelePilot.App.ViewModels;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Views;
 
@@ -138,7 +139,7 @@ public sealed partial class TrackSelectionWindow : Window
         AutomationProperties.SetAutomationId(container, track.AutomationId);
         AutomationProperties.SetHelpText(
             container,
-            "Strzałkami wybierz ścieżkę, a następnie naciśnij Enter.");
+            T("Strzałkami wybierz ścieżkę, a następnie naciśnij Enter.", "Use the arrow keys to select a track, then press Enter."));
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)

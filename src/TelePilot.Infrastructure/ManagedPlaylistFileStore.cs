@@ -1,4 +1,5 @@
 using TelePilot.Core.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Infrastructure;
 
@@ -31,7 +32,7 @@ public sealed class ManagedPlaylistFileStore
             exception is ArgumentException or NotSupportedException or PathTooLongException)
         {
             throw new ManagedPlaylistFileException(
-                "Nie udało się odczytać wybranego pliku playlisty.",
+                T("Nie udało się odczytać wybranego pliku playlisty.", "Could not read the selected playlist file."),
                 exception);
         }
 
@@ -91,7 +92,7 @@ public sealed class ManagedPlaylistFileStore
             exception is IOException or UnauthorizedAccessException or NotSupportedException)
         {
             throw new ManagedPlaylistFileException(
-                "Nie udało się utworzyć zarządzanej kopii playlisty.",
+                T("Nie udało się utworzyć zarządzanej kopii playlisty.", "Could not create a managed copy of the playlist."),
                 exception);
         }
         finally
@@ -112,7 +113,7 @@ public sealed class ManagedPlaylistFileStore
         if (!policy.Owns(file))
         {
             throw new ManagedPlaylistFileException(
-                "Nie można odświeżyć pliku spoza zarządzanego katalogu playlist.");
+                T("Nie można odświeżyć pliku spoza zarządzanego katalogu playlist.", "Cannot refresh a file outside the managed playlists folder."));
         }
 
         string sourcePath;
@@ -126,7 +127,7 @@ public sealed class ManagedPlaylistFileStore
             exception is ArgumentException or NotSupportedException or PathTooLongException)
         {
             throw new ManagedPlaylistFileException(
-                "Nie udało się odczytać wybranego pliku playlisty.",
+                T("Nie udało się odczytać wybranego pliku playlisty.", "Could not read the selected playlist file."),
                 exception);
         }
 
@@ -181,7 +182,7 @@ public sealed class ManagedPlaylistFileStore
             exception is IOException or UnauthorizedAccessException or NotSupportedException)
         {
             throw new ManagedPlaylistFileException(
-                "Nie udało się odświeżyć zarządzanej kopii playlisty.",
+                T("Nie udało się odświeżyć zarządzanej kopii playlisty.", "Could not refresh the managed copy of the playlist."),
                 exception);
         }
         finally
@@ -237,7 +238,7 @@ public sealed class ManagedPlaylistFileStore
             exception is ArgumentException or NotSupportedException or PathTooLongException)
         {
             throw new ManagedPlaylistFileException(
-                "Nie udało się odczytać wybranego pliku playlisty.",
+                T("Nie udało się odczytać wybranego pliku playlisty.", "Could not read the selected playlist file."),
                 exception);
         }
 
@@ -266,7 +267,7 @@ public sealed class ManagedPlaylistFileStore
             exception is IOException or UnauthorizedAccessException or NotSupportedException)
         {
             throw new ManagedPlaylistFileException(
-                "Nie udało się odczytać wybranego pliku playlisty.",
+                T("Nie udało się odczytać wybranego pliku playlisty.", "Could not read the selected playlist file."),
                 exception);
         }
     }
@@ -292,7 +293,7 @@ public sealed class ManagedPlaylistFileStore
             exception is IOException or UnauthorizedAccessException or NotSupportedException)
         {
             throw new ManagedPlaylistFileException(
-                "Nie udało się odczytać wybranego pliku playlisty.",
+                T("Nie udało się odczytać wybranego pliku playlisty.", "Could not read the selected playlist file."),
                 exception);
         }
     }
@@ -324,7 +325,7 @@ public sealed class ManagedPlaylistFileStore
     }
 
     private static ManagedPlaylistFileException TooLarge() =>
-        new("Wybrany plik playlisty przekracza dozwolony rozmiar.");
+        new(T("Wybrany plik playlisty przekracza dozwolony rozmiar.", "The selected playlist file exceeds the allowed size."));
 
     private static StringComparison PathComparison => OperatingSystem.IsWindows()
         ? StringComparison.OrdinalIgnoreCase

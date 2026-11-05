@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.ViewModels;
 
@@ -15,7 +16,7 @@ public sealed class ChannelListItemViewModel : ObservableObject
 
         Id = id;
         Name = name.Trim();
-        Group = string.IsNullOrWhiteSpace(group) ? "Bez grupy" : group.Trim();
+        Group = string.IsNullOrWhiteSpace(group) ? T("Bez grupy", "No group") : group.Trim();
     }
 
     public string Id { get; }
@@ -69,7 +70,7 @@ public sealed class ChannelListItemViewModel : ObservableObject
             var parts = new List<string> { Name };
             if (!string.IsNullOrWhiteSpace(CurrentProgram))
             {
-                parts.Add($"teraz: {CurrentProgram.Trim()}");
+                parts.Add(T($"teraz: {CurrentProgram.Trim()}", $"now: {CurrentProgram.Trim()}"));
             }
 
             if (!string.IsNullOrWhiteSpace(PlaybackState))
@@ -82,7 +83,7 @@ public sealed class ChannelListItemViewModel : ObservableObject
                 parts.Add("ulubiony");
             }
 
-            parts.Add($"grupa: {Group}");
+            parts.Add(T($"grupa: {Group}", $"group: {Group}"));
 
             return string.Join(", ", parts);
         }

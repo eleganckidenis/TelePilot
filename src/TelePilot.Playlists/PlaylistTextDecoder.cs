@@ -1,5 +1,6 @@
 using System.Text;
 using TelePilot.Core.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Playlists;
 
@@ -62,7 +63,7 @@ internal static class PlaylistTextDecoder
                     PlaylistDiagnosticCode.InvalidDeclaredEncoding,
                     PlaylistDiagnosticSeverity.Warning,
                     null,
-                    "Źródło podało nieznane kodowanie. Zastosowano automatyczne wykrywanie.");
+                    T("Źródło podało nieznane kodowanie. Zastosowano automatyczne wykrywanie.", "The source specified an unknown encoding. Automatic detection was used."));
             }
         }
 
@@ -80,7 +81,7 @@ internal static class PlaylistTextDecoder
                 PlaylistDiagnosticCode.FallbackEncodingUsed,
                 PlaylistDiagnosticSeverity.Warning,
                 null,
-                $"Treść nie jest poprawnym UTF-8. Użyto kodowania {fallback.WebName}.");
+                T($"Treść nie jest poprawnym UTF-8. Użyto kodowania {fallback.WebName}.", $"The content is not valid UTF-8. Used {fallback.WebName} encoding."));
             return new PlaylistDecodingResult(
                 fallback.GetString(bytes),
                 fallback.WebName,

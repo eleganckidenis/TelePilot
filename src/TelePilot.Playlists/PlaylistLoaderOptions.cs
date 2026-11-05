@@ -1,3 +1,5 @@
+using static TelePilot.Core.Localization.Localizer;
+
 namespace TelePilot.Playlists;
 
 public sealed class PlaylistLoaderOptions
@@ -12,7 +14,7 @@ public sealed class PlaylistLoaderOptions
         {
             throw new ArgumentOutOfRangeException(
                 nameof(maximumContentBytes),
-                "Maksymalny rozmiar playlisty musi być większy od zera i nie może przekraczać 2 GB.");
+                T("Maksymalny rozmiar playlisty musi być większy od zera i nie może przekraczać 2 GB.", "The maximum playlist size must be greater than zero and no more than 2 GB."));
         }
 
         MaximumContentBytes = maximumContentBytes;

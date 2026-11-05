@@ -1,3 +1,5 @@
+using static TelePilot.Core.Localization.Localizer;
+
 namespace TelePilot.Playback;
 
 internal sealed record LibVlcNativePaths(
@@ -54,13 +56,13 @@ internal static class LibVlcNativeBootstrapper
             return ValidateMacPaths(
                 libraryDirectory,
                 pluginDirectory,
-                "Ścieżki LibVLC skonfigurowane w środowisku są niekompletne.");
+                T("Ścieżki LibVLC skonfigurowane w środowisku są niekompletne.", "The LibVLC paths in the environment are incomplete."));
         }
 
         if (!string.IsNullOrWhiteSpace(configuredPluginDirectory))
         {
             throw new InvalidOperationException(
-                $"{PluginPathEnvironmentVariable} wymaga również {LibraryPathEnvironmentVariable}.");
+                T($"{PluginPathEnvironmentVariable} wymaga również {LibraryPathEnvironmentVariable}.", $"{PluginPathEnvironmentVariable} also requires {LibraryPathEnvironmentVariable}."));
         }
 
         var bundleRoot = Path.GetFullPath(Path.Combine(
@@ -76,7 +78,7 @@ internal static class LibVlcNativeBootstrapper
         return ValidateMacPaths(
             Path.Combine(bundleRoot, "lib"),
             Path.Combine(bundleRoot, "plugins"),
-            "Pakiet TelePilot.app zawiera niekompletny zestaw LibVLC.");
+            T("Pakiet TelePilot.app zawiera niekompletny zestaw LibVLC.", "The TelePilot.app bundle contains an incomplete LibVLC installation."));
     }
 
     private static LibVlcNativePaths ValidateMacPaths(
@@ -109,7 +111,7 @@ internal static class LibVlcNativeBootstrapper
         if (!Path.IsPathFullyQualified(configuredPath))
         {
             throw new InvalidOperationException(
-                $"{variableName} musi wskazywać bezwzględną ścieżkę.");
+                T($"{variableName} musi wskazywać bezwzględną ścieżkę.", $"{variableName} must point to an absolute path."));
         }
 
         return Path.GetFullPath(configuredPath);

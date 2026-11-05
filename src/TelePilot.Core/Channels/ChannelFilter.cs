@@ -1,4 +1,5 @@
 using TelePilot.Core.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Core.Channels;
 
@@ -45,7 +46,7 @@ public static class ChannelFilter
             _ => throw new ArgumentOutOfRangeException(
                 nameof(criteria),
                 criteria.SortMode,
-                "Nieznany sposób sortowania kanałów."),
+                T("Nieznany sposób sortowania kanałów.", "Unknown channel sort order.")),
         };
 
         return Array.AsReadOnly(filtered.ToArray());

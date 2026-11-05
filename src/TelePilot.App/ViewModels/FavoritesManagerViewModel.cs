@@ -2,6 +2,7 @@ using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TelePilot.App.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.ViewModels;
 
@@ -26,8 +27,8 @@ public sealed class FavoritesManagerViewModel : ObservableObject
     public int SelectedCount => Items.Count(item => item.IsSelected);
 
     public string SelectionSummary => Items.Count == 0
-        ? "Brak ulubionych kanałów."
-        : $"Zaznaczono do usunięcia: {SelectedCount} z {Items.Count}.";
+        ? T("Brak ulubionych kanałów.", "No favorite channels.")
+        : T($"Zaznaczono do usunięcia: {SelectedCount} z {Items.Count}.", $"Selected for removal: {SelectedCount} of {Items.Count}.");
 
     public IRelayCommand RemoveSelectedCommand { get; }
 

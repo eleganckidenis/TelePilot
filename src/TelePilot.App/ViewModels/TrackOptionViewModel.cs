@@ -1,3 +1,5 @@
+using static TelePilot.Core.Localization.Localizer;
+
 namespace TelePilot.App.ViewModels;
 
 public sealed record TrackOptionViewModel(int Id, string Name, string? Language, bool IsCurrent)
@@ -6,8 +8,8 @@ public sealed record TrackOptionViewModel(int Id, string Name, string? Language,
     {
         get
         {
-            var language = string.IsNullOrWhiteSpace(Language) ? string.Empty : $", język: {Language}";
-            var state = IsCurrent ? ", wybrana" : string.Empty;
+            var language = string.IsNullOrWhiteSpace(Language) ? string.Empty : T($", język: {Language}", $", language: {Language}");
+            var state = IsCurrent ? T(", wybrana", ", selected") : string.Empty;
             return $"{Name}{language}{state}";
         }
     }

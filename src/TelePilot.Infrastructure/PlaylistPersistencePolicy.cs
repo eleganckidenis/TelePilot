@@ -1,3 +1,5 @@
+using static TelePilot.Core.Localization.Localizer;
+
 namespace TelePilot.Infrastructure;
 
 public sealed class PlaylistPersistencePolicy
@@ -12,6 +14,6 @@ public sealed class PlaylistPersistencePolicy
     public bool CanPersistAsPlainText(Uri sourceUri) => !_redactor.ContainsCredentials(sourceUri);
 
     public string GetUserMessage(Uri sourceUri) => CanPersistAsPlainText(sourceUri)
-        ? "Źródło może zostać zapisane w ustawieniach."
-        : "Adres zawiera dane uwierzytelniające i pozostanie dostępny tylko w bieżącej sesji.";
+        ? T("Źródło może zostać zapisane w ustawieniach.", "The source can be saved in Settings.")
+        : T("Adres zawiera dane uwierzytelniające i pozostanie dostępny tylko w bieżącej sesji.", "The address contains credentials and is only available for this session.");
 }

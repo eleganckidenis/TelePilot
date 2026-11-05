@@ -3,6 +3,7 @@ using TelePilot.App.Models;
 using TelePilot.Core.Models;
 using TelePilot.Infrastructure;
 using TelePilot.Recording;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Services;
 
@@ -18,6 +19,7 @@ internal static class ScheduledRecordingRunner
             NullLogger<JsonSettingsStore<AppPreferences>>.Instance);
         var preferencesService = new AppPreferencesService(preferencesStore);
         await preferencesService.LoadAsync(cancellationToken).ConfigureAwait(false);
+        LanguagePreference.Apply(preferencesService.Current.Language, System.Globalization.CultureInfo.CurrentUICulture);
 
         var scheduleSettingsStore = new JsonSettingsStore<ScheduledRecordingSettings>(
             paths.ScheduledRecordingsFile,
@@ -44,7 +46,7 @@ internal static class ScheduledRecordingRunner
                     entry with
                     {
                         Status = ScheduledRecordingStatus.Failed,
-                        LastError = "Zadanie uruchomiło się po czasie zakończenia nagrania.",
+                        LastError = T("Zadanie uruchomiło się po czasie zakończenia nagrania.", "The task started after the recording was due to end."),
                     },
                     CancellationToken.None).ConfigureAwait(false);
                 return 3;
@@ -54,7 +56,7 @@ internal static class ScheduledRecordingRunner
             var streamUrl = protector.Unprotect(entry.ProtectedStreamUrl);
             if (!Uri.TryCreate(streamUrl, UriKind.Absolute, out var streamUri))
             {
-                throw new InvalidOperationException("Zapisany adres strumienia jest nieprawidłowy.");
+                throw new InvalidOperationException(T("Zapisany adres strumienia jest nieprawidłowy.", "The saved stream address is invalid."));
             }
 
             var locator = new FfmpegLocator();
@@ -64,7 +66,7 @@ internal static class ScheduledRecordingRunner
                 cancellationToken).ConfigureAwait(false);
             if (ffmpeg is null)
             {
-                throw new InvalidOperationException("Nie znaleziono FFmpeg.");
+                throw new InvalidOperationException(T("Nie znaleziono FFmpeg.", "FFmpeg was not found."));
             }
 
             var channel = new Channel(
@@ -106,8 +108,8 @@ internal static class ScheduledRecordingRunner
                     var progress = await completionTask.ConfigureAwait(false);
                     throw new InvalidOperationException(
                         progress.State == RecordingState.Error
-                            ? "FFmpeg zakończył zaplanowane nagranie błędem."
-                            : "Źródło zakończyło się przed zaplanowanym czasem.");
+                            ? T("FFmpeg zakończył zaplanowane nagranie błędem.", "FFmpeg encountered an error during the scheduled recording.")
+                            : T("Źródło zakończyło się przed zaplanowanym czasem.", "The source ended before the scheduled time."));
                 }
             }
 
@@ -123,7 +125,7 @@ internal static class ScheduledRecordingRunner
                 entry with
                 {
                     Status = ScheduledRecordingStatus.Failed,
-                    LastError = "Nagrywanie zostało przerwane.",
+                    LastError = T("Nagrywanie zostało przerwane.", "Recording interrupted."),
                 },
                 CancellationToken.None).ConfigureAwait(false);
             return 4;
@@ -143,8 +145,8 @@ internal static class ScheduledRecordingRunner
 
     private static string CreateSafeError(Exception exception) => exception switch
     {
-        UnauthorizedAccessException => "Brak dostępu do katalogu nagrań lub pliku FFmpeg.",
-        IOException => "Błąd zapisu pliku nagrania.",
-        _ => "Nie udało się wykonać zaplanowanego nagrania.",
+        UnauthorizedAccessException => T("Brak dostępu do katalogu nagrań lub pliku FFmpeg.", "Cannot access the recording folder or the FFmpeg file."),
+        IOException => T("Błąd zapisu pliku nagrania.", "Could not write the recording file."),
+        _ => T("Nie udało się wykonać zaplanowanego nagrania.", "Could not run the scheduled recording."),
     };
 }

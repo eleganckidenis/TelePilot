@@ -3,6 +3,7 @@
     x:DataType="vm:MainWindowViewModel"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="using:TelePilot.App.Localization"
     xmlns:automation="using:Avalonia.Automation"
     xmlns:controls="using:TelePilot.App.Controls"
     xmlns:vm="using:TelePilot.App.ViewModels"
@@ -12,16 +13,15 @@
     MinWidth="780"
     MinHeight="560"
     Icon="/Assets/TelePilot.png"
-    Title="TelePilot — dostępny odtwarzacz IPTV"
+    Title="{x:Static loc:ViewText.TelePilotAccessibleIPTVPlayer}"
     WindowStartupLocation="CenterScreen"
-    automation:AutomationProperties.Name="TelePilot, dostępny odtwarzacz IPTV"
+    automation:AutomationProperties.Name="{x:Static loc:ViewText.TelePilotAccessibleIPTVPlayer2}"
     automation:AutomationProperties.AutomationId="main-window">
 
   <Window.KeyBindings>
-    <KeyBinding Gesture="Ctrl+O" Command="{Binding AddFileSourceCommand}" />
-    <KeyBinding Gesture="Ctrl+U" Command="{Binding AddUrlSourceCommand}" />
-    <KeyBinding Gesture="F5" Command="{Binding RefreshSourceCommand}" />
-    <KeyBinding Gesture="Ctrl+Delete" Command="{Binding RemoveSourceCommand}" />
+    <KeyBinding Gesture="Ctrl+Shift+P" Command="{Binding OpenPlaylistManagerCommand}" />
+    <KeyBinding Gesture="Ctrl+O" Command="{Binding OpenPlaylistManagerForFileCommand}" />
+    <KeyBinding Gesture="Ctrl+U" Command="{Binding OpenPlaylistManagerForUrlCommand}" />
     <KeyBinding Gesture="Ctrl+S" Command="{Binding StopCommand}" />
     <KeyBinding Gesture="Ctrl+M" Command="{Binding ToggleMuteCommand}" />
     <KeyBinding Gesture="Ctrl+T" Command="{Binding OpenAudioTracksCommand}" />
@@ -32,147 +32,119 @@
 
   <Grid
       x:Name="MainFocusCycle"
-      RowDefinitions="Auto,Auto,Auto,*,Auto"
+      RowDefinitions="Auto,Auto,*,Auto"
       KeyboardNavigation.TabNavigation="Cycle">
     <Menu
         x:Name="MainMenu"
         Grid.Row="0"
         IsTabStop="False"
         KeyboardNavigation.TabNavigation="None"
-        automation:AutomationProperties.Name="Menu główne"
-        automation:AutomationProperties.HelpText="Naciśnij Alt lub F10, aby aktywować menu. Użyj strzałek do nawigacji i Escape, aby wrócić do poprzedniej kontrolki."
+        automation:AutomationProperties.Name="{x:Static loc:ViewText.MainMenu}"
+        automation:AutomationProperties.HelpText="{x:Static loc:ViewText.PressAltOrF10ToActivate}"
         automation:AutomationProperties.AutomationId="main-menu">
-      <MenuItem Header="_Plik" IsTabStop="False" automation:AutomationProperties.Name="Plik" automation:AutomationProperties.AccessKey="Alt+P" automation:AutomationProperties.AutomationId="menu-file">
+      <MenuItem Header="{x:Static loc:ViewText.File}" IsTabStop="False" automation:AutomationProperties.Name="{x:Static loc:ViewText.File2}" automation:AutomationProperties.AccessKey="{x:Static loc:ViewText.AltF}" automation:AutomationProperties.AutomationId="menu-file">
         <MenuItem
-            Header="Dodaj playlistę z _pliku…"
-            InputGesture="Ctrl+O"
-            Command="{Binding AddFileSourceCommand}"
-            automation:AutomationProperties.Name="Dodaj playlistę z pliku"
-            automation:AutomationProperties.AutomationId="menu-add-file-source" />
-        <MenuItem
-            Header="Dodaj playlistę z adresu _URL…"
-            InputGesture="Ctrl+U"
-            Command="{Binding AddUrlSourceCommand}"
-            automation:AutomationProperties.Name="Dodaj playlistę z adresu URL"
-            automation:AutomationProperties.AutomationId="menu-add-url-source" />
+            Header="{x:Static loc:ViewText.PlaylistManager}"
+            InputGesture="Ctrl+Shift+P"
+            Command="{Binding OpenPlaylistManagerCommand}"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.PlaylistManager2}"
+            automation:AutomationProperties.AutomationId="menu-playlist-manager" />
         <Separator />
         <MenuItem
-            Header="_Ustawienia…"
+            Header="{x:Static loc:ViewText.Settings}"
             Command="{Binding OpenSettingsCommand}"
-            automation:AutomationProperties.Name="Otwórz ustawienia"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.OpenSettings}"
             automation:AutomationProperties.AutomationId="menu-settings" />
         <Separator />
         <MenuItem
-            Header="_Zakończ"
+            Header="{x:Static loc:ViewText.Exit}"
             InputGesture="Alt+F4"
             Command="{Binding CloseApplicationCommand}"
-            automation:AutomationProperties.Name="Zakończ TelePilot"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.ExitTelePilot}"
             automation:AutomationProperties.AutomationId="menu-exit" />
       </MenuItem>
 
-      <MenuItem Header="Ź_ródło" IsTabStop="False" automation:AutomationProperties.Name="Źródło" automation:AutomationProperties.AccessKey="Alt+R" automation:AutomationProperties.AutomationId="menu-source">
+      <MenuItem Header="{x:Static loc:ViewText.Playback}" IsTabStop="False" automation:AutomationProperties.Name="{x:Static loc:ViewText.Playback2}" automation:AutomationProperties.AccessKey="{x:Static loc:ViewText.AltP}" automation:AutomationProperties.AutomationId="menu-playback">
         <MenuItem
-            Header="_Odśwież wybrane źródło"
-            InputGesture="F5"
-            Command="{Binding RefreshSourceCommand}"
-            automation:AutomationProperties.Name="Odśwież wybrane źródło"
-            automation:AutomationProperties.AutomationId="menu-refresh-source" />
-        <MenuItem
-            Header="_Usuń wybrane źródło…"
-            InputGesture="Ctrl+Delete"
-            Command="{Binding RemoveSourceCommand}"
-            automation:AutomationProperties.Name="Usuń wybrane źródło"
-            automation:AutomationProperties.HelpText="Usuwa wpis źródła z aplikacji po potwierdzeniu. Nie usuwa pliku playlisty."
-            automation:AutomationProperties.AutomationId="menu-remove-source" />
-        <Separator />
-        <MenuItem
-            Header="_Anuluj wczytywanie"
-            Command="{Binding CancelLoadingCommand}"
-            automation:AutomationProperties.Name="Anuluj wczytywanie źródła"
-            automation:AutomationProperties.AutomationId="menu-cancel-source-load" />
-      </MenuItem>
-
-      <MenuItem Header="_Odtwarzanie" IsTabStop="False" automation:AutomationProperties.Name="Odtwarzanie" automation:AutomationProperties.AccessKey="Alt+O" automation:AutomationProperties.AutomationId="menu-playback">
-        <MenuItem
-            Header="_Odtwórz zaznaczony kanał"
+            Header="{x:Static loc:ViewText.PlaySelectedChannel}"
             InputGesture="Enter"
             Command="{Binding PlaySelectedCommand}"
-            automation:AutomationProperties.Name="Odtwórz zaznaczony kanał"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.PlaySelectedChannel3}"
             automation:AutomationProperties.AutomationId="menu-play-selected" />
         <MenuItem
-            Header="_Pauza lub wznowienie"
+            Header="{x:Static loc:ViewText.PauseOrResume}"
             InputGesture="Space"
             Command="{Binding PauseResumeCommand}"
-            automation:AutomationProperties.Name="Pauza lub wznowienie"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.PauseOrResume2}"
             automation:AutomationProperties.AutomationId="menu-pause-resume" />
         <MenuItem
-            Header="_Zatrzymaj"
+            Header="{x:Static loc:ViewText.Stop}"
             InputGesture="Ctrl+S"
             Command="{Binding StopCommand}"
-            automation:AutomationProperties.Name="Zatrzymaj odtwarzanie"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.StopPlayback}"
             automation:AutomationProperties.AutomationId="menu-stop" />
         <Separator />
         <MenuItem
-            Header="_Wycisz lub włącz dźwięk"
+            Header="{x:Static loc:ViewText.MuteOrUnmute}"
             InputGesture="Ctrl+M"
             Command="{Binding ToggleMuteCommand}"
-            automation:AutomationProperties.Name="Wycisz lub włącz dźwięk"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.MuteOrUnmute2}"
             automation:AutomationProperties.AutomationId="menu-mute" />
         <MenuItem
-            Header="Ścieżka _dźwiękowa…"
+            Header="{x:Static loc:ViewText.AudioTrack}"
             InputGesture="Ctrl+T"
             Command="{Binding OpenAudioTracksCommand}"
-            automation:AutomationProperties.Name="Wybierz ścieżkę dźwiękową"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.ChooseAudioTrack}"
             automation:AutomationProperties.AutomationId="menu-audio-track" />
         <MenuItem
-            Header="_Napisy…"
+            Header="{x:Static loc:ViewText.Subtitles}"
             InputGesture="Ctrl+Shift+T"
             Command="{Binding OpenSubtitleTracksCommand}"
-            automation:AutomationProperties.Name="Wybierz napisy"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.ChooseSubtitles}"
             automation:AutomationProperties.AutomationId="menu-subtitle-track" />
         <MenuItem
-            Header="Pełny _ekran"
+            Header="{x:Static loc:ViewText.FullScreen}"
             InputGesture="F11"
             Command="{Binding ToggleFullscreenCommand}"
-            automation:AutomationProperties.Name="Włącz lub wyłącz pełny ekran"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.ToggleFullScreen}"
             automation:AutomationProperties.AutomationId="menu-fullscreen" />
       </MenuItem>
 
-      <MenuItem Header="_Nagrywanie" IsTabStop="False" automation:AutomationProperties.Name="Nagrywanie" automation:AutomationProperties.AccessKey="Alt+N" automation:AutomationProperties.AutomationId="menu-recording">
-        <MenuItem Header="Nagraj _wideo w formacie TS" Command="{Binding StartVideoRecordingCommand}" automation:AutomationProperties.Name="Rozpocznij nagrywanie wideo w oryginalnym formacie TS" automation:AutomationProperties.AutomationId="menu-record-video" />
-        <MenuItem Header="Nagraj _audio" Command="{Binding StartAudioRecordingCommand}" automation:AutomationProperties.Name="Rozpocznij nagrywanie audio" automation:AutomationProperties.AutomationId="menu-record-audio" />
-        <MenuItem Header="_Zatrzymaj nagrywanie" Command="{Binding StopRecordingCommand}" automation:AutomationProperties.Name="Zatrzymaj aktywne nagrywanie" automation:AutomationProperties.AutomationId="menu-stop-recording" />
+      <MenuItem Header="{x:Static loc:ViewText.Record}" IsTabStop="False" automation:AutomationProperties.Name="{x:Static loc:ViewText.Recording}" automation:AutomationProperties.AccessKey="{x:Static loc:ViewText.AltR}" automation:AutomationProperties.AutomationId="menu-recording">
+        <MenuItem Header="{x:Static loc:ViewText.RecordVideoInTSFormat}" Command="{Binding StartVideoRecordingCommand}" automation:AutomationProperties.Name="{x:Static loc:ViewText.StartVideoRecordingInTheOriginal}" automation:AutomationProperties.AutomationId="menu-record-video" />
+        <MenuItem Header="{x:Static loc:ViewText.RecordAudio}" Command="{Binding StartAudioRecordingCommand}" automation:AutomationProperties.Name="{x:Static loc:ViewText.StartAudioRecording}" automation:AutomationProperties.AutomationId="menu-record-audio" />
+        <MenuItem Header="{x:Static loc:ViewText.StopRecording}" Command="{Binding StopRecordingCommand}" automation:AutomationProperties.Name="{x:Static loc:ViewText.StopActiveRecording}" automation:AutomationProperties.AutomationId="menu-stop-recording" />
         <Separator />
-        <MenuItem Header="Za_planuj nagrywanie…" Command="{Binding ScheduleRecordingCommand}" automation:AutomationProperties.Name="Zaplanuj nagrywanie zaznaczonego kanału" automation:AutomationProperties.AutomationId="menu-schedule-recording" />
-        <MenuItem Header="Zaplanowane _nagrania…" Command="{Binding ShowScheduledRecordingsCommand}" automation:AutomationProperties.Name="Pokaż zaplanowane nagrania" automation:AutomationProperties.AutomationId="menu-scheduled-recordings" />
+        <MenuItem Header="{x:Static loc:ViewText.ScheduleRecording}" Command="{Binding ScheduleRecordingCommand}" automation:AutomationProperties.Name="{x:Static loc:ViewText.ScheduleRecordingForTheSelectedChannel}" automation:AutomationProperties.AutomationId="menu-schedule-recording" />
+        <MenuItem Header="{x:Static loc:ViewText.ScheduledRecordings}" Command="{Binding ShowScheduledRecordingsCommand}" automation:AutomationProperties.Name="{x:Static loc:ViewText.ShowScheduledRecordings}" automation:AutomationProperties.AutomationId="menu-scheduled-recordings" />
       </MenuItem>
 
-      <MenuItem x:Name="FavoritesMenu" Header="_Ulubione" IsTabStop="False" automation:AutomationProperties.Name="Ulubione" automation:AutomationProperties.AccessKey="Alt+U" automation:AutomationProperties.AutomationId="menu-favorites">
-        <MenuItem Header="Dodaj aktualnie _odtwarzany do ulubionych" Command="{Binding AddCurrentToFavoritesCommand}" automation:AutomationProperties.Name="Dodaj aktualnie odtwarzany kanał do ulubionych" automation:AutomationProperties.AutomationId="menu-favorite-current" />
-        <MenuItem Header="_Lista ulubionych" Command="{Binding ToggleFavoritesFilterCommand}" automation:AutomationProperties.Name="Pokaż listę ulubionych kanałów" automation:AutomationProperties.AutomationId="menu-favorites-list" />
+      <MenuItem x:Name="FavoritesMenu" Header="{x:Static loc:ViewText.Favorites}" IsTabStop="False" automation:AutomationProperties.Name="{x:Static loc:ViewText.Favorites2}" automation:AutomationProperties.AccessKey="{x:Static loc:ViewText.AltA}" automation:AutomationProperties.AutomationId="menu-favorites">
+        <MenuItem Header="{x:Static loc:ViewText.AddCurrentChannelToFavorites}" Command="{Binding AddCurrentToFavoritesCommand}" automation:AutomationProperties.Name="{x:Static loc:ViewText.AddCurrentChannelToFavorites2}" automation:AutomationProperties.AutomationId="menu-favorite-current" />
+        <MenuItem Header="{x:Static loc:ViewText.FavoritesList}" Command="{Binding ToggleFavoritesFilterCommand}" automation:AutomationProperties.Name="{x:Static loc:ViewText.ShowTheListOfFavoriteChannels}" automation:AutomationProperties.AutomationId="menu-favorites-list" />
         <Separator Tag="favorites-static-end" />
       </MenuItem>
 
-      <MenuItem Header="_Widok" IsTabStop="False" automation:AutomationProperties.Name="Widok" automation:AutomationProperties.AccessKey="Alt+W" automation:AutomationProperties.AutomationId="menu-view">
+      <MenuItem Header="{x:Static loc:ViewText.View}" IsTabStop="False" automation:AutomationProperties.Name="{x:Static loc:ViewText.View2}" automation:AutomationProperties.AccessKey="{x:Static loc:ViewText.AltV}" automation:AutomationProperties.AutomationId="menu-view">
         <MenuItem
-            Header="Lista _kanałów"
+            Header="{x:Static loc:ViewText.ChannelList}"
             InputGesture="Ctrl+L"
             Command="{Binding ToggleChannelListCommand}"
-            automation:AutomationProperties.Name="Pokaż lub ukryj listę kanałów"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.ShowOrHideChannelList}"
             automation:AutomationProperties.AutomationId="menu-channel-list" />
         <MenuItem
-            Header="_Program telewizyjny…"
+            Header="{x:Static loc:ViewText.TVGuide}"
             InputGesture="Ctrl+E"
             Command="{Binding OpenProgramGuideCommand}"
-            automation:AutomationProperties.Name="Otwórz program telewizyjny"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.OpenTVGuide}"
             automation:AutomationProperties.AutomationId="menu-program-guide" />
       </MenuItem>
 
-      <MenuItem Header="Po_moc" IsTabStop="False" automation:AutomationProperties.Name="Pomoc" automation:AutomationProperties.AccessKey="Alt+M" automation:AutomationProperties.AutomationId="menu-help">
+      <MenuItem Header="{x:Static loc:ViewText.Help}" IsTabStop="False" automation:AutomationProperties.Name="{x:Static loc:ViewText.Help2}" automation:AutomationProperties.AccessKey="{x:Static loc:ViewText.AltH}" automation:AutomationProperties.AutomationId="menu-help">
         <MenuItem
-            Header="_Skróty klawiszowe…"
+            Header="{x:Static loc:ViewText.KeyboardShortcuts}"
             Command="{Binding OpenKeyboardShortcutsCommand}"
-            automation:AutomationProperties.Name="Otwórz skróty klawiszowe"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.OpenKeyboardShortcuts}"
             automation:AutomationProperties.AutomationId="menu-keyboard-shortcuts" />
       </MenuItem>
     </Menu>
@@ -180,63 +152,14 @@
     <TabControl x:Name="SectionTabs" Grid.Row="1" Margin="12,0"
                 IsVisible="{Binding IsChannelListViewVisible}"
                 SelectedIndex="{Binding SelectedSectionIndex, Mode=TwoWay}"
-                automation:AutomationProperties.Name="Sekcje telewizji"
+                automation:AutomationProperties.Name="{x:Static loc:ViewText.TVSections}"
                 automation:AutomationProperties.AutomationId="main-section-tabs">
-      <TabItem Header="TV na żywo" automation:AutomationProperties.Name="TV na żywo" automation:AutomationProperties.AutomationId="tab-live" />
-      <TabItem Header="Ulubione" automation:AutomationProperties.Name="Ulubione" automation:AutomationProperties.AutomationId="tab-favorites" />
-      <TabItem Header="Archiwum" automation:AutomationProperties.Name="Archiwum" automation:AutomationProperties.AutomationId="tab-archive" />
+      <TabItem Header="{x:Static loc:ViewText.LiveTV}" automation:AutomationProperties.Name="{x:Static loc:ViewText.LiveTV}" automation:AutomationProperties.AutomationId="tab-live" />
+      <TabItem Header="{x:Static loc:ViewText.Favorites2}" automation:AutomationProperties.Name="{x:Static loc:ViewText.Favorites2}" automation:AutomationProperties.AutomationId="tab-favorites" />
+      <TabItem Header="{x:Static loc:ViewText.Archive}" automation:AutomationProperties.Name="{x:Static loc:ViewText.Archive}" automation:AutomationProperties.AutomationId="tab-archive" />
     </TabControl>
 
-    <Border x:Name="PlaylistManagementPanel" Grid.Row="2" IsVisible="{Binding IsPlaylistManagementVisible}" Padding="12,10" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="2*,Auto,Auto,Auto,Auto" ColumnSpacing="10">
-        <StackPanel>
-          <Label Classes="field-label" Content="_Źródło playlisty" Target="SourceSelector" />
-          <controls:AccessibleComboBox
-              x:Name="SourceSelector"
-              ItemsSource="{Binding Sources}"
-              SelectedItem="{Binding SelectedSource}"
-              DisplayMemberPath="Name"
-              automation:AutomationProperties.Name="{Binding SourceSelectorAccessibleName}"
-              automation:AutomationProperties.HelpText="Wybierz źródło, a następnie użyj przycisku Odśwież źródło."
-              automation:AutomationProperties.AutomationId="playlist-source-selector" />
-        </StackPanel>
-        <Button
-            x:Name="AddFileSourceButton"
-            Grid.Column="1"
-            VerticalAlignment="Bottom"
-            Content="Dodaj plik…"
-            Command="{Binding AddFileSourceCommand}"
-            automation:AutomationProperties.Name="Dodaj playlistę z pliku"
-            automation:AutomationProperties.AutomationId="add-file-source" />
-        <Button
-            x:Name="AddUrlSourceButton"
-            Grid.Column="2"
-            VerticalAlignment="Bottom"
-            Content="Dodaj URL…"
-            Command="{Binding AddUrlSourceCommand}"
-            automation:AutomationProperties.Name="Dodaj playlistę z adresu URL"
-            automation:AutomationProperties.AutomationId="add-url-source" />
-        <Button
-            x:Name="RefreshSourceButton"
-            Grid.Column="3"
-            VerticalAlignment="Bottom"
-            Content="Odśwież źródło"
-            Command="{Binding RefreshSourceCommand}"
-            automation:AutomationProperties.Name="Odśwież wybrane źródło"
-            automation:AutomationProperties.AutomationId="refresh-source" />
-        <Button
-            x:Name="RemoveSourceButton"
-            Grid.Column="4"
-            VerticalAlignment="Bottom"
-            Content="Usuń źródło…"
-            Command="{Binding RemoveSourceCommand}"
-            automation:AutomationProperties.Name="Usuń wybrane źródło"
-            automation:AutomationProperties.HelpText="Po potwierdzeniu usuwa wpis z listy źródeł. Nie usuwa pliku playlisty ani danych pod adresem URL."
-            automation:AutomationProperties.AutomationId="remove-source" />
-      </Grid>
-    </Border>
-
-    <Grid Grid.Row="3" Margin="12" ColumnDefinitions="3*,2*" ColumnSpacing="12">
+    <Grid Grid.Row="2" Margin="12" ColumnDefinitions="3*,2*" ColumnSpacing="12">
       <Grid
           x:Name="ChannelListView"
           Grid.Column="0"
@@ -259,14 +182,14 @@
                 automation:AutomationProperties.HelpText="{Binding SearchHelpText}"
                 automation:AutomationProperties.AutomationId="channel-search" />
           </StackPanel>
-          <StackPanel Grid.Column="1" IsVisible="{Binding IsPlaylistManagementVisible}">
-            <Label Classes="field-label" Content="_Grupa" Target="GroupSelector" />
+          <StackPanel Grid.Column="1" IsVisible="{Binding IsChannelGroupFilterVisible}">
+            <Label Classes="field-label" Content="{x:Static loc:ViewText.Group}" Target="GroupSelector" />
             <controls:AccessibleComboBox
                 x:Name="GroupSelector"
                 ItemsSource="{Binding Groups}"
                 SelectedItem="{Binding SelectedGroup}"
                 automation:AutomationProperties.Name="{Binding GroupSelectorAccessibleName}"
-                automation:AutomationProperties.HelpText="Strzałką w górę lub w dół wybierz grupę kanałów."
+                automation:AutomationProperties.HelpText="{x:Static loc:ViewText.UseUpOrDownToSelect}"
                 automation:AutomationProperties.AutomationId="channel-group-filter" />
           </StackPanel>
         </Grid>
@@ -279,19 +202,19 @@
             SelectedItem="{Binding SelectedChannel}"
             ContainerPrepared="OnChannelContainerPrepared"
             DoubleTapped="OnChannelDoubleTapped"
-            automation:AutomationProperties.Name="Kanały"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.Channels}"
             automation:AutomationProperties.AutomationId="channel-list">
           <ListBox.ContextMenu>
             <ContextMenu>
               <MenuItem
-                  Header="Odtwórz"
+                  Header="{x:Static loc:ViewText.Play}"
                   Command="{Binding PlaySelectedCommand}"
-                  automation:AutomationProperties.Name="Odtwórz zaznaczony kanał"
+                  automation:AutomationProperties.Name="{x:Static loc:ViewText.PlaySelectedChannel3}"
                   automation:AutomationProperties.AutomationId="channel-context-play" />
               <MenuItem
-                  Header="Program telewizyjny"
+                  Header="{x:Static loc:ViewText.TVGuide2}"
                   Command="{Binding OpenProgramGuideCommand}"
-                  automation:AutomationProperties.Name="Program telewizyjny zaznaczonego kanału"
+                  automation:AutomationProperties.Name="{x:Static loc:ViewText.TVGuideForTheSelectedChannel}"
                   automation:AutomationProperties.AutomationId="channel-context-epg" />
               <MenuItem
                   Header="{Binding SelectedFavoriteMenuText}"
@@ -299,15 +222,10 @@
                   automation:AutomationProperties.Name="{Binding SelectedFavoriteMenuText}"
                   automation:AutomationProperties.AutomationId="channel-context-favorite" />
               <MenuItem
-                  Header="Zaplanuj nagrywanie…"
+                  Header="{x:Static loc:ViewText.ScheduleRecording3}"
                   Command="{Binding ScheduleRecordingCommand}"
-                  automation:AutomationProperties.Name="Zaplanuj nagrywanie zaznaczonego kanału"
+                  automation:AutomationProperties.Name="{x:Static loc:ViewText.ScheduleRecordingForTheSelectedChannel}"
                   automation:AutomationProperties.AutomationId="channel-context-schedule-recording" />
-              <MenuItem
-                  Header="Odśwież źródło"
-                  Command="{Binding RefreshSourceCommand}"
-                  automation:AutomationProperties.Name="Odśwież źródło zaznaczonego kanału"
-                  automation:AutomationProperties.AutomationId="channel-context-refresh" />
             </ContextMenu>
           </ListBox.ContextMenu>
           <ListBox.ItemTemplate>
@@ -323,7 +241,7 @@
         <Grid
             x:Name="ChannelActionsPanel"
             Grid.Row="2"
-            ColumnDefinitions="*,Auto,Auto,Auto"
+            ColumnDefinitions="*,Auto,Auto"
             ColumnSpacing="8"
             IsVisible="{Binding IsChannelsViewEnabled}">
           <TextBlock
@@ -334,24 +252,18 @@
           <Button
               Grid.Column="1"
               x:Name="ManageFavoritesButton"
-              Content="Zarządzaj ulubionymi…"
+              Content="{x:Static loc:ViewText.ManageFavorites2}"
               IsVisible="{Binding IsFavoritesSection}"
               Command="{Binding ManageFavoritesCommand}"
-              automation:AutomationProperties.Name="Zarządzaj ulubionymi kanałami"
+              automation:AutomationProperties.Name="{x:Static loc:ViewText.ManageFavoriteChannels}"
               automation:AutomationProperties.AutomationId="manage-favorites" />
           <Button
-              Grid.Column="2"
-              Content="Anuluj wczytywanie"
-              Command="{Binding CancelLoadingCommand}"
-              automation:AutomationProperties.Name="Anuluj wczytywanie playlisty"
-              automation:AutomationProperties.AutomationId="cancel-playlist-load" />
-          <Button
               x:Name="PlaySelectedChannelButton"
-              Grid.Column="3"
+              Grid.Column="2"
               Classes="primary-action"
-              Content="Odtwórz"
+              Content="{x:Static loc:ViewText.Play}"
               Command="{Binding PlaySelectedCommand}"
-              automation:AutomationProperties.Name="Odtwórz zaznaczony kanał"
+              automation:AutomationProperties.Name="{x:Static loc:ViewText.PlaySelectedChannel3}"
               automation:AutomationProperties.AutomationId="play-selected-channel" />
         </Grid>
       </Grid>
@@ -380,8 +292,8 @@
         <Border Grid.Row="1" Background="Black" MinHeight="220">
           <controls:AccessibleVideoView
               x:Name="VideoView"
-              automation:AutomationProperties.Name="Obraz odtwarzanego kanału"
-              automation:AutomationProperties.HelpText="Obraz wideo nie przyjmuje fokusu. Elementy sterujące znajdują się poniżej."
+              automation:AutomationProperties.Name="{x:Static loc:ViewText.CurrentChannelVideo}"
+              automation:AutomationProperties.HelpText="{x:Static loc:ViewText.TheVideoCannotTakeFocusPlayer}"
               automation:AutomationProperties.AutomationId="video-view"
               automation:AutomationProperties.AccessibilityView="Raw" />
         </Border>
@@ -392,16 +304,16 @@
               FontWeight="SemiBold"
               Text="{Binding CurrentChannelName}"
               TextWrapping="Wrap"
-              automation:AutomationProperties.Name="Aktualny kanał"
+              automation:AutomationProperties.Name="{x:Static loc:ViewText.CurrentChannel}"
               automation:AutomationProperties.AutomationId="current-channel" />
           <TextBlock
               Text="{Binding CurrentProgramName}"
               TextWrapping="Wrap"
-              automation:AutomationProperties.Name="Aktualna audycja"
+              automation:AutomationProperties.Name="{x:Static loc:ViewText.CurrentProgram}"
               automation:AutomationProperties.AutomationId="current-program" />
           <TextBlock
               Text="{Binding PlaybackStateText}"
-              automation:AutomationProperties.Name="Stan odtwarzania"
+              automation:AutomationProperties.Name="{x:Static loc:ViewText.PlaybackStatus}"
               automation:AutomationProperties.AutomationId="playback-state" />
           <TextBlock
               Text="{Binding VolumeText}"
@@ -418,15 +330,15 @@
             <Button
                 x:Name="PauseResumeButton"
                 Margin="0,0,8,8"
-                Content="Pauza / Wznów"
+                Content="{x:Static loc:ViewText.PauseResume}"
                 Command="{Binding PauseResumeCommand}"
-                automation:AutomationProperties.Name="Pauza lub wznowienie"
+                automation:AutomationProperties.Name="{x:Static loc:ViewText.PauseOrResume2}"
                 automation:AutomationProperties.AutomationId="pause-resume" />
             <Button
                 Margin="0,0,8,8"
-                Content="Zatrzymaj"
+                Content="{x:Static loc:ViewText.Stop2}"
                 Command="{Binding StopCommand}"
-                automation:AutomationProperties.Name="Zatrzymaj odtwarzanie"
+                automation:AutomationProperties.Name="{x:Static loc:ViewText.StopPlayback}"
                 automation:AutomationProperties.AutomationId="stop-playback" />
             <Button
                 Margin="0,0,8,8"
@@ -436,15 +348,15 @@
                 automation:AutomationProperties.AutomationId="toggle-mute" />
             <Button
                 Margin="0,0,8,8"
-                Content="Ścieżka dźwiękowa…"
+                Content="{x:Static loc:ViewText.AudioTrack2}"
                 Command="{Binding OpenAudioTracksCommand}"
-                automation:AutomationProperties.Name="Wybierz ścieżkę dźwiękową"
+                automation:AutomationProperties.Name="{x:Static loc:ViewText.ChooseAudioTrack}"
                 automation:AutomationProperties.AutomationId="select-audio-track" />
             <Button
                 Margin="0,0,8,8"
-                Content="Napisy…"
+                Content="{x:Static loc:ViewText.Subtitles2}"
                 Command="{Binding OpenSubtitleTracksCommand}"
-                automation:AutomationProperties.Name="Wybierz napisy"
+                automation:AutomationProperties.Name="{x:Static loc:ViewText.ChooseSubtitles}"
                 automation:AutomationProperties.AutomationId="select-subtitle-track" />
             <Button
                 x:Name="RecordingButton"
@@ -452,25 +364,25 @@
                 Content="{Binding RecordingButtonText}"
                 Click="OnRecordingButtonClick"
                 automation:AutomationProperties.Name="{Binding RecordingButtonText}"
-                automation:AutomationProperties.HelpText="Otwiera menu nagrywania wideo, audio i planowania."
+                automation:AutomationProperties.HelpText="{x:Static loc:ViewText.OpensTheMenuForRecordingVideo}"
                 automation:AutomationProperties.AutomationId="recording-menu-button">
               <Button.ContextMenu>
                 <ContextMenu x:Name="PlayerRecordingMenu">
-                  <MenuItem Header="Nagraj wideo w formacie TS" Command="{Binding StartVideoRecordingCommand}" automation:AutomationProperties.Name="Nagraj wideo w oryginalnym formacie TS" />
-                  <MenuItem Header="Nagraj audio" Command="{Binding StartAudioRecordingCommand}" automation:AutomationProperties.Name="Nagraj audio" />
-                  <MenuItem Header="Zatrzymaj nagrywanie" Command="{Binding StopRecordingCommand}" automation:AutomationProperties.Name="Zatrzymaj nagrywanie" />
+                  <MenuItem Header="{x:Static loc:ViewText.RecordVideoInTSFormat2}" Command="{Binding StartVideoRecordingCommand}" automation:AutomationProperties.Name="{x:Static loc:ViewText.RecordVideoInTheOriginalTS}" />
+                  <MenuItem Header="{x:Static loc:ViewText.RecordAudio2}" Command="{Binding StartAudioRecordingCommand}" automation:AutomationProperties.Name="{x:Static loc:ViewText.RecordAudio2}" />
+                  <MenuItem Header="{x:Static loc:ViewText.StopRecording2}" Command="{Binding StopRecordingCommand}" automation:AutomationProperties.Name="{x:Static loc:ViewText.StopRecording2}" />
                   <Separator />
-                  <MenuItem Header="Zaplanuj nagrywanie…" Command="{Binding ScheduleRecordingCommand}" automation:AutomationProperties.Name="Zaplanuj nagrywanie" />
+                  <MenuItem Header="{x:Static loc:ViewText.ScheduleRecording3}" Command="{Binding ScheduleRecordingCommand}" automation:AutomationProperties.Name="{x:Static loc:ViewText.ScheduleRecording2}" />
                 </ContextMenu>
               </Button.ContextMenu>
             </Button>
             <Button
                 x:Name="FullscreenButton"
                 Margin="0,0,8,8"
-                Content="Pełny ekran"
+                Content="{x:Static loc:ViewText.FullScreen2}"
                 Command="{Binding ToggleFullscreenCommand}"
-                automation:AutomationProperties.Name="Włącz lub wyłącz pełny ekran"
-                automation:AutomationProperties.HelpText="F11 włącza lub wyłącza pełny ekran. Escape opuszcza pełny ekran."
+                automation:AutomationProperties.Name="{x:Static loc:ViewText.ToggleFullScreen}"
+                automation:AutomationProperties.HelpText="{x:Static loc:ViewText.F11TogglesFullScreenEscapeExits}"
                 automation:AutomationProperties.AutomationId="toggle-fullscreen" />
             <Button
                 x:Name="ReturnToChannelListButton"
@@ -481,10 +393,10 @@
                 automation:AutomationProperties.AutomationId="return-to-channel-list" />
         </WrapPanel>
 
-        <Grid Grid.Row="4" ColumnDefinitions="Auto,240,Auto" ColumnSpacing="8">
+        <Grid Grid.Row="3" ColumnDefinitions="Auto,240,Auto" ColumnSpacing="8">
             <Label
                 VerticalAlignment="Center"
-                Content="_Głośność"
+                Content="{x:Static loc:ViewText.Volume}"
                 Target="VolumeSlider" />
             <Slider
                 x:Name="VolumeSlider"
@@ -497,8 +409,8 @@
                 IsSnapToTickEnabled="True"
                 Value="{Binding Volume, Mode=OneWay}"
                 ValueChanged="OnVolumeSliderValueChanged"
-                automation:AutomationProperties.Name="Głośność"
-                automation:AutomationProperties.HelpText="Strzałkami ustaw głośność. W widoku odtwarzania Home zwiększa, a End zmniejsza głośność o 5 procent."
+                automation:AutomationProperties.Name="{x:Static loc:ViewText.Volume2}"
+                automation:AutomationProperties.HelpText="{x:Static loc:ViewText.UseTheArrowKeysToAdjust}"
                 automation:AutomationProperties.AutomationId="volume-slider" />
             <TextBlock
                 Grid.Column="2"
@@ -509,19 +421,19 @@
       </Grid>
     </Grid>
 
-    <Border Grid.Row="4" Padding="12,8" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,1,0,0">
+    <Border Grid.Row="3" Padding="12,8" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,1,0,0">
       <StackPanel Spacing="2">
         <TextBlock
             Text="{Binding AccessibleStatus.StatusMessage}"
             TextWrapping="Wrap"
-            automation:AutomationProperties.Name="Stan aplikacji"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.ApplicationStatus}"
             automation:AutomationProperties.AutomationId="application-status"
             automation:AutomationProperties.LiveSetting="Polite" />
         <TextBlock
             Text="{Binding AccessibleStatus.AlertMessage}"
             TextWrapping="Wrap"
             Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"
-            automation:AutomationProperties.Name="Ważny komunikat aplikacji"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.ImportantApplicationMessage}"
             automation:AutomationProperties.AutomationId="application-alert"
             automation:AutomationProperties.LiveSetting="Assertive" />
       </StackPanel>

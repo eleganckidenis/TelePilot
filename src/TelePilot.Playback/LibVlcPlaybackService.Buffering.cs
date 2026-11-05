@@ -1,6 +1,7 @@
 using LibVLCSharp.Shared;
 using TelePilot.Core.CatchUp;
 using TelePilot.Core.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Playback;
 
@@ -43,11 +44,11 @@ public sealed partial class LibVlcPlaybackService
             case RecoveryKind.None: break;
             case RecoveryKind.Finished:
                 _recovery = null;
-                UpdateCurrent(Current with { State = PlaybackState.Idle, CanPause = false, StatusMessage = "Strumień został zakończony." });
+                UpdateCurrent(Current with { State = PlaybackState.Idle, CanPause = false, StatusMessage = T("Strumień został zakończony.", "The stream ended.") });
                 break;
             case RecoveryKind.Lost:
                 _mediaPlayer.Stop();
-                var error = new PlaybackError(_channel.Name, "Nie udało się odzyskać transmisji. Użyj Stop i uruchom kanał ponownie.", "stream-lost");
+                var error = new PlaybackError(_channel.Name, T("Nie udało się odzyskać transmisji. Użyj Stop i uruchom kanał ponownie.", "Could not restore the stream. Stop and play the channel again."), "stream-lost");
                 UpdateCurrent(Current with { State = PlaybackState.Error, CanPause = false, Error = error, StatusMessage = error.Message });
                 break;
             case RecoveryKind.Retry:
@@ -55,7 +56,7 @@ public sealed partial class LibVlcPlaybackService
                 if (!_options.IsLive && sample.Position > 0) _resumePosition = sample.Position;
                 _tracksToRestore.UnionWith(_rememberedTracks.Keys);
                 UpdateCurrent(Current with { State = PlaybackState.Connecting, CanPause = false, Error = null,
-                    StatusMessage = action.QuickStart ? "Odświeżanie transmisji." : $"Ponowne łączenie, próba {_recovery.Attempts} z {_options.MaximumReconnectAttempts}." });
+                    StatusMessage = action.QuickStart ? T("Odświeżanie transmisji.", "Reconnecting to the stream.") : T($"Ponowne łączenie, próba {_recovery.Attempts} z {_options.MaximumReconnectAttempts}.", $"Reconnecting, attempt {_recovery.Attempts} of {_options.MaximumReconnectAttempts}.") });
                 _ = RecoverAsync(action, _retryGeneration, Volatile.Read(ref _requestGeneration), _retryCancellation.Token);
                 break;
         }

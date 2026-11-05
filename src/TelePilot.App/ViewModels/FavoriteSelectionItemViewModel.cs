@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using TelePilot.App.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.ViewModels;
 
@@ -16,7 +17,7 @@ public sealed class FavoriteSelectionItemViewModel : ObservableObject
 
     public string ChannelName => Favorite.ChannelName;
 
-    public string AccessibleName => $"Zaznacz do usunięcia z ulubionych: {ChannelName}";
+    public string AccessibleName => T($"Zaznacz do usunięcia z ulubionych: {ChannelName}", $"Select to remove from favorites: {ChannelName}");
 
     public string AutomationId => $"favorite-selection-{Favorite.PlaylistSourceId:N}-{Favorite.ChannelId:N}";
 

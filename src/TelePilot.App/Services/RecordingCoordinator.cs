@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using TelePilot.App.Models;
 using TelePilot.Core.Models;
 using TelePilot.Recording;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Services;
 
@@ -35,7 +36,7 @@ public sealed class RecordingCoordinator : IRecordingCoordinator
     private static readonly Action<ILogger, Exception?> LogRecordingShutdownFailure = LoggerMessage.Define(
         LogLevel.Warning,
         new EventId(3101, nameof(LogRecordingShutdownFailure)),
-        "Nie udało się poprawnie zamknąć aktywnego nagrywania.");
+        T("Nie udało się poprawnie zamknąć aktywnego nagrywania.", "Could not finish the active recording cleanly."));
 
     private readonly IFfmpegLocator ffmpegLocator;
     private readonly FfmpegRecordingService recordingService;
@@ -79,7 +80,7 @@ public sealed class RecordingCoordinator : IRecordingCoordinator
         ArgumentNullException.ThrowIfNull(channel);
         if (!Uri.TryCreate(channel.StreamUrl, UriKind.Absolute, out var streamUri))
         {
-            throw new InvalidOperationException("Adres strumienia wybranego kanału jest nieprawidłowy.");
+            throw new InvalidOperationException(T("Adres strumienia wybranego kanału jest nieprawidłowy.", "The selected channel has an invalid stream address."));
         }
 
         var preferences = preferencesService.Current.Recording;
@@ -90,7 +91,7 @@ public sealed class RecordingCoordinator : IRecordingCoordinator
         if (ffmpeg is null)
         {
             throw new InvalidOperationException(
-                "Nie znaleziono FFmpeg. Zainstaluj ponownie TelePilot albo wskaż ffmpeg.exe w Ustawieniach.");
+                T("Nie znaleziono FFmpeg. Zainstaluj ponownie TelePilot albo wskaż ffmpeg.exe w Ustawieniach.", "FFmpeg was not found. Reinstall TelePilot or choose ffmpeg.exe in Settings."));
         }
 
         var request = CreateRequest(channel, streamUri, programmeTitle, mode, preferences, DateTimeOffset.Now);
@@ -114,22 +115,22 @@ public sealed class RecordingCoordinator : IRecordingCoordinator
         ArgumentNullException.ThrowIfNull(request);
         if (!OperatingSystem.IsWindows())
         {
-            throw new PlatformNotSupportedException("Planowanie nagrań przez Harmonogram zadań jest dostępne tylko w Windows.");
+            throw new PlatformNotSupportedException(T("Planowanie nagrań przez Harmonogram zadań jest dostępne tylko w Windows.", "Recording scheduling through Task Scheduler is only available on Windows."));
         }
 
         if (request.End <= request.Start)
         {
-            throw new ArgumentException("Czas zakończenia nagrania musi być późniejszy niż czas rozpoczęcia.", nameof(request));
+            throw new ArgumentException(T("Czas zakończenia nagrania musi być późniejszy niż czas rozpoczęcia.", "The recording end time must be after the start time."), nameof(request));
         }
 
         if (request.Start <= DateTimeOffset.Now.AddSeconds(15))
         {
-            throw new ArgumentException("Czas rozpoczęcia nagrania musi przypadać co najmniej 15 sekund w przyszłości.", nameof(request));
+            throw new ArgumentException(T("Czas rozpoczęcia nagrania musi przypadać co najmniej 15 sekund w przyszłości.", "The recording start time must be at least 15 seconds in the future."), nameof(request));
         }
 
         if (!Uri.TryCreate(channel.StreamUrl, UriKind.Absolute, out var streamUri))
         {
-            throw new InvalidOperationException("Adres strumienia wybranego kanału jest nieprawidłowy.");
+            throw new InvalidOperationException(T("Adres strumienia wybranego kanału jest nieprawidłowy.", "The selected channel has an invalid stream address."));
         }
 
         var preferences = preferencesService.Current.Recording;
@@ -154,7 +155,7 @@ public sealed class RecordingCoordinator : IRecordingCoordinator
             var applicationPath = Environment.ProcessPath;
             if (string.IsNullOrWhiteSpace(applicationPath))
             {
-                throw new InvalidOperationException("Nie udało się ustalić ścieżki programu TelePilot.");
+                throw new InvalidOperationException(T("Nie udało się ustalić ścieżki programu TelePilot.", "Could not determine the path to TelePilot."));
             }
 
             await taskScheduler.RegisterAsync(
@@ -192,7 +193,7 @@ public sealed class RecordingCoordinator : IRecordingCoordinator
 
         if (entry.Status == ScheduledRecordingStatus.Recording)
         {
-            throw new InvalidOperationException("Nie można anulować zadania, które już nagrywa.");
+            throw new InvalidOperationException(T("Nie można anulować zadania, które już nagrywa.", "A task that is already recording cannot be canceled."));
         }
 
         await taskScheduler.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
@@ -257,7 +258,7 @@ internal sealed class UnavailableRecordingCoordinator : IRecordingCoordinator
         string? programmeTitle,
         RecordingMode mode,
         CancellationToken cancellationToken = default) =>
-        Task.FromException<string>(new InvalidOperationException("Nagrywanie nie zostało skonfigurowane."));
+        Task.FromException<string>(new InvalidOperationException(T("Nagrywanie nie zostało skonfigurowane.", "Recording is not configured.")));
 
     public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
@@ -265,7 +266,7 @@ internal sealed class UnavailableRecordingCoordinator : IRecordingCoordinator
         Channel channel,
         RecordingScheduleRequest request,
         CancellationToken cancellationToken = default) =>
-        Task.FromException<ScheduledRecordingEntry>(new InvalidOperationException("Planowanie nagrań nie zostało skonfigurowane."));
+        Task.FromException<ScheduledRecordingEntry>(new InvalidOperationException(T("Planowanie nagrań nie zostało skonfigurowane.", "Recording scheduling is not configured.")));
 
     public Task<IReadOnlyList<ScheduledRecordingEntry>> GetScheduledAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<ScheduledRecordingEntry>>([]);

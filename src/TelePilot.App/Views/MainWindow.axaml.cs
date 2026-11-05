@@ -14,6 +14,7 @@ using TelePilot.App.Accessibility;
 using TelePilot.App.Controls;
 using TelePilot.App.ViewModels;
 using TelePilot.Playback;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Views;
 
@@ -47,13 +48,10 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        SourceSelector.NextTabTarget = AddFileSourceButton;
         ConfigureMainFocusCycleEdges();
-        SearchBox.PreviousTabTarget = RemoveSourceButton;
         SearchBox.NextTabTarget = GroupSelector;
         GroupSelector.PreviousTabTarget = SearchBox;
         GroupSelector.NextTabTarget = ChannelList;
-        SourceSelector.TabNavigationStarting += OnTabNavigationStarting;
         SearchBox.TabNavigationStarting += OnTabNavigationStarting;
         GroupSelector.TabNavigationStarting += OnTabNavigationStarting;
         ChannelList.AddHandler(
@@ -84,6 +82,8 @@ public sealed partial class MainWindow : Window
         Closed += OnClosed;
     }
 
+    internal bool ShowPlaylistManagerOnStartup { get; set; }
+
     public void Initialize(
         MainWindowViewModel mainWindowViewModel,
         IFocusCoordinator coordinator,
@@ -94,7 +94,7 @@ public sealed partial class MainWindow : Window
         ArgumentNullException.ThrowIfNull(mediaPlayerProvider);
         if (viewModel is not null)
         {
-            throw new InvalidOperationException("Główne okno zostało już zainicjowane.");
+            throw new InvalidOperationException(T("Główne okno zostało już zainicjowane.", "The main window has already been initialized."));
         }
 
         viewModel = mainWindowViewModel;
@@ -131,6 +131,10 @@ public sealed partial class MainWindow : Window
         if (viewModel is not null)
         {
             await viewModel.InitializeAsync();
+            if (ShowPlaylistManagerOnStartup && IsVisible)
+            {
+                await viewModel.OpenPlaylistManagerCommand.ExecuteAsync(null);
+            }
         }
 
         await playbackPreparation;
@@ -284,8 +288,7 @@ public sealed partial class MainWindow : Window
         return request.Target switch
         {
             FocusTarget.ChannelList => IsRequestedChannelFocusActive(request),
-            FocusTarget.PlaylistSourceSelector => SourceSelector.IsEffectivelyVisible
-                ? SourceSelector.IsKeyboardFocusWithin : IsSectionEntryFocused,
+            FocusTarget.PlaylistSourceSelector => IsSectionEntryFocused,
             FocusTarget.SearchBox => IsSectionEntryFocused,
             FocusTarget.PlayerControls => PauseResumeButton.IsKeyboardFocusWithin,
             FocusTarget.Archive => ArchivePane.IsKeyboardFocusWithin,
@@ -365,7 +368,7 @@ public sealed partial class MainWindow : Window
                 restored = FocusSectionEntry();
                 break;
             case FocusTarget.PlaylistSourceSelector:
-                restored = SourceSelector.IsEffectivelyVisible ? SourceSelector.FocusSelector() : FocusSectionEntry();
+                restored = FocusSectionEntry();
                 break;
             case FocusTarget.PlayerControls:
                 restored = PauseResumeButton.Focus(NavigationMethod.Unspecified, KeyModifiers.None);
@@ -545,11 +548,6 @@ public sealed partial class MainWindow : Window
             return SearchBox.FocusEditor();
         }
 
-        if (SourceSelector.IsKeyboardFocusWithin || ReferenceEquals(logicalFocus, SourceSelector))
-        {
-            return SourceSelector.FocusSelector();
-        }
-
         if (GroupSelector.IsKeyboardFocusWithin || ReferenceEquals(logicalFocus, GroupSelector))
         {
             return GroupSelector.FocusSelector();
@@ -601,8 +599,7 @@ public sealed partial class MainWindow : Window
             return true;
         }
 
-        return (SourceSelector.IsKeyboardFocusWithin || ReferenceEquals(logicalFocus, SourceSelector)
-                || GroupSelector.IsKeyboardFocusWithin || ReferenceEquals(logicalFocus, GroupSelector))
+        return (GroupSelector.IsKeyboardFocusWithin || ReferenceEquals(logicalFocus, GroupSelector))
             && IsNativeWindowClass(nativeFocus, "ComboBox");
     }
 
@@ -749,7 +746,7 @@ public sealed partial class MainWindow : Window
         container.Bind(
             AutomationProperties.AutomationIdProperty,
             new Binding(nameof(ChannelListItemViewModel.AutomationId)));
-        AutomationProperties.SetHelpText(container, "Enter rozpoczyna odtwarzanie. Shift+F10 otwiera menu kontekstowe.");
+        AutomationProperties.SetHelpText(container, T("Enter rozpoczyna odtwarzanie. Shift+F10 otwiera menu kontekstowe.", "Press Enter to play. Shift+F10 opens the context menu."));
     }
 
     private void OnChannelDoubleTapped(object? sender, TappedEventArgs e)
@@ -788,7 +785,7 @@ public sealed partial class MainWindow : Window
                 Header = favorite.ChannelName,
                 Tag = "favorite-channel",
             };
-            AutomationProperties.SetName(menuItem, $"Odtwórz ulubiony kanał {favorite.ChannelName}");
+            AutomationProperties.SetName(menuItem, T($"Odtwórz ulubiony kanał {favorite.ChannelName}", $"Play favorite channel {favorite.ChannelName}"));
             AutomationProperties.SetAutomationId(menuItem, $"favorite-{SanitizeAutomationId(favorite.ChannelId.ToString("D"))}");
             menuItem.Click += async (_, _) =>
                 await currentViewModel.PlayFavoriteAsync(favorite.PlaylistSourceId, favorite.ChannelId);
@@ -893,7 +890,7 @@ public sealed partial class MainWindow : Window
             PlaylistSourceItemViewModel source => source.AccessibleName,
             ChannelSortOption sort => sort.Name,
             string group => group,
-            _ => item?.ToString() ?? "Brak wartości",
+            _ => item?.ToString() ?? T("Brak wartości", "No value"),
         };
         var automationId = item switch
         {
@@ -1130,11 +1127,7 @@ public sealed partial class MainWindow : Window
 
     private void ConfigureMainFocusCycleEdges()
     {
-        SourceSelector.PreviousTabTarget = SelectedSectionTab();
-        SearchBox.PreviousTabTarget = PlaylistManagementPanel.IsEffectivelyVisible
-            ? RemoveSourceButton.IsEffectivelyEnabled ? RemoveSourceButton
-                : RefreshSourceButton.IsEffectivelyEnabled ? RefreshSourceButton : AddUrlSourceButton
-            : SelectedSectionTab();
+        SearchBox.PreviousTabTarget = SelectedSectionTab();
         SearchBox.NextTabTarget = GroupSelector.IsEffectivelyVisible && GroupSelector.IsEffectivelyEnabled
             ? GroupSelector : ChannelList;
     }
@@ -1306,7 +1299,7 @@ public sealed partial class MainWindow : Window
     {
         var request = GetFocusRequestForCurrentView();
         CurrentViewModel?.AccessibleStatus.ReportStatus(
-            isFullscreen ? "Tryb pełnoekranowy włączony." : "Tryb pełnoekranowy wyłączony.");
+            isFullscreen ? T("Tryb pełnoekranowy włączony.", "Full screen on.") : T("Tryb pełnoekranowy wyłączony.", "Full screen off."));
         BeginFocusRecovery(request, forceRequestedTarget: true);
     }
 
@@ -1384,7 +1377,6 @@ public sealed partial class MainWindow : Window
         MainMenu.Closed -= OnMainMenuClosed;
         FavoritesMenu.SubmenuOpened -= OnFavoritesMenuOpened;
         SectionTabs.SelectionChanged -= OnSectionSelectionChanged;
-        SourceSelector.TabNavigationStarting -= OnTabNavigationStarting;
         SearchBox.TabNavigationStarting -= OnTabNavigationStarting;
         GroupSelector.TabNavigationStarting -= OnTabNavigationStarting;
         focusRestoreGeneration++;

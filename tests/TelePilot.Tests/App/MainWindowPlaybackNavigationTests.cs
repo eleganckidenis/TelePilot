@@ -52,13 +52,44 @@ public sealed class MainWindowPlaybackNavigationTests
         using var fixture = new StartupFixture();
         fixture.Window.Show();
         Dispatcher.UIThread.RunJobs();
-        var chosen = fixture.Window.FindControl<Button>("AddUrlSourceButton")!;
-        Assert.True(chosen.Focus());
+        var chosen = fixture.Window.FindControl<AccessibleComboBox>("GroupSelector")!;
+        Assert.True(chosen.FocusSelector());
 
         await fixture.CompleteStartupAsync();
 
-        Assert.Same(chosen, fixture.Window.FocusManager!.GetFocusedElement());
-        Assert.True(ControlAutomationPeer.CreatePeerForElement(chosen).HasKeyboardFocus());
+        Assert.True(chosen.IsKeyboardFocusWithin);
+        var focused = Assert.IsAssignableFrom<Control>(fixture.Window.FocusManager!.GetFocusedElement());
+        Assert.True(ControlAutomationPeer.CreatePeerForElement(focused).HasKeyboardFocus());
+    }
+
+    [AvaloniaTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Startup_OpensTheEmptyPlaylistManagerOnlyForFirstRun(bool firstRun)
+    {
+        var windows = new WindowService();
+        using var fixture = new StartupFixture(windows);
+        windows.SetOwner(fixture.Window);
+        fixture.Window.ShowPlaylistManagerOnStartup = firstRun;
+        fixture.Window.Show();
+        fixture.Sources.Completion.TrySetResult([]);
+        fixture.Provider.Completion.TrySetResult();
+        await WaitForStartupConditionAsync(() =>
+            firstRun ? fixture.Window.OwnedWindows.OfType<PlaylistManagerWindow>().Any()
+                : fixture.Model.AccessibleStatus.StatusMessage.Contains("Dodaj playlistę", StringComparison.Ordinal));
+
+        if (!firstRun)
+        {
+            Assert.Empty(fixture.Window.OwnedWindows);
+            return;
+        }
+
+        var manager = Assert.Single(fixture.Window.OwnedWindows.OfType<PlaylistManagerWindow>());
+        var add = Assert.IsType<Button>(manager.FindControl<Button>("AddFileSourceButton"));
+        Assert.True(add.IsKeyboardFocusWithin);
+        manager.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.None, null);
+        await WaitForStartupConditionAsync(() => !manager.IsVisible);
+        Assert.True(fixture.Window.FindControl<AccessibleSearchBox>("SearchBox")!.IsKeyboardFocusWithin);
     }
 
     [AvaloniaFact]
@@ -132,12 +163,12 @@ public sealed class MainWindowPlaybackNavigationTests
 
     private sealed class StartupFixture : IDisposable
     {
-        public StartupFixture()
+        public StartupFixture(IWindowService? windowService = null)
         {
             var coordinator = new FocusCoordinator();
             Model = new MainWindowViewModel(
                 Playlist, Sources, new ImmediatePlaybackService(), new EmptyEpgSourceManager(),
-                new NoOpWindowService(), new RecordingAccessibleStatusService(), coordinator);
+                windowService ?? new NoOpWindowService(), new RecordingAccessibleStatusService(), coordinator);
             Window.Initialize(Model, coordinator, Provider);
         }
 

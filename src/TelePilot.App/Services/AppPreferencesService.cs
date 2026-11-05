@@ -41,6 +41,7 @@ public sealed class AppPreferencesService : IAppPreferencesService
         // are usable in this session but must never enter the JSON settings.
         var persisted = new AppPreferences
         {
+            Language = normalized.Language,
             ChannelSortMode = normalized.ChannelSortMode,
             Buffering = normalized.Buffering,
             ExternalEpgUrl = TelePilot.Core.Security.SensitiveDataRedactor.ContainsPotentialSecret(normalized.ExternalEpgUrl)
@@ -93,6 +94,7 @@ public sealed class AppPreferencesService : IAppPreferencesService
 
         return new AppPreferences
         {
+            Language = LanguagePreference.Normalize(source.Language),
             ChannelSortMode = sortMode,
             Buffering = (source.Buffering ?? new()).Normalize(),
             ExternalEpgUrl = NormalizeExternalEpgUrl(source.ExternalEpgUrl),

@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TelePilot.App.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.ViewModels;
 
@@ -60,7 +61,7 @@ public sealed class UrlSourceDialogViewModel : ObservableObject
         if (!Uri.TryCreate(Address.Trim(), UriKind.Absolute, out var uri)
             || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
-            ValidationMessage = "Wpisz pełny adres rozpoczynający się od http:// lub https://.";
+            ValidationMessage = T("Wpisz pełny adres rozpoczynający się od http:// lub https://.", "Enter a complete address starting with http:// or https://.");
             return;
         }
 

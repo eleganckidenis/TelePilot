@@ -6,6 +6,7 @@ using TelePilot.Core.Models;
 using CoreMediaTrack = TelePilot.Core.Models.MediaTrack;
 using CoreChannel = TelePilot.Core.Models.Channel;
 using VlcMediaTrack = LibVLCSharp.Shared.MediaTrack;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Playback;
 
@@ -78,7 +79,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
 
     private NativePlayerResources PreparedNativeResources => _nativeResources.IsValueCreated
         ? _nativeResources.Value
-        : throw new InvalidOperationException("Najpierw przygotuj silnik odtwarzania przez PrepareAsync.");
+        : throw new InvalidOperationException(T("Najpierw przygotuj silnik odtwarzania przez PrepareAsync.", "Prepare the player with PrepareAsync first."));
 
     public async Task PrepareAsync(CancellationToken cancellationToken = default)
     {
@@ -100,7 +101,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
 
         if (!Uri.TryCreate(channel.StreamUrl, UriKind.Absolute, out var streamUri))
         {
-            return PlaybackCommandResult.Rejected("Kanał ma nieprawidłowy adres strumienia.");
+            return PlaybackCommandResult.Rejected(T("Kanał ma nieprawidłowy adres strumienia.", "The channel has an invalid stream address."));
         }
 
         var requestGeneration = Interlocked.Increment(ref _requestGeneration);
@@ -110,7 +111,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             () =>
             {
                 if (requestGeneration != Volatile.Read(ref _requestGeneration))
-                    return PlaybackCommandResult.Rejected("Żądanie odtwarzania jest już nieaktualne.");
+                    return PlaybackCommandResult.Rejected(T("Żądanie odtwarzania jest już nieaktualne.", "The playback request is no longer current."));
                 ResetRetryCancellation();
                 _channel = channel; _options = options; _recoverySourceUri = streamUri;
                 _restoringPause = false; _resumePosition = _archiveResumeOffset = 0;
@@ -135,7 +136,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
                 UpdateCurrent(Current with
                 {
                     State = PlaybackState.Stopping,
-                    StatusMessage = "Zatrzymywanie odtwarzania.",
+                    StatusMessage = T("Zatrzymywanie odtwarzania.", "Stopping playback."),
                 });
                 _mediaPlayer.Stop();
                 _channel = null;
@@ -143,7 +144,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
                 {
                     Volume = ReadKnownVolume(),
                     IsMuted = _mediaPlayer.Mute,
-                    StatusMessage = "Odtwarzanie zatrzymane.",
+                    StatusMessage = T("Odtwarzanie zatrzymane.", "Playback stopped."),
                 });
             },
             cancellationToken).ConfigureAwait(false);
@@ -158,12 +159,12 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
                 var snapshot = Current;
                 if (snapshot.State is not (PlaybackState.Playing or PlaybackState.Paused))
                 {
-                    return PlaybackCommandResult.Rejected("Najpierw rozpocznij odtwarzanie kanału.");
+                    return PlaybackCommandResult.Rejected(T("Najpierw rozpocznij odtwarzanie kanału.", "Start playing a channel first."));
                 }
 
                 if (!_mediaPlayer.CanPause)
                 {
-                    return PlaybackCommandResult.Unsupported("Ten strumień na żywo nie obsługuje pauzy.");
+                    return PlaybackCommandResult.Unsupported(T("Ten strumień na żywo nie obsługuje pauzy.", "This live stream does not support pausing."));
                 }
 
                 _mediaPlayer.SetPause(snapshot.State == PlaybackState.Playing);
@@ -225,7 +226,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
 
                 if (!succeeded)
                 {
-                    return PlaybackCommandResult.Rejected("Silnik nie przyjął wyboru ścieżki.");
+                    return PlaybackCommandResult.Rejected(T("Silnik nie przyjął wyboru ścieżki.", "The player did not accept the selected track."));
                 }
 
                 var chosen = ReadTracks(kind).FirstOrDefault(track => track.EngineId == engineId);
@@ -314,7 +315,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             ReadKnownVolume(),
             _mediaPlayer.Mute,
             false,
-            $"Łączenie z kanałem {channel.Name}."));
+            T($"Łączenie z kanałem {channel.Name}.", $"Connecting to {channel.Name}.")));
 
         _mediaPlayer.Stop();
         _recovery?.BeginAttempt(MonotonicNow);
@@ -326,7 +327,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
         if (_resumePosition > 0 && !options.IsLive) media.AddOption(":start-time=" + _resumePosition.ToString(System.Globalization.CultureInfo.InvariantCulture));
         if (!_mediaPlayer.Play(media))
         {
-            var error = new PlaybackError(channel.Name, "Silnik odtwarzania odrzucił strumień.", "play-rejected");
+            var error = new PlaybackError(channel.Name, T("Silnik odtwarzania odrzucił strumień.", "The player rejected the stream."), "play-rejected");
             EvaluateRecovery(new RecoverySample(7));
             return _recovery is { GaveUp: false } ? PlaybackCommandResult.Success() : PlaybackCommandResult.Rejected(error.Message);
         }
@@ -395,7 +396,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             // zakleszczyć. Właściwa wartość jest odczytywana niżej przez
             // szeregowaną kolejkę poleceń.
             CanPause = false,
-            StatusMessage = snapshot.ChannelName is null ? "Połączono." : $"Odtwarzanie kanału {snapshot.ChannelName}.",
+            StatusMessage = snapshot.ChannelName is null ? T("Połączono.", "Connected.") : T($"Odtwarzanie kanału {snapshot.ChannelName}.", $"Playing {snapshot.ChannelName}."),
             Error = null,
         });
         QueuePlayerMetadataRefresh();
@@ -412,7 +413,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             return;
         }
 
-        UpdateCurrent(Current with { State = PlaybackState.Paused, StatusMessage = "Odtwarzanie wstrzymane." });
+        UpdateCurrent(Current with { State = PlaybackState.Paused, StatusMessage = T("Odtwarzanie wstrzymane.", "Playback paused.") });
     }
 
     private void OnStopped(object? sender, EventArgs eventArgs) => QueuePlaybackEvent(ApplyStopped);
@@ -421,7 +422,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
     {
         if (_mediaPlayer.State == VLCState.Stopped && Current.State == PlaybackState.Stopping)
         {
-            UpdateCurrent(Current with { State = PlaybackState.Idle, CanPause = false, StatusMessage = "Odtwarzanie zatrzymane." });
+            UpdateCurrent(Current with { State = PlaybackState.Idle, CanPause = false, StatusMessage = T("Odtwarzanie zatrzymane.", "Playback stopped.") });
         }
     }
 
@@ -533,7 +534,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
                     ? detail.Description
                     : !string.IsNullOrWhiteSpace(description.Name)
                         ? description.Name
-                        : kind == MediaTrackKind.Audio ? "Ścieżka dźwiękowa" : "Napisy";
+                        : kind == MediaTrackKind.Audio ? T("Ścieżka dźwiękowa", "Audio track") : "Napisy";
                 return new CoreMediaTrack(description.Id, kind, name, detail.Language, description.Id == selectedId);
             })
             .ToArray();
@@ -648,18 +649,18 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
     [LoggerMessage(
         EventId = 3001,
         Level = Microsoft.Extensions.Logging.LogLevel.Information,
-        Message = "Rozpoczęto łączenie z kanałem {ChannelName} ({ChannelId}).")]
+        Message = "Started connecting to channel {ChannelName} ({ChannelId}).")]
     private static partial void LogConnecting(ILogger logger, string channelName, ChannelId channelId);
 
     [LoggerMessage(
         EventId = 3002,
         Level = Microsoft.Extensions.Logging.LogLevel.Warning,
-        Message = "Błąd odtwarzania kanału {ChannelName} ({ChannelId}).")]
+        Message = "Playback error for channel {ChannelName} ({ChannelId}).")]
     private static partial void LogPlaybackError(ILogger logger, string channelName, ChannelId channelId);
 
     [LoggerMessage(
         EventId = 3003,
         Level = Microsoft.Extensions.Logging.LogLevel.Warning,
-        Message = "Pominięto nieoczekiwany błąd w kolejce poleceń odtwarzacza; kolejka działa dalej.")]
+        Message = "Ignored an unexpected error in the player command queue. The queue is still active.")]
     private static partial void LogCommandWorkerFailure(ILogger logger, Exception exception);
 }

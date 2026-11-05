@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Infrastructure;
 
@@ -17,7 +18,7 @@ public sealed class JsonSettingsStore<TSettings> : ISettingsStore<TSettings>, ID
     private static readonly Action<ILogger, Exception?> LogSettingsLoadFailure = LoggerMessage.Define(
         LogLevel.Warning,
         new EventId(2001, nameof(LogSettingsLoadFailure)),
-        "Nie udało się odczytać ustawień. Zostaną użyte wartości domyślne.");
+        T("Nie udało się odczytać ustawień. Zostaną użyte wartości domyślne.", "Could not read settings. Default values will be used."));
 
     private readonly string _filePath;
     private readonly Func<TSettings> _defaultFactory;
@@ -89,7 +90,7 @@ public sealed class JsonSettingsStore<TSettings> : ISettingsStore<TSettings>, ID
         try
         {
             var directory = Path.GetDirectoryName(_filePath)
-                ?? throw new InvalidOperationException("Plik ustawień nie ma katalogu nadrzędnego.");
+                ?? throw new InvalidOperationException(T("Plik ustawień nie ma katalogu nadrzędnego.", "The settings file has no parent folder."));
             Directory.CreateDirectory(directory);
 
             var temporaryPath = Path.Combine(directory, $".{Path.GetFileName(_filePath)}.{Guid.NewGuid():N}.tmp");

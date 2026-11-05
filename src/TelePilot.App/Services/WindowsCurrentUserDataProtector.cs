@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Services;
 
@@ -58,7 +59,7 @@ public sealed class WindowsCurrentUserDataProtector : ICurrentUserDataProtector
             if (!succeeded)
             {
                 throw new InvalidOperationException(
-                    "System Windows nie zdołał zabezpieczyć danych nagrania.",
+                    T("System Windows nie zdołał zabezpieczyć danych nagrania.", "Windows could not protect the recording data."),
                     Marshal.GetExceptionForHR(Marshal.GetHRForLastWin32Error()));
             }
 
@@ -84,7 +85,7 @@ public sealed class WindowsCurrentUserDataProtector : ICurrentUserDataProtector
     {
         if (!OperatingSystem.IsWindows())
         {
-            throw new PlatformNotSupportedException("Chronione zadania nagrywania są obecnie dostępne tylko w Windows.");
+            throw new PlatformNotSupportedException(T("Chronione zadania nagrywania są obecnie dostępne tylko w Windows.", "Protected recording tasks are currently only available on Windows."));
         }
     }
 

@@ -3,6 +3,7 @@
     x:DataType="vm:TrackSelectionViewModel"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="using:TelePilot.App.Localization"
     xmlns:automation="using:Avalonia.Automation"
     xmlns:vm="using:TelePilot.App.ViewModels"
     Width="560"
@@ -39,8 +40,8 @@
         ItemsSource="{Binding Tracks}"
         SelectedItem="{Binding SelectedTrack}"
         ContainerPrepared="OnTrackContainerPrepared"
-        automation:AutomationProperties.Name="Dostępne ścieżki"
-        automation:AutomationProperties.HelpText="Strzałkami wybierz ścieżkę, a następnie naciśnij Enter."
+        automation:AutomationProperties.Name="{x:Static loc:ViewText.AvailableTracks}"
+        automation:AutomationProperties.HelpText="{x:Static loc:ViewText.UseTheArrowKeysToSelect7}"
         automation:AutomationProperties.AutomationId="track-selection-list">
       <ListBox.KeyBindings>
         <KeyBinding Gesture="Enter" Command="{Binding ApplyCommand}" />
@@ -60,15 +61,15 @@
       <Button
           x:Name="CancelButton"
           Classes="primary-action"
-          Content="Anuluj"
+          Content="{x:Static loc:ViewText.Cancel}"
           Command="{Binding CancelCommand}"
-          automation:AutomationProperties.Name="Anuluj wybór ścieżki"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.CancelTrackSelection}"
           automation:AutomationProperties.AutomationId="track-selection-cancel" />
       <Button
           Classes="primary-action"
-          Content="Zastosuj"
+          Content="{x:Static loc:ViewText.Apply}"
           Command="{Binding ApplyCommand}"
-          automation:AutomationProperties.Name="Zastosuj wybraną ścieżkę"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.ApplySelectedTrack}"
           automation:AutomationProperties.AutomationId="track-selection-apply" />
     </StackPanel>
   </Grid>

@@ -4,6 +4,7 @@ using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Services;
 
@@ -54,7 +55,7 @@ public sealed class SingleInstanceCoordinator : IAsyncDisposable
                 !(char.IsAsciiLetterOrDigit(character) || character is '.' or '-' or '_')))
         {
             throw new ArgumentException(
-                "Identyfikator aplikacji może zawierać wyłącznie litery ASCII, cyfry, kropki, łączniki i podkreślenia.",
+                T("Identyfikator aplikacji może zawierać wyłącznie litery ASCII, cyfry, kropki, łączniki i podkreślenia.", "The application ID can only contain ASCII letters, digits, dots, hyphens and underscores."),
                 nameof(applicationId));
         }
 
@@ -85,7 +86,7 @@ public sealed class SingleInstanceCoordinator : IAsyncDisposable
             ObjectDisposedException.ThrowIf(disposed, this);
             if (started)
             {
-                throw new InvalidOperationException("Koordynator pojedynczej instancji został już uruchomiony.");
+                throw new InvalidOperationException(T("Koordynator pojedynczej instancji został już uruchomiony.", "The single-instance coordinator has already started."));
             }
 
             started = true;

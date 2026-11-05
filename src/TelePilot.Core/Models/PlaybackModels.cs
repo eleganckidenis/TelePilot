@@ -1,3 +1,5 @@
+using static TelePilot.Core.Localization.Localizer;
+
 namespace TelePilot.Core.Models;
 
 public enum PlaybackState
@@ -38,14 +40,14 @@ public sealed record PlaybackOptions(
         {
             throw new ArgumentOutOfRangeException(
                 nameof(NetworkCachingMilliseconds),
-                "Bufor sieciowy musi mieścić się w zakresie od 0 do 300000 ms.");
+                T("Bufor sieciowy musi mieścić się w zakresie od 0 do 300000 ms.", "The network buffer must be between 0 and 300000 ms."));
         }
 
         if (MaximumReconnectAttempts is < 0 or > 20)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(MaximumReconnectAttempts),
-                "Liczba ponownych prób musi mieścić się w zakresie od 0 do 20.");
+                T("Liczba ponownych prób musi mieścić się w zakresie od 0 do 20.", "The number of retries must be between 0 and 20."));
         }
     }
 }
@@ -62,10 +64,10 @@ public sealed record MediaTrack(
         get
         {
             var language = string.IsNullOrWhiteSpace(Language) ? null : Language.Trim();
-            var selected = IsSelected ? ", wybrana" : string.Empty;
+            var selected = IsSelected ? T(", wybrana", ", selected") : string.Empty;
             return language is null
-                ? $"{Description}, identyfikator {EngineId}{selected}"
-                : $"{Description}, język {language}, identyfikator {EngineId}{selected}";
+                ? T($"{Description}, identyfikator {EngineId}{selected}", $"{Description}, ID {EngineId}{selected}")
+                : T($"{Description}, język {language}, identyfikator {EngineId}{selected}", $"{Description}, language {language}, ID {EngineId}{selected}");
         }
     }
 }

@@ -1,3 +1,5 @@
+using static TelePilot.Core.Localization.Localizer;
+
 namespace TelePilot.App.ViewModels;
 
 public sealed record KeyboardShortcutItem(string Keys, string Action, string AutomationId)
@@ -11,32 +13,33 @@ public sealed class KeyboardShortcutsViewModel
     {
         Shortcuts =
         [
-            new("Ctrl+Tab / Ctrl+Shift+Tab", "Następna lub poprzednia zakładka", "shortcut-sections"),
-            new("Ctrl+1 / Ctrl+2 / Ctrl+3", "TV na żywo, Ulubione lub Archiwum", "shortcut-section-selection"),
-            new("Spacja", "Wstrzymaj lub wznów odtwarzanie", "shortcut-pause"),
-            new("Ctrl+S", "Zatrzymaj odtwarzanie", "shortcut-stop"),
-            new("Ctrl+L", "Pokaż lub ukryj listę kanałów albo archiwum podczas odtwarzania", "shortcut-channel-list"),
-            new("Ctrl+E", "Otwórz program telewizyjny", "shortcut-epg"),
-            new("Ctrl+O", "Dodaj playlistę z pliku", "shortcut-open-file"),
-            new("Ctrl+U", "Dodaj playlistę z adresu URL", "shortcut-open-url"),
-            new("Ctrl+Delete", "Usuń wybrane źródło playlisty", "shortcut-remove-source"),
-            new("Ctrl+M", "Wycisz lub przywróć dźwięk", "shortcut-mute"),
-            new("Ctrl+Strzałka w górę", "Zwiększ głośność", "shortcut-volume-up"),
-            new("Ctrl+Strzałka w dół", "Zmniejsz głośność", "shortcut-volume-down"),
-            new("Ctrl+Strzałka w lewo / w prawo", "Cofnij lub przewiń odtwarzaną audycję archiwalną o 30 sekund w widoku odtwarzacza", "shortcut-archive-seek"),
-            new("Page Up", "Poprzedni kanał w aktywnym widoku odtwarzania", "shortcut-previous-channel"),
-            new("Page Down", "Następny kanał w aktywnym widoku odtwarzania", "shortcut-next-channel"),
-            new("Home", "Zwiększ głośność w aktywnym widoku odtwarzania", "shortcut-player-volume-up"),
-            new("End", "Zmniejsz głośność w aktywnym widoku odtwarzania", "shortcut-player-volume-down"),
-            new("Ctrl+T", "Wybierz ścieżkę dźwiękową", "shortcut-audio-track"),
-            new("Ctrl+Shift+T", "Wybierz napisy", "shortcut-subtitle-track"),
-            new("F5", "Odśwież aktywne źródło lub EPG", "shortcut-refresh"),
-            new("F11", "Włącz lub wyłącz pełny ekran", "shortcut-fullscreen"),
-            new("Escape", "Wyjdź z pełnego ekranu lub zamknij okno pomocnicze", "shortcut-escape"),
-            new("Enter", "Odtwórz zaznaczony kanał", "shortcut-play"),
-            new("Początek nazwy", "Na liście wpisz np. pol; kolejne znaki dopisz w ciągu 2 sekund. Powtarzanie jednej litery wybiera następne dopasowanie", "shortcut-channel-prefix"),
-            new("Backspace na liście", "Usuń ostatni znak wpisanego początku nazwy; Escape kasuje cały wpis", "shortcut-channel-prefix-backspace"),
-            new("Shift+F10", "Otwórz menu kontekstowe zaznaczonego kanału", "shortcut-context-menu"),
+            new("Ctrl+Tab / Ctrl+Shift+Tab", T("Następna lub poprzednia zakładka", "Next or previous tab"), "shortcut-sections"),
+            new("Ctrl+1 / Ctrl+2 / Ctrl+3", T("TV na żywo, Ulubione lub Archiwum", "Live TV, Favorites or Archive"), "shortcut-section-selection"),
+            new(T("Spacja", "Space"), T("Wstrzymaj lub wznów odtwarzanie", "Pause or resume playback"), "shortcut-pause"),
+            new("Ctrl+S", T("Zatrzymaj odtwarzanie", "Stop playback"), "shortcut-stop"),
+            new("Ctrl+L", T("Pokaż lub ukryj listę kanałów albo archiwum podczas odtwarzania", "Show or hide the channel list or archive during playback"), "shortcut-channel-list"),
+            new("Ctrl+E", T("Otwórz program telewizyjny", "Open TV guide"), "shortcut-epg"),
+            new("Ctrl+Shift+P", T("Otwórz menedżer playlist", "Open Playlist Manager"), "shortcut-playlist-manager"),
+            new("Ctrl+O", T("Dodaj playlistę z pliku", "Add playlist from file"), "shortcut-open-file"),
+            new("Ctrl+U", T("Dodaj playlistę z adresu URL", "Add playlist from URL"), "shortcut-open-url"),
+            new("Ctrl+Delete", T("Usuń wybrane źródło w menedżerze playlist", "Remove selected playlist source in Playlist Manager"), "shortcut-remove-source"),
+            new("Ctrl+M", T("Wycisz lub przywróć dźwięk", "Mute or unmute"), "shortcut-mute"),
+            new(T("Ctrl+Strzałka w górę", "Ctrl+Up"), T("Zwiększ głośność", "Raise the volume"), "shortcut-volume-up"),
+            new(T("Ctrl+Strzałka w dół", "Ctrl+Down"), T("Zmniejsz głośność", "Lower the volume"), "shortcut-volume-down"),
+            new(T("Ctrl+Strzałka w lewo / w prawo", "Ctrl+Left / Right"), T("Cofnij lub przewiń odtwarzaną audycję archiwalną o 30 sekund w widoku odtwarzacza", "Skip backward or forward by 30 seconds while playing an archive program"), "shortcut-archive-seek"),
+            new("Page Up", T("Poprzedni kanał w aktywnym widoku odtwarzania", "Previous channel while the player controls have focus"), "shortcut-previous-channel"),
+            new("Page Down", T("Następny kanał w aktywnym widoku odtwarzania", "Next channel while the player controls have focus"), "shortcut-next-channel"),
+            new("Home", T("Zwiększ głośność w aktywnym widoku odtwarzania", "Raise the volume while the player controls have focus"), "shortcut-player-volume-up"),
+            new("End", T("Zmniejsz głośność w aktywnym widoku odtwarzania", "Lower the volume while the player controls have focus"), "shortcut-player-volume-down"),
+            new("Ctrl+T", T("Wybierz ścieżkę dźwiękową", "Choose audio track"), "shortcut-audio-track"),
+            new("Ctrl+Shift+T", T("Wybierz napisy", "Choose subtitles"), "shortcut-subtitle-track"),
+            new("F5", T("Odśwież wybrane źródło w menedżerze playlist lub odśwież program telewizyjny", "Refresh the selected source in Playlist Manager or refresh the TV guide"), "shortcut-refresh"),
+            new("F11", T("Włącz lub wyłącz pełny ekran", "Toggle full screen"), "shortcut-fullscreen"),
+            new("Escape", T("Wyjdź z pełnego ekranu lub zamknij okno pomocnicze", "Exit full screen or close the dialog"), "shortcut-escape"),
+            new("Enter", T("Odtwórz zaznaczony kanał", "Play selected channel"), "shortcut-play"),
+            new(T("Początek nazwy", "Start of channel name"), T("Na liście wpisz np. pol; kolejne znaki dopisz w ciągu 2 sekund. Powtarzanie jednej litery wybiera następne dopasowanie", "On the list, type the first letters of a channel name within 2 seconds. Press the same letter repeatedly to cycle through matches"), "shortcut-channel-prefix"),
+            new(T("Backspace na liście", "Backspace on the list"), T("Usuń ostatni znak wpisanego początku nazwy; Escape kasuje cały wpis", "Delete the last letter in the search prefix. Escape clears the prefix"), "shortcut-channel-prefix-backspace"),
+            new("Shift+F10", T("Otwórz menu kontekstowe zaznaczonego kanału", "Open the context menu for the selected channel"), "shortcut-context-menu"),
         ];
     }
 

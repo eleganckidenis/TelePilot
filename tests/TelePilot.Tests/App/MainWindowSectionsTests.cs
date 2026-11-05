@@ -26,7 +26,7 @@ namespace TelePilot.Tests.App;
 public sealed class MainWindowSectionsTests
 {
     [AvaloniaFact]
-    public async Task SectionToolbars_OnlyLiveHasPlaylistManagementAndSearchNamesMatchTabs()
+    public async Task SectionToolbars_PlaylistActionsAreAbsentAndSearchNamesMatchTabs()
     {
         using var fixture = new Fixture();
         await fixture.ViewModel.InitializeAsync();
@@ -39,22 +39,20 @@ public sealed class MainWindowSectionsTests
             window.Activate();
             Dispatcher.UIThread.RunJobs();
             window.UpdateLayout();
-            var source = Assert.IsType<AccessibleComboBox>(window.FindControl<AccessibleComboBox>("SourceSelector"));
             var search = Assert.IsType<AccessibleSearchBox>(window.FindControl<AccessibleSearchBox>("SearchBox"));
             var archive = Assert.IsType<ArchiveView>(window.FindControl<ArchiveView>("ArchivePane"));
             Assert.Empty(archive.GetVisualDescendants().OfType<AccessibleSearchBox>());
             var archiveChannel = Assert.IsType<AccessibleComboBox>(archive.FindControl<AccessibleComboBox>("ChannelPicker"));
             var tabs = Assert.IsType<TabControl>(window.FindControl<TabControl>("SectionTabs"));
-            var controls = new Control[] { source,
-                window.FindControl<Button>("AddFileSourceButton")!, window.FindControl<Button>("AddUrlSourceButton")!,
-                window.FindControl<Button>("RefreshSourceButton")!, window.FindControl<Button>("RemoveSourceButton")! };
+            Assert.Null(window.FindControl<Control>("PlaylistManagementPanel"));
+            Assert.Null(window.FindControl<Control>("AddFileSourceButton"));
+            Assert.Null(window.FindControl<Control>("RemoveSourceButton"));
 
             for (int section = 0; section < 3; section++)
             {
                 model.SelectedSectionIndex = section;
                 Dispatcher.UIThread.RunJobs();
                 window.UpdateLayout();
-                Assert.All(controls, control => Assert.Equal(section == 0, control.IsEffectivelyVisible));
                 Assert.Equal(section != 2, search.IsEffectivelyVisible);
                 Assert.Equal(section == 2, archive.GetVisualAncestors().OfType<Border>().First().IsVisible);
                 if (section == 2)
@@ -69,8 +67,6 @@ public sealed class MainWindowSectionsTests
                     Assert.True(search.FocusEditor());
                 }
                 PressKey(window, Key.Tab);
-                Assert.False(source.IsKeyboardFocusWithin);
-                Assert.False(window.FindControl<Button>("AddFileSourceButton")!.IsKeyboardFocusWithin);
             }
 
             model.SelectedSectionIndex = 1;
@@ -598,10 +594,9 @@ public sealed class MainWindowSectionsTests
             Dispatcher.UIThread.RunJobs();
             window.UpdateLayout();
             var tabs = Assert.IsType<TabControl>(window.FindControl<TabControl>("SectionTabs"));
-            var source = Assert.IsType<AccessibleComboBox>(window.FindControl<AccessibleComboBox>("SourceSelector"));
             var search = Assert.IsType<AccessibleSearchBox>(window.FindControl<AccessibleSearchBox>("SearchBox"));
             var play = Assert.IsType<Button>(window.FindControl<Button>("PlaySelectedChannelButton"));
-            var addFile = Assert.IsType<Button>(window.FindControl<Button>("AddFileSourceButton"));
+            var group = Assert.IsType<AccessibleComboBox>(window.FindControl<AccessibleComboBox>("GroupSelector"));
             var mountedList = Assert.IsType<ListBox>(window.FindControl<ListBox>("ChannelList"));
             for (var section = 0; section < 2; section++)
             {
@@ -610,7 +605,7 @@ public sealed class MainWindowSectionsTests
                 var selectedTab = Assert.IsType<TabItem>(tabs.SelectedItem);
                 Assert.True(selectedTab.Focus());
                 PressKey(window, Key.Tab);
-                Assert.True(section == 0 ? source.IsKeyboardFocusWithin : search.IsKeyboardFocusWithin);
+                Assert.True(search.IsKeyboardFocusWithin);
                 PressKey(window, Key.Tab, RawInputModifiers.Shift);
                 Assert.Same(selectedTab, window.FocusManager?.GetFocusedElement());
 
@@ -618,12 +613,12 @@ public sealed class MainWindowSectionsTests
                 PressKey(window, Key.Tab);
                 Assert.Same(selectedTab, window.FocusManager?.GetFocusedElement());
                 PressKey(window, Key.Tab);
-                Assert.True(section == 0 ? source.IsKeyboardFocusWithin : search.IsKeyboardFocusWithin);
+                Assert.True(search.IsKeyboardFocusWithin);
                 PressKey(window, Key.Tab);
-                if (section == 0) Assert.Same(addFile, window.FocusManager?.GetFocusedElement());
+                if (section == 0) Assert.True(group.IsKeyboardFocusWithin);
                 else Assert.True(mountedList.IsKeyboardFocusWithin);
                 PressKey(window, Key.Tab, RawInputModifiers.Shift);
-                Assert.True(section == 0 ? source.IsKeyboardFocusWithin : search.IsKeyboardFocusWithin);
+                Assert.True(search.IsKeyboardFocusWithin);
                 Assert.Same(mountedList, window.FindControl<ListBox>("ChannelList"));
                 Assert.Same(window, TopLevel.GetTopLevel(mountedList));
             }

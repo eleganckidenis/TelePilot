@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TelePilot.App.Models;
 using TelePilot.Recording;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.ViewModels;
 
@@ -22,8 +23,8 @@ public sealed class ScheduledRecordingsViewModel : ObservableObject
             recordings.Select(static entry => new ScheduledRecordingItemViewModel(entry)));
         selectedRecording = Recordings.FirstOrDefault();
         statusMessage = Recordings.Count == 0
-            ? "Brak zaplanowanych nagrań."
-            : $"Zaplanowane nagrania: {Recordings.Count}.";
+            ? T("Brak zaplanowanych nagrań.", "No scheduled recordings.")
+            : T($"Zaplanowane nagrania: {Recordings.Count}.", $"Scheduled recordings: {Recordings.Count}.");
         CancelSelectedCommand = new AsyncRelayCommand(CancelSelectedAsync, () => SelectedRecording is not null);
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
     }
@@ -67,11 +68,11 @@ public sealed class ScheduledRecordingsViewModel : ObservableObject
             await cancelRecording(selected.Id);
             Recordings.Remove(selected);
             SelectedRecording = Recordings.FirstOrDefault();
-            StatusMessage = $"Anulowano nagranie kanału {selected.ChannelName}. Pozostało: {Recordings.Count}.";
+            StatusMessage = T($"Anulowano nagranie kanału {selected.ChannelName}. Pozostało: {Recordings.Count}.", $"Canceled recording for {selected.ChannelName}. Remaining: {Recordings.Count}.");
         }
         catch (Exception)
         {
-            StatusMessage = "Nie udało się anulować wybranego nagrania. Jeśli już trwa, zatrzymaj je po zakończeniu zadania.";
+            StatusMessage = T("Nie udało się anulować wybranego nagrania. Jeśli już trwa, zatrzymaj je po zakończeniu zadania.", "Could not cancel the selected recording. If it has started, wait for it to finish.");
         }
     }
 }
@@ -90,8 +91,8 @@ public sealed class ScheduledRecordingItemViewModel
     public string ChannelName => Entry.ChannelName;
 
     public string AccessibleName =>
-        $"{Entry.ChannelName}, {Entry.Start.ToLocalTime():g} do {Entry.End.ToLocalTime():g}, "
-        + (Entry.Mode == RecordingMode.StreamCopy ? "wideo TS" : "audio");
+        T($"{Entry.ChannelName}, {Entry.Start.ToLocalTime():g} do {Entry.End.ToLocalTime():g}, ", $"{Entry.ChannelName}, {Entry.Start.ToLocalTime():g} to {Entry.End.ToLocalTime():g},")
+        + (Entry.Mode == RecordingMode.StreamCopy ? T("wideo TS", "TS video") : "audio");
 
     public string AutomationId => $"scheduled-recording-{Id:D}";
 }

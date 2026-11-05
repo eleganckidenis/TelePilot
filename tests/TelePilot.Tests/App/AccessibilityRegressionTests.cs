@@ -33,28 +33,25 @@ public sealed class AccessibilityRegressionTests
     }
 
     [AvaloniaFact]
-    public void MainWindow_ExposesAccessibleRemoveSourceButtonMenuItemAndShortcut()
+    public void PlaylistManager_IsInTheFileMenuAndOwnsSourceActions()
     {
-        MainWindow window = new();
-        Button removeButton = Assert.IsType<Button>(window.FindControl<Button>("RemoveSourceButton"));
-        AccessibleSearchBox searchBox = Assert.IsType<AccessibleSearchBox>(
-            window.FindControl<AccessibleSearchBox>("SearchBox"));
-        Menu menu = Assert.IsType<Menu>(window.FindControl<Menu>("MainMenu"));
-        MenuItem sourceMenu = Assert.Single(
-            menu.Items.OfType<MenuItem>(),
-            item => AutomationProperties.GetAutomationId(item) == "menu-source");
-        MenuItem removeMenuItem = Assert.Single(
-            sourceMenu.Items.OfType<MenuItem>(),
-            item => AutomationProperties.GetAutomationId(item) == "menu-remove-source");
+        MainWindow main = new();
+        Menu menu = Assert.IsType<Menu>(main.FindControl<Menu>("MainMenu"));
+        MenuItem fileMenu = Assert.Single(menu.Items.OfType<MenuItem>(),
+            item => AutomationProperties.GetAutomationId(item) == "menu-file");
+        MenuItem managerItem = Assert.Single(fileMenu.Items.OfType<MenuItem>(),
+            item => AutomationProperties.GetAutomationId(item) == "menu-playlist-manager");
+        Assert.Equal("Menedżer playlist", AutomationProperties.GetName(managerItem));
+        Assert.Null(main.FindControl<Button>("RemoveSourceButton"));
+        Assert.DoesNotContain(main.KeyBindings, binding => binding.Gesture.ToString() == "Ctrl+Delete");
 
+        PlaylistManagerWindow manager = new();
+        Button removeButton = Assert.IsType<Button>(manager.FindControl<Button>("RemoveSourceButton"));
         Assert.Equal("Usuń wybrane źródło", AutomationProperties.GetName(removeButton));
         Assert.Equal("remove-source", AutomationProperties.GetAutomationId(removeButton));
-        Assert.Same(removeButton, searchBox.PreviousTabTarget);
-        Assert.Equal("Usuń wybrane źródło", AutomationProperties.GetName(removeMenuItem));
-        Assert.Equal("Ctrl+Delete", removeMenuItem.InputGesture?.ToString());
-        Assert.Contains(
-            window.KeyBindings,
-            keyBinding => keyBinding.Gesture.ToString() == "Ctrl+Delete");
+        Assert.Contains(manager.KeyBindings, binding => binding.Gesture.ToString() == "Ctrl+Delete");
+        Assert.Contains(manager.KeyBindings, binding => binding.Gesture.ToString() == "F5");
+        Assert.Equal(KeyboardNavigationMode.Cycle, KeyboardNavigation.GetTabNavigation((Grid)manager.Content!));
     }
 
     [AvaloniaFact]

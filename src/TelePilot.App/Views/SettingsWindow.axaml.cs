@@ -5,6 +5,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using System.ComponentModel;
 using TelePilot.App.ViewModels;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Views;
 
@@ -15,7 +16,9 @@ public sealed partial class SettingsWindow : Window
     public SettingsWindow()
     {
         InitializeComponent();
-        SortPicker.PreviousTabTarget = SaveButton;
+        LanguagePicker.PreviousTabTarget = SaveButton;
+        LanguagePicker.NextTabTarget = SortPicker;
+        SortPicker.PreviousTabTarget = LanguagePicker;
         SortPicker.NextTabTarget = BufferSecondsBox;
         BufferSecondsBox.PreviousTabTarget = SortPicker;
         BufferSecondsBox.NextTabTarget = BufferMaximumBox;
@@ -62,12 +65,18 @@ public sealed partial class SettingsWindow : Window
         }
 
         e.Handled = true;
-        Dispatcher.UIThread.Post(() => SortPicker.FocusSelector(), DispatcherPriority.Input);
+        Dispatcher.UIThread.Post(() => LanguagePicker.FocusSelector(), DispatcherPriority.Input);
     }
 
     private void OnOpened(object? sender, EventArgs e)
     {
-        SortPicker.FocusSelector();
+        if (observedViewModel?.FocusArchiveOnOpen == true)
+        {
+            ArchiveModePicker.BringIntoView();
+            ArchiveModePicker.FocusSelector();
+            return;
+        }
+        LanguagePicker.FocusSelector();
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e) =>
@@ -126,7 +135,7 @@ public sealed partial class SettingsWindow : Window
         }
 
         var folders = await StorageProvider.OpenFolderPickerAsync(
-            new FolderPickerOpenOptions { Title = "Wybierz folder nagrań", AllowMultiple = false });
+            new FolderPickerOpenOptions { Title = T("Wybierz folder nagrań", "Choose recording folder"), AllowMultiple = false });
         var path = folders.Count == 0 ? null : folders[0].TryGetLocalPath();
         if (!string.IsNullOrWhiteSpace(path))
         {
@@ -144,7 +153,7 @@ public sealed partial class SettingsWindow : Window
         var files = await StorageProvider.OpenFilePickerAsync(
             new FilePickerOpenOptions
             {
-                Title = "Wybierz ffmpeg.exe",
+                Title = T("Wybierz ffmpeg.exe", "Choose ffmpeg.exe"),
                 AllowMultiple = false,
                 FileTypeFilter =
                 [

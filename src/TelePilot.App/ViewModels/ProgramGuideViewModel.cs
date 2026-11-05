@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.ViewModels;
 
@@ -23,7 +24,7 @@ public sealed class ProgramGuideViewModel : ObservableObject, IDisposable
     private ProgramItemViewModel? selectedProgram;
     private DateTime? selectedDate;
     private string searchText = string.Empty;
-    private string statusMessage = "Wybierz kanał i datę.";
+    private string statusMessage = T("Wybierz kanał i datę.", "Choose a channel and date.");
     private bool disposed;
 
     public ProgramGuideViewModel(
@@ -122,15 +123,15 @@ public sealed class ProgramGuideViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref statusMessage, value);
     }
 
-    public string SelectedProgramDetails => SelectedProgram?.Details ?? "Wybierz audycję, aby poznać szczegóły.";
+    public string SelectedProgramDetails => SelectedProgram?.Details ?? T("Wybierz audycję, aby poznać szczegóły.", "Choose a program to see its details.");
 
     public string ChannelSelectorAccessibleName => SelectedChannel is null
-        ? "Kanał programu telewizyjnego, nie wybrano"
-        : $"Kanał programu telewizyjnego, wybrano: {SelectedChannel.Name}, grupa: {SelectedChannel.Group}";
+        ? T("Kanał programu telewizyjnego, nie wybrano", "TV guide channel, none selected")
+        : T($"Kanał programu telewizyjnego, wybrano: {SelectedChannel.Name}, grupa: {SelectedChannel.Group}", $"TV guide channel, selected: {SelectedChannel.Name}, group: {SelectedChannel.Group}");
 
     public string DateSelectorAccessibleName => SelectedDate is null
-        ? "Data programu telewizyjnego, nie wpisano prawidłowej daty"
-        : $"Data programu telewizyjnego, wybrano: {SelectedDate.Value:dddd, d MMMM yyyy}";
+        ? T("Data programu telewizyjnego, nie wpisano prawidłowej daty", "TV guide date, no valid date entered")
+        : T($"Data programu telewizyjnego, wybrano: {SelectedDate.Value:dddd, d MMMM yyyy}", $"TV guide date, selected: {SelectedDate.Value:dddd, d MMMM yyyy}");
 
     public IAsyncRelayCommand LoadCommand => loadCommand;
 
@@ -183,7 +184,7 @@ public sealed class ProgramGuideViewModel : ObservableObject, IDisposable
 
         try
         {
-            StatusMessage = "Wczytywanie programu…";
+            StatusMessage = T("Wczytywanie programu…", "Loading TV guide…");
             var result = await loadPrograms(channelId, date, query, token);
             token.ThrowIfCancellationRequested();
 
@@ -194,17 +195,17 @@ public sealed class ProgramGuideViewModel : ObservableObject, IDisposable
             }
 
             SelectedProgram = Programs.FirstOrDefault(program => program.IsNow) ?? Programs.FirstOrDefault();
-            var context = $"{SelectedDate.Value:dddd, d MMMM yyyy}, kanał {SelectedChannel.Name}";
+            var context = T($"{SelectedDate.Value:dddd, d MMMM yyyy}, kanał {SelectedChannel.Name}", $"{SelectedDate.Value:dddd, d MMMM yyyy}, channel {SelectedChannel.Name}");
             StatusMessage = Programs.Count == 0
-                ? $"{context}: brak audycji."
-                : $"{context}: wczytano {Programs.Count} audycji.";
+                ? T($"{context}: brak audycji.", $"{context}: no programs.")
+                : T($"{context}: wczytano {Programs.Count} audycji.", $"{context}: loaded {Programs.Count} programs.");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
         catch (Exception)
         {
-            StatusMessage = "Nie udało się wczytać programu. Spróbuj ponownie lub odśwież dane EPG.";
+            StatusMessage = T("Nie udało się wczytać programu. Spróbuj ponownie lub odśwież dane EPG.", "Could not load the TV guide. Try again or refresh the EPG.");
         }
     }
 
@@ -212,17 +213,17 @@ public sealed class ProgramGuideViewModel : ObservableObject, IDisposable
     {
         try
         {
-            StatusMessage = "Odświeżanie programu…";
+            StatusMessage = T("Odświeżanie programu…", "Refreshing TV guide…");
             await refreshGuide(CancellationToken.None);
             await LoadAsync();
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = "Anulowano odświeżanie programu.";
+            StatusMessage = T("Anulowano odświeżanie programu.", "TV guide refresh canceled.");
         }
         catch (Exception)
         {
-            StatusMessage = "Nie udało się odświeżyć programu. Sprawdź źródło EPG i spróbuj ponownie.";
+            StatusMessage = T("Nie udało się odświeżyć programu. Sprawdź źródło EPG i spróbuj ponownie.", "Could not refresh the TV guide. Check the EPG source and try again.");
         }
     }
 
@@ -236,11 +237,11 @@ public sealed class ProgramGuideViewModel : ObservableObject, IDisposable
         try
         {
             await playChannel(SelectedChannel.Id, CancellationToken.None);
-            StatusMessage = $"Rozpoczęto odtwarzanie kanału {SelectedChannel.Name}.";
+            StatusMessage = T($"Rozpoczęto odtwarzanie kanału {SelectedChannel.Name}.", $"Started playing {SelectedChannel.Name}.");
         }
         catch (Exception)
         {
-            StatusMessage = $"Nie udało się odtworzyć kanału {SelectedChannel.Name}. Wróć do listy i spróbuj ponownie.";
+            StatusMessage = T($"Nie udało się odtworzyć kanału {SelectedChannel.Name}. Wróć do listy i spróbuj ponownie.", $"Could not play channel {SelectedChannel.Name}. Return to the list and try again.");
         }
     }
 
@@ -251,7 +252,7 @@ public sealed class ProgramGuideViewModel : ObservableObject, IDisposable
         SelectedProgram = Programs.FirstOrDefault(program => program.IsNow);
         if (SelectedProgram is null && SelectedChannel is not null)
         {
-            StatusMessage = $"Kanał {SelectedChannel.Name}: brak aktualnie emitowanej audycji.";
+            StatusMessage = T($"Kanał {SelectedChannel.Name}: brak aktualnie emitowanej audycji.", $"{SelectedChannel.Name}: no program is on air now.");
         }
     }
 
@@ -274,7 +275,7 @@ public sealed class ProgramGuideViewModel : ObservableObject, IDisposable
         }
 
         await scheduleRecording(SelectedChannel.Id, SelectedProgram);
-        StatusMessage = $"Otwarto planowanie nagrania audycji {SelectedProgram.Title}.";
+        StatusMessage = T($"Otwarto planowanie nagrania audycji {SelectedProgram.Title}.", $"Opened recording schedule for {SelectedProgram.Title}.");
     }
 
     private async Task ScheduleSelectedChannelAsync()
@@ -285,7 +286,7 @@ public sealed class ProgramGuideViewModel : ObservableObject, IDisposable
         }
 
         await scheduleRecording(SelectedChannel.Id, null);
-        StatusMessage = $"Otwarto planowanie nagrania kanału {SelectedChannel.Name}.";
+        StatusMessage = T($"Otwarto planowanie nagrania kanału {SelectedChannel.Name}.", $"Opened recording schedule for {SelectedChannel.Name}.");
     }
 
     private void NotifyDateCommandStates()

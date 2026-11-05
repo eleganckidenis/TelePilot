@@ -3,24 +3,25 @@
     x:DataType="vm:FavoritesManagerViewModel"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="using:TelePilot.App.Localization"
     xmlns:automation="using:Avalonia.Automation"
     xmlns:vm="using:TelePilot.App.ViewModels"
     Width="600" Height="500" MinWidth="420" MinHeight="320"
     ShowInTaskbar="False"
-    Title="Zarządzaj ulubionymi"
+    Title="{x:Static loc:ViewText.ManageFavorites}"
     WindowStartupLocation="CenterOwner"
-    automation:AutomationProperties.Name="Zarządzaj ulubionymi"
+    automation:AutomationProperties.Name="{x:Static loc:ViewText.ManageFavorites}"
     automation:AutomationProperties.AutomationId="favorites-manager-window">
   <Grid Margin="20" RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="12"
         KeyboardNavigation.TabNavigation="Cycle">
-    <TextBlock Classes="section-heading" Text="Zarządzaj ulubionymi"
+    <TextBlock Classes="section-heading" Text="{x:Static loc:ViewText.ManageFavorites}"
                automation:AutomationProperties.HeadingLevel="1" />
     <TextBlock Grid.Row="1" TextWrapping="Wrap"
-               Text="Zaznacz kanały do usunięcia. Strzałki zmieniają kanał, Spacja zaznacza lub odznacza. Przycisk Usuń zaznaczone zapisuje zmiany. Escape anuluje." />
+               Text="{x:Static loc:ViewText.SelectChannelsToRemoveUseThe}" />
     <ListBox x:Name="FavoritesList" Grid.Row="2" ItemsSource="{Binding Items}"
              SelectedIndex="0" KeyboardNavigation.TabNavigation="Once"
-             automation:AutomationProperties.Name="Ulubione kanały do usunięcia"
-             automation:AutomationProperties.HelpText="Strzałkami wybierz kanał. Spacją zaznacz lub odznacz pole wyboru."
+             automation:AutomationProperties.Name="{x:Static loc:ViewText.FavoriteChannelsToRemove}"
+             automation:AutomationProperties.HelpText="{x:Static loc:ViewText.UseTheArrowKeysToSelect5}"
              automation:AutomationProperties.AutomationId="favorites-manager-list">
       <ListBox.Styles>
         <Style Selector="ListBoxItem">
@@ -41,11 +42,11 @@
                automation:AutomationProperties.LiveSetting="Polite"
                automation:AutomationProperties.AutomationId="favorites-manager-status" />
     <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-      <Button x:Name="CancelButton" Content="Anuluj" Command="{Binding CancelCommand}"
-              automation:AutomationProperties.Name="Anuluj zarządzanie ulubionymi"
+      <Button x:Name="CancelButton" Content="{x:Static loc:ViewText.Cancel}" Command="{Binding CancelCommand}"
+              automation:AutomationProperties.Name="{x:Static loc:ViewText.CancelManagingFavorites}"
               automation:AutomationProperties.AutomationId="favorites-manager-cancel" />
-      <Button x:Name="RemoveButton" Content="Usuń zaznaczone" Command="{Binding RemoveSelectedCommand}"
-              automation:AutomationProperties.Name="Usuń zaznaczone kanały z ulubionych"
+      <Button x:Name="RemoveButton" Content="{x:Static loc:ViewText.RemoveSelected}" Command="{Binding RemoveSelectedCommand}"
+              automation:AutomationProperties.Name="{x:Static loc:ViewText.RemoveSelectedChannelsFromFavorites}"
               automation:AutomationProperties.AutomationId="favorites-manager-remove" />
     </StackPanel>
   </Grid>

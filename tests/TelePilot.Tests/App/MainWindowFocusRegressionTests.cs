@@ -196,8 +196,8 @@ public sealed class MainWindowFocusRegressionTests
 
         try
         {
-            AccessibleComboBox sourceSelector = Assert.IsType<AccessibleComboBox>(
-                window.FindControl<AccessibleComboBox>("SourceSelector"));
+            AccessibleSearchBox search = Assert.IsType<AccessibleSearchBox>(
+                window.FindControl<AccessibleSearchBox>("SearchBox"));
             ListBox channelList = Assert.IsType<ListBox>(window.FindControl<ListBox>("ChannelList"));
             Button playButton = Assert.IsType<Button>(window.FindControl<Button>("PlaySelectedChannelButton"));
             Button returnButton = Assert.IsType<Button>(window.FindControl<Button>("ReturnToChannelListButton"));
@@ -219,9 +219,9 @@ public sealed class MainWindowFocusRegressionTests
             PressTab(window);
             Assert.True(window.FindControl<TabControl>("SectionTabs")!.IsKeyboardFocusWithin);
             PressTab(window);
-            Assert.True(sourceSelector.IsKeyboardFocusWithin);
+            Assert.True(search.IsKeyboardFocusWithin);
 
-            Assert.True(sourceSelector.FocusSelector());
+            Assert.True(search.FocusEditor());
             PressTab(window, moveBackward: true);
             Assert.True(window.FindControl<TabControl>("SectionTabs")!.IsKeyboardFocusWithin);
             PressTab(window, moveBackward: true);
@@ -242,8 +242,8 @@ public sealed class MainWindowFocusRegressionTests
         {
             Menu mainMenu = Assert.IsType<Menu>(window.FindControl<Menu>("MainMenu"));
             MenuItem fileMenu = Assert.IsType<MenuItem>(mainMenu.Items[0]);
-            AccessibleComboBox sourceSelector = Assert.IsType<AccessibleComboBox>(
-                window.FindControl<AccessibleComboBox>("SourceSelector"));
+            AccessibleSearchBox search = Assert.IsType<AccessibleSearchBox>(
+                window.FindControl<AccessibleSearchBox>("SearchBox"));
             Button playButton = Assert.IsType<Button>(window.FindControl<Button>("PlaySelectedChannelButton"));
             Button returnButton = Assert.IsType<Button>(window.FindControl<Button>("ReturnToChannelListButton"));
             playButton.Command = new RelayCommand(static () => { });
@@ -271,7 +271,7 @@ public sealed class MainWindowFocusRegressionTests
             PressTab(window);
             Assert.True(window.FindControl<TabControl>("SectionTabs")!.IsKeyboardFocusWithin);
             PressTab(window);
-            Assert.True(sourceSelector.IsKeyboardFocusWithin);
+            Assert.True(search.IsKeyboardFocusWithin);
         }
         finally
         {
@@ -340,8 +340,6 @@ public sealed class MainWindowFocusRegressionTests
 
         try
         {
-            AccessibleComboBox sourceSelector = Assert.IsType<AccessibleComboBox>(
-                window.FindControl<AccessibleComboBox>("SourceSelector"));
             ListBox channelList = Assert.IsType<ListBox>(window.FindControl<ListBox>("ChannelList"));
             Button pauseButton = Assert.IsType<Button>(window.FindControl<Button>("PauseResumeButton"));
             Slider volumeSlider = Assert.IsType<Slider>(window.FindControl<Slider>("VolumeSlider"));
@@ -349,14 +347,10 @@ public sealed class MainWindowFocusRegressionTests
             pauseButton.Command = new RelayCommand(static () => { });
             returnButton.Command = new RelayCommand(static () => { });
 
-            Border channelListToolbar = Assert.Single(
-                sourceSelector.GetVisualAncestors().OfType<Border>(),
-                border => border.Parent == window.Content);
             Grid channelListView = Assert.IsType<Grid>(channelList.Parent);
             Grid playerView = Assert.Single(
                 returnButton.GetVisualAncestors().OfType<Grid>(),
                 grid => grid.Children.OfType<WrapPanel>().Any(panel => panel == returnButton.Parent));
-            channelListToolbar.IsVisible = false;
             channelListView.IsVisible = true;
             channelListView.IsEnabled = false;
             window.FindControl<TabControl>("SectionTabs")!.IsVisible = false;
@@ -388,8 +382,8 @@ public sealed class MainWindowFocusRegressionTests
 
         try
         {
-            AccessibleComboBox sourceSelector = Assert.IsType<AccessibleComboBox>(
-                window.FindControl<AccessibleComboBox>("SourceSelector"));
+            AccessibleSearchBox search = Assert.IsType<AccessibleSearchBox>(
+                window.FindControl<AccessibleSearchBox>("SearchBox"));
             ListBox channelList = Assert.IsType<ListBox>(window.FindControl<ListBox>("ChannelList"));
             Button playButton = Assert.IsType<Button>(window.FindControl<Button>("PlaySelectedChannelButton"));
             Button pauseButton = Assert.IsType<Button>(window.FindControl<Button>("PauseResumeButton"));
@@ -399,14 +393,10 @@ public sealed class MainWindowFocusRegressionTests
             pauseButton.Command = new RelayCommand(static () => { });
             returnButton.Command = new RelayCommand(static () => { });
 
-            Border channelListToolbar = Assert.Single(
-                sourceSelector.GetVisualAncestors().OfType<Border>(),
-                border => border.Parent == window.Content);
             Grid channelListView = Assert.IsType<Grid>(channelList.Parent);
             Grid playerView = Assert.Single(
                 returnButton.GetVisualAncestors().OfType<Grid>(),
                 grid => grid.Children.OfType<WrapPanel>().Any(panel => panel == returnButton.Parent));
-            channelListToolbar.IsVisible = true;
             channelListView.IsVisible = true;
             playerView.IsVisible = true;
 
@@ -426,7 +416,7 @@ public sealed class MainWindowFocusRegressionTests
             PressTab(window);
             Assert.True(window.FindControl<TabControl>("SectionTabs")!.IsKeyboardFocusWithin);
             PressTab(window);
-            Assert.True(sourceSelector.IsKeyboardFocusWithin);
+            Assert.True(search.IsKeyboardFocusWithin);
 
             PressTab(window, moveBackward: true);
             Assert.True(window.FindControl<TabControl>("SectionTabs")!.IsKeyboardFocusWithin);
@@ -702,8 +692,6 @@ public sealed class MainWindowFocusRegressionTests
 
         try
         {
-            AccessibleComboBox sourceSelector = Assert.IsType<AccessibleComboBox>(
-                window.FindControl<AccessibleComboBox>("SourceSelector"));
             ListBox channelList = Assert.IsType<ListBox>(window.FindControl<ListBox>("ChannelList"));
             Grid channelListView = Assert.IsType<Grid>(channelList.Parent);
             Grid playerView = Assert.IsType<Grid>(window.FindControl<Grid>("PlayerView"));
@@ -713,9 +701,6 @@ public sealed class MainWindowFocusRegressionTests
                 button => AutomationProperties.GetAutomationId(button) == "stop-playback");
             pauseButton.Command = new RelayCommand(static () => { });
             stopButton.Command = new RelayCommand(static () => { });
-            Border channelListToolbar = Assert.Single(
-                sourceSelector.GetVisualAncestors().OfType<Border>(),
-                border => border.Parent == window.Content);
             Menu mainMenu = Assert.IsType<Menu>(window.FindControl<Menu>("MainMenu"));
             MenuItem staleNativeFallback = Assert.IsType<MenuItem>(mainMenu.Items[3]);
             ChannelListItemViewModel[] channels =
@@ -732,7 +717,6 @@ public sealed class MainWindowFocusRegressionTests
             window.UpdateLayout();
 
             // Pierwsze uruchomienie kanału.
-            channelListToolbar.IsVisible = false;
             channelListView.IsVisible = true;
             channelListView.IsEnabled = false;
             playerView.IsVisible = true;
@@ -742,7 +726,6 @@ public sealed class MainWindowFocusRegressionTests
 
             // Zatrzymanie i powrót do listy na drugim kanale.
             playerView.IsVisible = false;
-            channelListToolbar.IsVisible = true;
             channelListView.IsEnabled = true;
             channelList.SelectedItem = channels[1];
             InvokeFocusRequest(window, new FocusRequest(FocusTarget.ChannelList, channels[1].Id));
@@ -753,7 +736,6 @@ public sealed class MainWindowFocusRegressionTests
 
             // Drugie uruchomienie po Enter. Zamknięty element menu symuluje
             // logiczny fallback pozostawiony przez natywne okno Direct3D.
-            channelListToolbar.IsVisible = false;
             channelListView.IsEnabled = false;
             playerView.IsVisible = true;
             Assert.True(staleNativeFallback.Focus());

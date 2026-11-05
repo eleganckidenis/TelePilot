@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Controls;
 
@@ -371,7 +372,7 @@ internal sealed class Win32ComboBoxHost : NativeControlHost
                 int result = unchecked((int)SendMessageW(windowHandle, CbAddString, 0, item));
                 if (result is CbError or CbErrorSpace)
                 {
-                    throw new Win32Exception("Nie udało się dodać elementu do natywnej listy rozwijanej.");
+                    throw new Win32Exception(T("Nie udało się dodać elementu do natywnej listy rozwijanej.", "Could not add an item to the native combo box."));
                 }
             }
 

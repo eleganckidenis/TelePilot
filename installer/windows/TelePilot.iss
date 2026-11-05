@@ -2,7 +2,7 @@
 #define AppExeName "TelePilot.exe"
 
 #ifndef AppVersion
-  #define AppVersion "1.2.0"
+  #define AppVersion "2.0.0"
 #endif
 
 #ifndef Runtime
@@ -10,11 +10,11 @@
 #endif
 
 #ifndef PublishDir
-  #define PublishDir "..\..\artifacts\release\1.2.0\win-x64\publish"
+  #define PublishDir "..\..\artifacts\release\2.0.0\win-x64\publish"
 #endif
 
 #ifndef OutputDir
-  #define OutputDir "..\..\artifacts\release\1.2.0\win-x64"
+  #define OutputDir "..\..\artifacts\release\2.0.0\win-x64"
 #endif
 
 #if Runtime == "win-x64"
@@ -52,19 +52,24 @@ RestartApplications=no
 SetupLogging=yes
 UsePreviousAppDir=yes
 UsePreviousTasks=yes
+UsePreviousLanguage=no
+ShowLanguageDialog=yes
+LanguageDetectionMethod=uilanguage
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExeName}
 VersionInfoVersion={#AppVersion}
 VersionInfoCompany=TelePilot
-VersionInfoDescription=Instalator TelePilot
+VersionInfoDescription=TelePilot Setup
 VersionInfoProductName=TelePilot
 VersionInfoProductVersion={#AppVersion}
 
 [Languages]
-Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
 
 [CustomMessages]
+LaunchTelePilot=Launch TelePilot
+polish.LaunchTelePilot=Uruchom TelePilot
 LegacyPerUserInstallDetected=An older per-user development build of TelePilot was detected. Uninstall that build from Windows Settings > Apps > Installed apps, then run this installer again.%n%nYour settings and playlist sources will remain preserved.
 polish.LegacyPerUserInstallDetected=Wykryto starszą wersję testową TelePilot zainstalowaną w profilu użytkownika. Odinstaluj ją w Ustawieniach Windows > Aplikacje > Zainstalowane aplikacje, a następnie uruchom ten instalator ponownie.%n%nUstawienia i źródła playlist pozostaną zachowane.
 
@@ -80,8 +85,11 @@ Source: "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0
 Name: "{group}\TelePilot"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
 Name: "{autodesktop}\TelePilot"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
+[UninstallDelete]
+Type: files; Name: "{app}\installer-language.txt"
+
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "Uruchom TelePilot"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchTelePilot}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Code]
 const
@@ -102,9 +110,9 @@ function ShouldInstallFfmpeg(): Boolean;
 begin
   Result := not FfmpegExists();
   if Result then
-    Log('FFmpeg nie został znaleziony; instalator pobierze zweryfikowaną paczkę.')
+    Log('FFmpeg was not found; Setup will download the verified archive.')
   else
-    Log('FFmpeg jest już dostępny; pobieranie pominięte.');
+    Log('FFmpeg is already available; skipping the download.');
 end;
 
 function LegacyInstallExistsInLoadedHives(const RootKey: Integer): Boolean;
@@ -142,4 +150,19 @@ begin
   Result := not LegacyPerUserInstallExists();
   if not Result then
     MsgBox(ExpandConstant('{cm:LegacyPerUserInstallDetected}'), mbError, MB_OK);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  LanguageCode: AnsiString;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    if ActiveLanguage = 'polish' then
+      LanguageCode := 'pl'
+    else
+      LanguageCode := 'en';
+    if not SaveStringToFile(ExpandConstant('{app}\installer-language.txt'), LanguageCode, False) then
+      Log('Could not save the installer language for first-run setup.');
+  end;
 end;

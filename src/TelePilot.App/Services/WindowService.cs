@@ -3,6 +3,7 @@ using Avalonia.Platform.Storage;
 using TelePilot.App.Models;
 using TelePilot.App.ViewModels;
 using TelePilot.App.Views;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Services;
 
@@ -15,17 +16,32 @@ public sealed class WindowService : IWindowService
         owner = window ?? throw new ArgumentNullException(nameof(window));
     }
 
+    public async Task ShowPlaylistManagerAsync(MainWindowViewModel viewModel, PlaylistManagerAction action)
+    {
+        var parent = GetOwner();
+        var window = new PlaylistManagerWindow { DataContext = viewModel, InitialAction = action };
+        owner = window;
+        try
+        {
+            await window.ShowDialog(parent);
+        }
+        finally
+        {
+            owner = parent;
+        }
+    }
+
     public async Task<IReadOnlyList<LocalPlaylistFileInput>> PickPlaylistFilesAsync()
     {
         var activeOwner = GetOwner();
         var files = await activeOwner.StorageProvider.OpenFilePickerAsync(
             new FilePickerOpenOptions
             {
-                Title = "Dodaj playlistę z pliku",
+                Title = T("Dodaj playlistę z pliku", "Add playlist from file"),
                 AllowMultiple = true,
                 FileTypeFilter =
                 [
-                    new FilePickerFileType("Playlisty IPTV")
+                    new FilePickerFileType(T("Playlisty IPTV", "IPTV playlists"))
                     {
                         Patterns = ["*.m3u", "*.m3u8"],
                         MimeTypes = ["audio/x-mpegurl", "application/vnd.apple.mpegurl"],
@@ -54,12 +70,15 @@ public sealed class WindowService : IWindowService
         string title,
         string message,
         string confirmButtonText,
-        string cancelButtonText = "Anuluj")
+        string cancelButtonText = "")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
         ArgumentException.ThrowIfNullOrWhiteSpace(confirmButtonText);
-        ArgumentException.ThrowIfNullOrWhiteSpace(cancelButtonText);
+        if (string.IsNullOrWhiteSpace(cancelButtonText))
+        {
+            cancelButtonText = T("Anuluj", "Cancel");
+        }
 
         var dialog = new ConfirmationDialog
         {
@@ -182,6 +201,6 @@ public sealed class WindowService : IWindowService
 
     private Window GetOwner()
     {
-        return owner ?? throw new InvalidOperationException("Główne okno aplikacji nie zostało jeszcze zainicjowane.");
+        return owner ?? throw new InvalidOperationException(T("Główne okno aplikacji nie zostało jeszcze zainicjowane.", "The main window has not been initialized yet."));
     }
 }

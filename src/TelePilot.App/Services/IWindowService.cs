@@ -3,8 +3,17 @@ using TelePilot.App.ViewModels;
 
 namespace TelePilot.App.Services;
 
+public enum PlaylistManagerAction
+{
+    None,
+    AddFile,
+    AddUrl,
+}
+
 public interface IWindowService
 {
+    Task ShowPlaylistManagerAsync(MainWindowViewModel viewModel, PlaylistManagerAction action) => Task.CompletedTask;
+
     Task<IReadOnlyList<LocalPlaylistFileInput>> PickPlaylistFilesAsync();
 
     Task<PlaylistSourceInput?> PromptForUrlSourceAsync();
@@ -13,7 +22,7 @@ public interface IWindowService
         string title,
         string message,
         string confirmButtonText,
-        string cancelButtonText = "Anuluj");
+        string cancelButtonText = "");
 
     Task<int?> SelectTrackAsync(TrackSelectionViewModel viewModel);
 

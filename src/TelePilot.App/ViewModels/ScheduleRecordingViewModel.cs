@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TelePilot.App.Models;
 using TelePilot.Recording;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.ViewModels;
 
@@ -26,13 +27,13 @@ public sealed class ScheduleRecordingViewModel : ObservableObject
         Channels = channels?.ToArray() ?? throw new ArgumentNullException(nameof(channels));
         if (Channels.Count == 0)
         {
-            throw new ArgumentException("Do zaplanowania nagrania potrzebny jest co najmniej jeden kanał.", nameof(channels));
+            throw new ArgumentException(T("Do zaplanowania nagrania potrzebny jest co najmniej jeden kanał.", "At least one channel is needed to schedule a recording."), nameof(channels));
         }
 
         Modes =
         [
-            new RecordingModeOption(RecordingMode.StreamCopy, "Wideo w oryginalnym formacie TS"),
-            new RecordingModeOption(RecordingMode.AudioOnly, "Tylko audio"),
+            new RecordingModeOption(RecordingMode.StreamCopy, T("Wideo w oryginalnym formacie TS", "Video in the original TS format")),
+            new RecordingModeOption(RecordingMode.AudioOnly, T("Tylko audio", "Audio only")),
         ];
         selectedChannel = Channels.FirstOrDefault(channel => channel.Id == initialChannelId) ?? Channels[0];
         var localStart = start.ToLocalTime();
@@ -55,7 +56,7 @@ public sealed class ScheduleRecordingViewModel : ObservableObject
 
     public string? ProgrammeTitle { get; }
 
-    public string ProgrammeLabel => ProgrammeTitle is null ? "Nagranie ręczne" : $"Audycja: {ProgrammeTitle}";
+    public string ProgrammeLabel => ProgrammeTitle is null ? T("Nagranie ręczne", "Manual recording") : $"Audycja: {ProgrammeTitle}";
 
     public ChannelListItemViewModel SelectedChannel
     {
@@ -107,25 +108,25 @@ public sealed class ScheduleRecordingViewModel : ObservableObject
     {
         if (!TryCreateLocalDateTime(StartDate, StartTime, out var startValue))
         {
-            ValidationMessage = "Wpisz prawidłową datę i godzinę rozpoczęcia w formacie GG:mm.";
+            ValidationMessage = T("Wpisz prawidłową datę i godzinę rozpoczęcia w formacie GG:mm.", "Enter a valid start date and time in HH:mm format.");
             return;
         }
 
         if (!TryCreateLocalDateTime(EndDate, EndTime, out var endValue))
         {
-            ValidationMessage = "Wpisz prawidłową datę i godzinę zakończenia w formacie GG:mm.";
+            ValidationMessage = T("Wpisz prawidłową datę i godzinę zakończenia w formacie GG:mm.", "Enter a valid end date and time in HH:mm format.");
             return;
         }
 
         if (startValue <= DateTimeOffset.Now.AddSeconds(15))
         {
-            ValidationMessage = "Nagranie musi rozpocząć się co najmniej 15 sekund w przyszłości.";
+            ValidationMessage = T("Nagranie musi rozpocząć się co najmniej 15 sekund w przyszłości.", "The recording must start at least 15 seconds in the future.");
             return;
         }
 
         if (endValue <= startValue)
         {
-            ValidationMessage = "Zakończenie nagrania musi przypadać po jego rozpoczęciu.";
+            ValidationMessage = T("Zakończenie nagrania musi przypadać po jego rozpoczęciu.", "The recording must end after it starts.");
             return;
         }
 

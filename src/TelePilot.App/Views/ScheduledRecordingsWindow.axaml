@@ -3,26 +3,27 @@
     x:DataType="vm:ScheduledRecordingsViewModel"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:loc="using:TelePilot.App.Localization"
     xmlns:automation="using:Avalonia.Automation"
     xmlns:vm="using:TelePilot.App.ViewModels"
     Width="700"
     Height="500"
     MinWidth="560"
     MinHeight="380"
-    Title="Zaplanowane nagrania — TelePilot"
+    Title="{x:Static loc:ViewText.ScheduledRecordingsTelePilot}"
     WindowStartupLocation="CenterOwner"
-    automation:AutomationProperties.Name="Zaplanowane nagrania"
+    automation:AutomationProperties.Name="{x:Static loc:ViewText.ScheduledRecordings2}"
     automation:AutomationProperties.AutomationId="scheduled-recordings-window">
   <Grid Margin="20" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="12" KeyboardNavigation.TabNavigation="Cycle">
-    <TextBlock Classes="section-heading" Text="Zaplanowane nagrania" automation:AutomationProperties.HeadingLevel="1" />
+    <TextBlock Classes="section-heading" Text="{x:Static loc:ViewText.ScheduledRecordings2}" automation:AutomationProperties.HeadingLevel="1" />
     <ListBox
         x:Name="RecordingList"
         Grid.Row="1"
         ItemsSource="{Binding Recordings}"
         SelectedItem="{Binding SelectedRecording}"
         ContainerPrepared="OnContainerPrepared"
-        automation:AutomationProperties.Name="Lista zaplanowanych nagrań"
-        automation:AutomationProperties.HelpText="Strzałkami wybierz nagranie. Przycisk Anuluj usuwa zadanie przed rozpoczęciem."
+        automation:AutomationProperties.Name="{x:Static loc:ViewText.ScheduledRecordingsList}"
+        automation:AutomationProperties.HelpText="{x:Static loc:ViewText.UseTheArrowKeysToSelect6}"
         automation:AutomationProperties.AutomationId="scheduled-recordings-list">
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="vm:ScheduledRecordingItemViewModel">
@@ -34,21 +35,21 @@
         Grid.Row="2"
         Text="{Binding StatusMessage}"
         TextWrapping="Wrap"
-        automation:AutomationProperties.Name="Stan zaplanowanych nagrań"
+        automation:AutomationProperties.Name="{x:Static loc:ViewText.ScheduledRecordingsStatus}"
         automation:AutomationProperties.LiveSetting="Polite"
         automation:AutomationProperties.AutomationId="scheduled-recordings-status" />
     <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
       <Button
-          Content="Anuluj wybrane zadanie"
+          Content="{x:Static loc:ViewText.CancelSelectedTask}"
           Command="{Binding CancelSelectedCommand}"
-          automation:AutomationProperties.Name="Anuluj wybrane zaplanowane nagranie"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.CancelSelectedScheduledRecording}"
           automation:AutomationProperties.AutomationId="scheduled-recording-cancel" />
       <Button
           x:Name="CloseButton"
           Classes="primary-action"
-          Content="Zamknij"
+          Content="{x:Static loc:ViewText.Close}"
           Command="{Binding CloseCommand}"
-          automation:AutomationProperties.Name="Zamknij listę zaplanowanych nagrań"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.CloseScheduledRecordings}"
           automation:AutomationProperties.AutomationId="scheduled-recordings-close" />
     </StackPanel>
   </Grid>

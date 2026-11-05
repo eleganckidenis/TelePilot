@@ -1,4 +1,5 @@
 using TelePilot.Core.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Core.Contracts;
 
@@ -30,7 +31,7 @@ public interface IPlaybackService : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(PlaybackCommandResult.Unsupported("Ten odtwarzacz nie obsługuje przewijania."));
+        return Task.FromResult(PlaybackCommandResult.Unsupported(T("Ten odtwarzacz nie obsługuje przewijania.", "This player does not support seeking.")));
     }
 
     Task SetVolumeAsync(

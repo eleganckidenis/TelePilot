@@ -13,12 +13,13 @@ using TelePilot.Core.Models;
 using TelePilot.Epg.Models;
 using TelePilot.Epg.Services;
 using TelePilot.Recording;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.ViewModels;
 
 public sealed class MainWindowViewModel : ObservableObject, IDisposable
 {
-    public const string AllGroupsLabel = "Wszystkie grupy";
+    public static string AllGroupsLabel => T("Wszystkie grupy", "All groups");
 
     private static readonly TimeSpan CurrentProgramRefreshInterval = TimeSpan.FromMinutes(1);
 
@@ -49,9 +50,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private string searchText = string.Empty;
     private string selectedGroup = AllGroupsLabel;
     private ChannelSortOption selectedSort;
-    private string currentChannelName = "Nic nie jest odtwarzane";
-    private string currentProgramName = "Brak danych o bieżącej audycji";
-    private string playbackStateText = "Zatrzymano";
+    private string currentChannelName = T("Nic nie jest odtwarzane", "Nothing is playing");
+    private string currentProgramName = T("Brak danych o bieżącej audycji", "No data for the current program");
+    private string playbackStateText = T("Zatrzymano", "Stopped");
     private int volume = 100;
     private bool isMuted;
     private bool isLoading;
@@ -65,7 +66,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private int archiveSeekSessionGeneration;
     private readonly SemaphoreSlim archiveSeekGate = new(1, 1);
     private bool isRecording;
-    private string recordingStatusText = "Nagrywanie nieaktywne";
+    private string recordingStatusText = T("Nagrywanie nieaktywne", "No active recording");
     private int playerViewActivationGeneration;
     private string? lastSelectedChannelId;
     private string? playbackChannelItemId;
@@ -104,13 +105,17 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         FavoriteChannels = [];
         SortOptions =
         [
-            new ChannelSortOption(ChannelSortMode.SourceOrder, "Kolejność z playlisty"),
-            new ChannelSortOption(ChannelSortMode.Name, "Nazwa kanału"),
-            new ChannelSortOption(ChannelSortMode.GroupThenName, "Grupa, potem nazwa"),
+            new ChannelSortOption(ChannelSortMode.SourceOrder, T("Kolejność z playlisty", "Playlist order")),
+            new ChannelSortOption(ChannelSortMode.Name, T("Nazwa kanału", "Channel name")),
+            new ChannelSortOption(ChannelSortMode.GroupThenName, T("Grupa, potem nazwa", "Group, then name")),
         ];
         selectedSort = SortOptions[0];
 
         InitializeCommand = new AsyncRelayCommand(InitializeAsync);
+        OpenPlaylistManagerCommand = new AsyncRelayCommand(() => ShowPlaylistManagerAsync(PlaylistManagerAction.None));
+        OpenPlaylistManagerForFileCommand = new AsyncRelayCommand(() => ShowPlaylistManagerAsync(PlaylistManagerAction.AddFile));
+        OpenPlaylistManagerForUrlCommand = new AsyncRelayCommand(() => ShowPlaylistManagerAsync(PlaylistManagerAction.AddUrl));
+        ActivateSourceCommand = new AsyncRelayCommand(ActivateSelectedSourceAsync, () => SelectedSource is not null && !IsLoading);
         AddFileSourceCommand = new AsyncRelayCommand(AddFileSourcesAsync);
         AddUrlSourceCommand = new AsyncRelayCommand(AddUrlSourceAsync);
         RefreshSourceCommand = new AsyncRelayCommand(RefreshSelectedSourceAsync, () => SelectedSource is not null && !IsLoading);
@@ -132,7 +137,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         ToggleChannelListCommand = new RelayCommand(ToggleChannelList);
         OpenProgramGuideCommand = new AsyncRelayCommand(OpenProgramGuideAsync);
         OpenKeyboardShortcutsCommand = new AsyncRelayCommand(windowService.ShowKeyboardShortcutsAsync);
-        OpenSettingsCommand = new AsyncRelayCommand(OpenSettingsAsync);
+        OpenSettingsCommand = new AsyncRelayCommand(() => OpenSettingsAsync());
+        OpenArchiveSettingsCommand = new AsyncRelayCommand(() => OpenSettingsAsync(focusArchive: true), () => SelectedSource is not null && !IsLoading);
         ToggleFavoriteCommand = new AsyncRelayCommand(ToggleSelectedFavoriteAsync, () => SelectedChannel is not null);
         AddCurrentToFavoritesCommand = new AsyncRelayCommand(AddCurrentChannelToFavoritesAsync);
         ToggleFavoritesFilterCommand = new RelayCommand(ToggleFavoritesFilter);
@@ -213,25 +219,25 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public bool IsArchiveViewVisible => IsArchiveSection && IsChannelListViewVisible;
 
-    public bool IsPlaylistManagementVisible => SelectedSectionIndex == 0 && IsChannelListViewVisible;
+    public bool IsChannelGroupFilterVisible => SelectedSectionIndex == 0 && IsChannelListViewVisible;
 
-    public string SearchAccessibleName => IsFavoritesSection ? "Szukaj ulubionych" : "Szukaj kanałów";
+    public string SearchAccessibleName => IsFavoritesSection ? "Szukaj ulubionych" : T("Szukaj kanałów", "Search channels");
 
     public string SearchLabel => "_" + SearchAccessibleName;
 
     public string SearchHelpText => IsFavoritesSection
-        ? "Wpisuj nazwę, aby filtrować ulubione kanały ze wszystkich źródeł."
-        : "Wpisuj nazwę, grupę lub identyfikator, aby filtrować kanały.";
+        ? T("Wpisuj nazwę, aby filtrować ulubione kanały ze wszystkich źródeł.", "Type a name to filter favorite channels from all sources.")
+        : T("Wpisuj nazwę, grupę lub identyfikator, aby filtrować kanały.", "Type a name, group or ID to filter channels.");
 
-    public string SearchWatermark => IsFavoritesSection ? "Nazwa ulubionego kanału" : "Nazwa, grupa lub identyfikator";
+    public string SearchWatermark => IsFavoritesSection ? T("Nazwa ulubionego kanału", "Favorite channel name") : "Nazwa, grupa lub identyfikator";
 
     public bool IsChannelsViewEnabled => !IsArchiveSection && IsChannelListViewVisible;
 
     public bool IsArchivePlayback => archivePlaybackProgramme is not null;
 
-    public string PlaybackHeading => IsArchivePlayback ? "Odtwarzanie archiwum" : "Odtwarzanie na żywo";
+    public string PlaybackHeading => IsArchivePlayback ? "Odtwarzanie archiwum" : T("Odtwarzanie na żywo", "Live playback");
 
-    public string ReturnToListText => IsArchiveSection ? "Przejdź do archiwum" : "Przejdź do listy kanałów";
+    public string ReturnToListText => IsArchiveSection ? T("Przejdź do archiwum", "Go to archive") : T("Przejdź do listy kanałów", "Go to channel list");
 
     public PlaylistSourceItemViewModel? SelectedSource
     {
@@ -240,7 +246,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         {
             if (SetProperty(ref selectedSource, value))
             {
-                OnPropertyChanged(nameof(SourceSelectorAccessibleName));
                 RefreshCommandStates();
             }
         }
@@ -414,34 +419,49 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public int PlayerColumnSpan => IsChannelListViewVisible ? 1 : 2;
 
-    public string SourceSelectorAccessibleName => SelectedSource is null
-        ? "Źródło playlisty, nie wybrano"
-        : $"Źródło playlisty, wybrano: {SelectedSource.AccessibleName}";
+    public string ActivePlaylistName
+    {
+        get
+        {
+            var source = Sources.FirstOrDefault(item => item.Source.Id == loadedSourceId);
+            return source is null
+                ? T("Nie wczytano playlisty.", "No playlist loaded.")
+                : T($"Aktywna playlista: {source.Name}", $"Active playlist: {source.Name}");
+        }
+    }
 
-    public string GroupSelectorAccessibleName => $"Grupa kanałów, wybrano: {SelectedGroup}";
+    public string GroupSelectorAccessibleName => T($"Grupa kanałów, wybrano: {SelectedGroup}", $"Channel group, selected: {SelectedGroup}");
 
     public string FavoritesButtonAccessibleName => IsFavoritesOnly
-        ? "Ulubione, pokazano tylko ulubione kanały; naciśnij, aby pokazać wszystkie"
-        : "Ulubione, naciśnij, aby pokazać tylko ulubione kanały";
+        ? T("Ulubione, pokazano tylko ulubione kanały; naciśnij, aby pokazać wszystkie", "Favorites, showing favorite channels only; press to show all channels")
+        : T("Ulubione, naciśnij, aby pokazać tylko ulubione kanały", "Favorites, press to show favorite channels only");
 
     public string SelectedFavoriteMenuText => SelectedChannel?.IsFavorite == true
-        ? "Usuń z ulubionych"
-        : "Dodaj do ulubionych";
+        ? T("Usuń z ulubionych", "Remove from favorites")
+        : T("Dodaj do ulubionych", "Add to favorites");
 
-    public string RecordingButtonText => IsRecording ? "Nagrywanie — zatrzymaj lub wybierz opcję…" : "Nagrywanie…";
+    public string RecordingButtonText => IsRecording ? T("Nagrywanie — zatrzymaj lub wybierz opcję…", "Recording — stop or choose an option…") : "Nagrywanie…";
 
-    public string VolumeText => IsMuted ? $"Głośność {Volume} procent, wyciszona" : $"Głośność {Volume} procent";
+    public string VolumeText => IsMuted ? T($"Głośność {Volume} procent, wyciszona", $"Volume {Volume} percent, muted") : T($"Głośność {Volume} procent", $"Volume {Volume} percent");
 
-    public string MuteButtonText => IsMuted ? "Włącz dźwięk" : "Wycisz";
+    public string MuteButtonText => IsMuted ? T("Włącz dźwięk", "Unmute") : "Wycisz";
 
     public string ChannelCountText => Channels.Count switch
     {
-        0 => "Brak kanałów",
-        1 => "1 kanał",
-        _ => $"{Channels.Count} kanałów",
+        0 => T("Brak kanałów", "No channels"),
+        1 => T("1 kanał", "1 channel"),
+        _ => T($"{Channels.Count} kanałów", $"{Channels.Count} channels"),
     };
 
     public IAsyncRelayCommand InitializeCommand { get; }
+
+    public IAsyncRelayCommand OpenPlaylistManagerCommand { get; }
+
+    public IAsyncRelayCommand OpenPlaylistManagerForFileCommand { get; }
+
+    public IAsyncRelayCommand OpenPlaylistManagerForUrlCommand { get; }
+
+    public IAsyncRelayCommand ActivateSourceCommand { get; }
 
     public IAsyncRelayCommand AddFileSourceCommand { get; }
 
@@ -487,6 +507,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public IAsyncRelayCommand OpenSettingsCommand { get; }
 
+    public IAsyncRelayCommand OpenArchiveSettingsCommand { get; }
+
     public IAsyncRelayCommand ToggleFavoriteCommand { get; }
 
     public IAsyncRelayCommand AddCurrentToFavoritesCommand { get; }
@@ -519,10 +541,10 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         var confirmed = await windowService.ShowConfirmationAsync(
-            "Nagrywanie trwa",
-            "Zamknięcie TelePilot zatrzyma bieżące nagrywanie i zapisze dotychczasowy materiał. Czy chcesz kontynuować?",
-            "Zatrzymaj nagrywanie i zamknij",
-            "Pozostaw program otwarty");
+            T("Nagrywanie trwa", "Recording in progress"),
+            T("Zamknięcie TelePilot zatrzyma bieżące nagrywanie i zapisze dotychczasowy materiał. Czy chcesz kontynuować?", "Closing TelePilot will stop and save the current recording. Do you want to continue?"),
+            T("Zatrzymaj nagrywanie i zamknij", "Stop recording and exit"),
+            T("Pozostaw program otwarty", "Keep TelePilot open"));
         if (!confirmed)
         {
             return false;
@@ -535,7 +557,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się zakończyć nagrywania", exception.Message);
+            await ReportFailureAsync(T("Nie udało się zakończyć nagrywania", "Could not finish recording"), exception.Message);
             return false;
         }
     }
@@ -559,7 +581,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             SelectedSource = Sources.FirstOrDefault();
             if (SelectedSource is null)
             {
-                accessibleStatus.ReportStatus("Dodaj playlistę z pliku lub adresu URL, aby wyświetlić kanały.");
+                accessibleStatus.ReportStatus(T("Dodaj playlistę z pliku lub adresu URL, aby wyświetlić kanały.", "Add a playlist from a file or URL to show channels."));
                 return;
             }
 
@@ -567,7 +589,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się uruchomić aplikacji", exception.Message);
+            await ReportFailureAsync(T("Nie udało się uruchomić aplikacji", "Could not start the application"), exception.Message);
         }
     }
 
@@ -607,8 +629,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         if (sourceItem is null)
         {
             await windowService.ShowMessageAsync(
-                "Ulubiony kanał niedostępny",
-                "Źródło tego ulubionego kanału nie jest już dostępne.");
+                T("Ulubiony kanał niedostępny", "Favorite channel unavailable"),
+                T("Źródło tego ulubionego kanału nie jest już dostępne.", "The source for this favorite channel is no longer available."));
             return;
         }
 
@@ -623,8 +645,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             || !channelItemsById.TryGetValue(channelIdText, out var channelItem))
         {
             await windowService.ShowMessageAsync(
-                "Ulubiony kanał niedostępny",
-                "Kanał nie występuje już w wybranym źródle. Możesz usunąć go z ulubionych.");
+                T("Ulubiony kanał niedostępny", "Favorite channel unavailable"),
+                T("Kanał nie występuje już w wybranym źródle. Możesz usunąć go z ulubionych.", "This channel is no longer in the selected source. You can remove it from favorites."));
             return;
         }
 
@@ -633,10 +655,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         await PlayChannelAsync(channelItem, channel, requestFocus: true);
     }
 
-    private async Task OpenSettingsAsync()
+    private async Task OpenSettingsAsync(bool focusArchive = false)
     {
         var result = await windowService.ShowSettingsAsync(
-            new SettingsWindowViewModel(preferencesService.Current, Sources.ToArray(), SelectedSource?.Source.Id.Value));
+            new SettingsWindowViewModel(preferencesService.Current, Sources.ToArray(), SelectedSource?.Source.Id.Value)
+            { FocusArchiveOnOpen = focusArchive });
         if (result is null)
         {
             return;
@@ -652,7 +675,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             SelectedSort = SortOptions.First(option => option.Mode == preferencesService.Current.ChannelSortMode);
             ReloadFavoriteChannels();
             ApplyChannelFilter();
-            accessibleStatus.ReportStatus("Zapisano ustawienia.");
+            accessibleStatus.ReportStatus(T("Zapisano ustawienia.", "Settings saved."));
             if (!string.Equals(previousEpgUrl, preferencesService.Current.ExternalEpgUrl, StringComparison.Ordinal))
             {
                 // The already loaded playlist remains authoritative even when
@@ -665,8 +688,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                     Archive.UpdateChannels(GetConfiguredArchiveChannels());
                     archiveUpdated = true;
                     accessibleStatus.ReportStatus(epgService.Status.State == EpgServiceState.Failed
-                        ? "Zapisano ustawienia. Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne."
-                        : "Zapisano ustawienia i zaktualizowano program telewizyjny.");
+                        ? T("Zapisano ustawienia. Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.", "Settings saved. The TV guide could not load; the channels are still available.")
+                        : T("Zapisano ustawienia i zaktualizowano program telewizyjny.", "Settings saved and TV guide updated."));
                 }
                 catch (OperationCanceledException)
                 {
@@ -674,18 +697,18 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 }
                 catch (Exception)
                 {
-                    accessibleStatus.ReportError("Zapisano ustawienia. Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.");
+                    accessibleStatus.ReportError(T("Zapisano ustawienia. Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.", "Settings saved. The TV guide could not load; the channels are still available."));
                 }
             }
             if (archiveSettingsChanged && !archiveUpdated)
             {
                 Archive.UpdateChannels(GetConfiguredArchiveChannels());
-                accessibleStatus.ReportStatus("Zapisano ustawienia i zaktualizowano archiwum.");
+                accessibleStatus.ReportStatus(T("Zapisano ustawienia i zaktualizowano archiwum.", "Settings saved and archive updated."));
             }
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się zapisać ustawień", exception.Message);
+            await ReportFailureAsync(T("Nie udało się zapisać ustawień", "Could not save settings"), exception.Message);
         }
     }
 
@@ -711,6 +734,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 {
                     ChannelSortMode = current.ChannelSortMode,
                     ExternalEpgUrl = current.ExternalEpgUrl,
+                    Language = current.Language,
                     ArchiveSources = [.. current.ArchiveSources],
                     Recording = current.Recording,
                     Buffering = current.Buffering,
@@ -718,17 +742,17 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 });
                 ReloadFavoriteChannels();
                 ApplyChannelFilter();
-                accessibleStatus.AnnounceStatus($"Usunięto kanał {selected.Name} z ulubionych.");
+                accessibleStatus.AnnounceStatus(T($"Usunięto kanał {selected.Name} z ulubionych.", $"Removed {selected.Name} from favorites."));
             }
             catch (Exception exception)
             {
-                await ReportFailureAsync("Nie udało się zmienić ulubionych", exception.Message);
+                await ReportFailureAsync(T("Nie udało się zmienić ulubionych", "Could not change favorites"), exception.Message);
             }
             return;
         }
         if (SelectedChannel is null || !channelsById.TryGetValue(SelectedChannel.Id, out var channel))
         {
-            accessibleStatus.ReportError("Wybierz kanał, który chcesz dodać do ulubionych.");
+            accessibleStatus.ReportError(T("Wybierz kanał, który chcesz dodać do ulubionych.", "Choose a channel to add to favorites."));
             return;
         }
 
@@ -741,13 +765,13 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         var channel = FindPlaybackChannel(currentId);
         if (channel is null)
         {
-            accessibleStatus.ReportError("Żaden kanał nie jest obecnie odtwarzany.");
+            accessibleStatus.ReportError(T("Żaden kanał nie jest obecnie odtwarzany.", "No channel is currently playing."));
             return;
         }
 
         if (IsFavorite(channel))
         {
-            accessibleStatus.ReportStatus($"Kanał {channel.Name} jest już w ulubionych.");
+            accessibleStatus.ReportStatus(T($"Kanał {channel.Name} jest już w ulubionych.", $"{channel.Name} is already in favorites."));
             return;
         }
 
@@ -779,6 +803,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 {
                     ChannelSortMode = current.ChannelSortMode,
                     ExternalEpgUrl = current.ExternalEpgUrl,
+                    Language = current.Language,
                     ArchiveSources = [.. current.ArchiveSources],
                     Recording = current.Recording,
                     Buffering = current.Buffering,
@@ -800,12 +825,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             }
 
             accessibleStatus.AnnounceStatus(isFavorite
-                ? $"Dodano kanał {channel.Name} do ulubionych."
-                : $"Usunięto kanał {channel.Name} z ulubionych.");
+                ? T($"Dodano kanał {channel.Name} do ulubionych.", $"Added {channel.Name} to favorites.")
+                : T($"Usunięto kanał {channel.Name} z ulubionych.", $"Removed {channel.Name} from favorites."));
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się zmienić ulubionych", exception.Message);
+            await ReportFailureAsync(T("Nie udało się zmienić ulubionych", "Could not change favorites"), exception.Message);
         }
     }
 
@@ -813,8 +838,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     {
         SelectedSectionIndex = IsFavoritesOnly ? 0 : 1;
         accessibleStatus.AnnounceStatus(IsFavoritesOnly
-            ? $"Pokazano ulubione kanały. {ChannelCountText}."
-            : $"Pokazano wszystkie kanały. {ChannelCountText}.");
+            ? T($"Pokazano ulubione kanały. {ChannelCountText}.", $"Showing favorite channels. {ChannelCountText}.")
+            : T($"Pokazano wszystkie kanały. {ChannelCountText}.", $"Showing all channels. {ChannelCountText}."));
         focusCoordinator.Request(FocusTarget.ChannelList, SelectedChannel?.Id);
     }
 
@@ -850,6 +875,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             {
                 ChannelSortMode = current.ChannelSortMode,
                 ExternalEpgUrl = current.ExternalEpgUrl,
+                Language = current.Language,
                 ArchiveSources = [.. current.ArchiveSources],
                 Recording = current.Recording,
                 Buffering = current.Buffering,
@@ -864,11 +890,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 }
             }
             ApplyChannelFilter();
-            accessibleStatus.AnnounceStatus($"Zapisano ulubione. Liczba kanałów: {FavoriteChannels.Count}.");
+            accessibleStatus.AnnounceStatus(T($"Zapisano ulubione. Liczba kanałów: {FavoriteChannels.Count}.", $"Favorites saved. Channels: {FavoriteChannels.Count}."));
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się zapisać ulubionych", exception.Message);
+            await ReportFailureAsync(T("Nie udało się zapisać ulubionych", "Could not save favorites"), exception.Message);
         }
     }
 
@@ -881,7 +907,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         var channel = GetCurrentOrSelectedChannel();
         if (channel is null)
         {
-            accessibleStatus.ReportError("Wybierz lub odtwórz kanał, który chcesz nagrać.");
+            accessibleStatus.ReportError(T("Wybierz lub odtwórz kanał, który chcesz nagrać.", "Choose or play the channel you want to record."));
             return;
         }
 
@@ -890,11 +916,15 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             var programme = archivePlaybackProgramme?.Title ?? epgService.GetCurrentProgramme(channel, DateTimeOffset.Now)?.Title;
             var outputPath = await recordingCoordinator.StartAsync(channel, programme, mode);
             accessibleStatus.AnnounceStatus(
-                $"Rozpoczęto nagrywanie {(mode == RecordingMode.StreamCopy ? "wideo" : "audio")} kanału {channel.Name}. Plik: {Path.GetFileName(outputPath)}.");
+                mode == RecordingMode.StreamCopy
+                    ? T($"Rozpoczęto nagrywanie wideo kanału {channel.Name}. Plik: {Path.GetFileName(outputPath)}.",
+                        $"Video recording started for {channel.Name}. File: {Path.GetFileName(outputPath)}.")
+                    : T($"Rozpoczęto nagrywanie audio kanału {channel.Name}. Plik: {Path.GetFileName(outputPath)}.",
+                        $"Audio recording started for {channel.Name}. File: {Path.GetFileName(outputPath)}."));
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się rozpocząć nagrywania", exception.Message);
+            await ReportFailureAsync(T("Nie udało się rozpocząć nagrywania", "Could not start recording"), exception.Message);
         }
     }
 
@@ -903,11 +933,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             await recordingCoordinator.StopAsync();
-            accessibleStatus.AnnounceStatus("Nagrywanie zatrzymane. Plik został zapisany.");
+            accessibleStatus.AnnounceStatus(T("Nagrywanie zatrzymane. Plik został zapisany.", "Recording stopped. The file was saved."));
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się zatrzymać nagrywania", exception.Message);
+            await ReportFailureAsync(T("Nie udało się zatrzymać nagrywania", "Could not stop recording"), exception.Message);
         }
     }
 
@@ -915,7 +945,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedChannel is null)
         {
-            accessibleStatus.ReportError("Wybierz kanał do zaplanowania nagrania.");
+            accessibleStatus.ReportError(T("Wybierz kanał do zaplanowania nagrania.", "Choose a channel to schedule a recording."));
             return;
         }
 
@@ -927,8 +957,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         if (!channelsById.TryGetValue(channelId, out var channel))
         {
             await windowService.ShowMessageAsync(
-                "Kanał niedostępny",
-                "Wybrany kanał nie jest już dostępny.");
+                T("Kanał niedostępny", "Channel unavailable"),
+                T("Wybrany kanał nie jest już dostępny.", "The selected channel is no longer available."));
             return;
         }
 
@@ -967,7 +997,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
         if (!channelsById.TryGetValue(request.ChannelId, out channel))
         {
-            await windowService.ShowMessageAsync("Kanał niedostępny", "Wybrany kanał nie jest już dostępny.");
+            await windowService.ShowMessageAsync(T("Kanał niedostępny", "Channel unavailable"), T("Wybrany kanał nie jest już dostępny.", "The selected channel is no longer available."));
             return;
         }
 
@@ -975,11 +1005,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         {
             var entry = await recordingCoordinator.ScheduleAsync(channel, request);
             accessibleStatus.AnnounceStatus(
-                $"Zaplanowano nagranie kanału {entry.ChannelName} od {entry.Start.ToLocalTime():g} do {entry.End.ToLocalTime():g}.");
+                T($"Zaplanowano nagranie kanału {entry.ChannelName} od {entry.Start.ToLocalTime():g} do {entry.End.ToLocalTime():g}.", $"Recording scheduled for {entry.ChannelName} from {entry.Start.ToLocalTime():g} to {entry.End.ToLocalTime():g}."));
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się zaplanować nagrania", exception.Message);
+            await ReportFailureAsync(T("Nie udało się zaplanować nagrania", "Could not schedule recording"), exception.Message);
         }
     }
 
@@ -995,7 +1025,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się odczytać zaplanowanych nagrań", exception.Message);
+            await ReportFailureAsync(T("Nie udało się odczytać zaplanowanych nagrań", "Could not read scheduled recordings"), exception.Message);
         }
     }
 
@@ -1050,6 +1080,36 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         recordingCoordinator.ProgressChanged -= OnRecordingProgressChanged;
     }
 
+    internal event EventHandler? PlaylistSourceRemoved;
+
+    private bool playlistManagerOpen;
+
+    private async Task ShowPlaylistManagerAsync(PlaylistManagerAction action)
+    {
+        if (playlistManagerOpen)
+        {
+            return;
+        }
+
+        var previousSource = SelectedSource;
+        playlistManagerOpen = true;
+        try
+        {
+            await windowService.ShowPlaylistManagerAsync(this, action);
+        }
+        finally
+        {
+            playlistManagerOpen = false;
+            SelectedSource = Sources.FirstOrDefault(item => item.Source.Id == loadedSourceId)
+                ?? (previousSource is not null && Sources.Contains(previousSource) ? previousSource : Sources.FirstOrDefault());
+        }
+    }
+
+    private Task ActivateSelectedSourceAsync() =>
+        SelectedSource is { } item && item.Source.Id != loadedSourceId
+            ? LoadSourceAsync(item.Source)
+            : Task.CompletedTask;
+
     private async Task AddFileSourcesAsync()
     {
         var files = await windowService.PickPlaylistFilesAsync();
@@ -1090,8 +1150,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         if (failedCount > 0)
         {
             var summary = addedCount > 0
-                ? $"Dodano playlisty: {addedCount}. Nie udało się dodać: {failedCount}."
-                : $"Nie udało się dodać żadnej z wybranych playlist. Liczba błędów: {failedCount}.";
+                ? T($"Dodano playlisty: {addedCount}. Nie udało się dodać: {failedCount}.", $"Playlists added: {addedCount}. Failed: {failedCount}.")
+                : T($"Nie udało się dodać żadnej z wybranych playlist. Liczba błędów: {failedCount}.", $"Could not add any selected playlists. Errors: {failedCount}.");
             accessibleStatus.ReportError(summary);
         }
     }
@@ -1126,11 +1186,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         var confirmed = await windowService.ShowConfirmationAsync(
-            "Usuń źródło playlisty",
-            "Czy usunąć wybrane źródło playlisty z listy? " +
-            "Oryginalny plik wybrany przez użytkownika ani dane dostępne pod adresem URL nie zostaną usunięte. " +
-            "W przypadku źródła z pliku TelePilot usunie tylko swoją wewnętrzną kopię.",
-            "Usuń źródło");
+            T("Usuń źródło playlisty", "Remove playlist source"),
+            T("Czy usunąć wybrane źródło playlisty z listy? ", "Remove the selected playlist source? ") +
+            T("Oryginalny plik wybrany przez użytkownika ani dane dostępne pod adresem URL nie zostaną usunięte. ", "The original file and any data at the URL will stay in place. ") +
+            T("W przypadku źródła z pliku TelePilot usunie tylko swoją wewnętrzną kopię.", "For a file source, TelePilot will remove only its managed copy."),
+            T("Usuń źródło", "Remove source"));
         if (!confirmed)
         {
             return;
@@ -1142,8 +1202,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             if (!await sourceStore.RemoveAsync(sourceToRemove.Source.Id))
             {
                 await ReportFailureAsync(
-                    "Nie udało się usunąć źródła",
-                    "Wybrane źródło nie istnieje już w zapisanych ustawieniach.");
+                    T("Nie udało się usunąć źródła", "Could not remove the source"),
+                    T("Wybrane źródło nie istnieje już w zapisanych ustawieniach.", "The selected source is no longer in saved settings."));
                 return;
             }
 
@@ -1167,26 +1227,34 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
             if (SelectedSource is { } nextSource)
             {
-                accessibleStatus.ReportStatus("Usunięto źródło. Wczytywanie następnego źródła playlisty.");
+                accessibleStatus.ReportStatus(T("Usunięto źródło. Wczytywanie następnego źródła playlisty.", "Source removed. Loading the next playlist source."));
                 await LoadSourceAsync(nextSource.Source);
             }
             else
             {
-                accessibleStatus.ReportStatus("Usunięto źródło. Lista źródeł playlisty jest pusta.");
+                accessibleStatus.ReportStatus(T("Usunięto źródło. Lista źródeł playlisty jest pusta.", "Source removed. The playlist source list is empty."));
             }
 
             IsChannelListViewVisible = true;
-            focusCoordinator.Request(FocusTarget.PlaylistSourceSelector);
+            if (playlistManagerOpen)
+            {
+                PlaylistSourceRemoved?.Invoke(this, EventArgs.Empty);
+            }
+            else
+            {
+                focusCoordinator.Request(FocusTarget.PlaylistSourceSelector);
+            }
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się usunąć źródła", exception.Message);
+            await ReportFailureAsync(T("Nie udało się usunąć źródła", "Could not remove the source"), exception.Message);
         }
     }
 
     private async Task ClearLoadedSourceAsync()
     {
         loadedSourceId = null;
+        OnPropertyChanged(nameof(ActivePlaylistName));
         loadedPlaylistEpgUrls = [];
         loadedPlaylistBaseUri = null;
         Archive.UpdateChannels([]);
@@ -1231,7 +1299,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         var token = cancellation.Token;
 
         IsLoading = true;
-        accessibleStatus.ReportStatus($"Wczytywanie źródła {source.Name}.");
+        accessibleStatus.ReportStatus(T($"Wczytywanie źródła {source.Name}.", $"Loading source {source.Name}."));
         try
         {
             if (refreshLocalFile)
@@ -1243,8 +1311,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             token.ThrowIfCancellationRequested();
             if (!result.IsSuccess || result.Playlist is null)
             {
-                var message = result.Error?.Message ?? "Nieznany błąd wczytywania playlisty.";
-                await ReportFailureAsync($"Nie udało się wczytać źródła {source.Name}", message);
+                var message = result.Error?.Message ?? T("Nieznany błąd wczytywania playlisty.", "Unknown error loading the playlist.");
+                await ReportFailureAsync(T($"Nie udało się wczytać źródła {source.Name}", $"Could not load source {source.Name}"), message);
                 return;
             }
 
@@ -1257,7 +1325,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                     token);
                 if (epgService.Status.State == EpgServiceState.Failed)
                 {
-                    epgWarning = " Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.";
+                    epgWarning = T(" Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.", " Couldn't load the TV guide; the channels are still available.");
                 }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -1266,11 +1334,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             }
             catch (Exception)
             {
-                epgWarning = " Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.";
+                epgWarning = T(" Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.", " Couldn't load the TV guide; the channels are still available.");
             }
 
             token.ThrowIfCancellationRequested();
             loadedSourceId = source.Id;
+            OnPropertyChanged(nameof(ActivePlaylistName));
             loadedPlaylistEpgUrls = result.Playlist.Header.EpgUrls.ToArray();
             loadedPlaylistBaseUri = CreateSourceBaseUri(source);
             allChannels.Clear();
@@ -1282,21 +1351,21 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
             var skipped = result.Playlist.SkippedEntryCount == 0
                 ? string.Empty
-                : $" Pominięto wpisy: {result.Playlist.SkippedEntryCount}.";
-            accessibleStatus.ReportStatus($"Wczytano {allChannels.Count} kanałów ze źródła {source.Name}.{skipped}{epgWarning}");
+                : T($" Pominięto wpisy: {result.Playlist.SkippedEntryCount}.", $" Skipped entries: {result.Playlist.SkippedEntryCount}.");
+            accessibleStatus.ReportStatus(T($"Wczytano {allChannels.Count} kanałów ze źródła {source.Name}.{skipped}{epgWarning}", $"Channels loaded from {source.Name}: {allChannels.Count}.{skipped}{epgWarning}"));
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             if (ReferenceEquals(playlistLoadCancellation, cancellation) && !disposed)
             {
-                accessibleStatus.ReportStatus("Anulowano wczytywanie playlisty.");
+                accessibleStatus.ReportStatus(T("Anulowano wczytywanie playlisty.", "Playlist loading canceled."));
             }
         }
         catch (Exception exception)
         {
             if (!token.IsCancellationRequested)
             {
-                await ReportFailureAsync($"Nie udało się wczytać źródła {source.Name}", exception.Message);
+                await ReportFailureAsync(T($"Nie udało się wczytać źródła {source.Name}", $"Could not load source {source.Name}"), exception.Message);
             }
         }
         finally
@@ -1353,7 +1422,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             channelItemsById[id] = new ChannelListItemViewModel(
                 id,
                 channel.Name,
-                channel.GroupTitle ?? "Bez grupy")
+                channel.GroupTitle ?? T("Bez grupy", "No group"))
             {
                 IsFavorite = IsFavorite(channel),
             };
@@ -1381,7 +1450,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         if (FindPlaybackChannel(playbackService.Current.ChannelId?.ToString() ?? playbackChannelItemId) is { } playbackChannel)
         {
             CurrentProgramName = archivePlaybackProgramme?.Title ?? epgService.GetCurrentProgramme(playbackChannel, now)?.Title
-                ?? "Brak danych o bieżącej audycji";
+                ?? T("Brak danych o bieżącej audycji", "No data for the current program");
         }
     }
 
@@ -1398,7 +1467,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         Groups.Clear();
         Groups.Add(AllGroupsLabel);
         foreach (var group in allChannels
-                     .Select(channel => channel.GroupTitle ?? "Bez grupy")
+                     .Select(channel => channel.GroupTitle ?? T("Bez grupy", "No group"))
                      .Distinct(StringComparer.CurrentCultureIgnoreCase)
                      .OrderBy(value => value, StringComparer.CurrentCultureIgnoreCase))
         {
@@ -1421,17 +1490,17 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                     || ChannelTextNormalizer.NormalizeForSearch(item.ChannelName)
                         .Contains(ChannelTextNormalizer.NormalizeForSearch(SearchText), StringComparison.Ordinal))
                 .Select(item => channelItemsById.GetValueOrDefault(item.ChannelId.ToString("D"))
-                    ?? new ChannelListItemViewModel(item.ChannelId.ToString("D"), item.ChannelName, "Ulubione") { IsFavorite = true })
+                    ?? new ChannelListItemViewModel(item.ChannelId.ToString("D"), item.ChannelName, T("Ulubione", "Favorites")) { IsFavorite = true })
                 .ToArray();
             Channels.ReplaceAll(favorites);
             SelectedChannel = favorites.FirstOrDefault(item => item.Id == selectedId) ?? favorites.FirstOrDefault();
             OnPropertyChanged(nameof(ChannelCountText));
             return;
         }
-        var channelsToFilter = SelectedGroup == "Bez grupy"
+        var channelsToFilter = SelectedGroup == T("Bez grupy", "No group")
             ? allChannels.Where(channel => string.IsNullOrWhiteSpace(channel.GroupTitle))
             : allChannels;
-        var group = SelectedGroup is AllGroupsLabel or "Bez grupy" ? null : SelectedGroup;
+        var group = (SelectedGroup == AllGroupsLabel || SelectedGroup == T("Bez grupy", "No group")) ? null : SelectedGroup;
         var filtered = ChannelFilter.Apply(
             channelsToFilter,
             new ChannelFilterCriteria(SearchText, group, SelectedSort.Mode));
@@ -1496,7 +1565,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedChannel is null)
         {
-            accessibleStatus.ReportError("Wybierz kanał do odtworzenia.");
+            accessibleStatus.ReportError(T("Wybierz kanał do odtworzenia.", "Choose a channel to play."));
             return Task.CompletedTask;
         }
 
@@ -1529,8 +1598,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         if (targetIndex < 0 || targetIndex >= Channels.Count)
         {
             accessibleStatus.ReportStatus(direction < 0
-                ? "To pierwszy kanał na liście."
-                : "To ostatni kanał na liście.");
+                ? T("To pierwszy kanał na liście.", "This is the first channel in the list.")
+                : T("To ostatni kanał na liście.", "This is the last channel in the list."));
             return;
         }
 
@@ -1543,7 +1612,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 await PlaySelectedAsync();
                 return;
             }
-            accessibleStatus.ReportError("Wybrany kanał nie jest już dostępny.");
+            accessibleStatus.ReportError(T("Wybrany kanał nie jest już dostępny.", "The selected channel is no longer available."));
             return;
         }
 
@@ -1579,7 +1648,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         var activationGeneration = Interlocked.Increment(ref playerViewActivationGeneration);
         bool archiveAccepted = false;
         lastSelectedChannelId = channelItem.Id;
-        accessibleStatus.ReportStatus($"Łączenie z kanałem {channel.Name}.");
+        accessibleStatus.ReportStatus(T($"Łączenie z kanałem {channel.Name}.", $"Connecting to {channel.Name}."));
         try
         {
             await playbackService.PrepareAsync(cancellationToken);
@@ -1620,8 +1689,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                     throw new ArchivePlaybackException(ArchivePlaybackFailure.Rejected);
                 }
                 await ReportFailureAsync(
-                    $"Nie udało się odtworzyć kanału {channel.Name}",
-                    result.Message ?? "Silnik odtwarzania odrzucił polecenie.");
+                    T($"Nie udało się odtworzyć kanału {channel.Name}", $"Could not play channel {channel.Name}"),
+                    result.Message ?? T("Silnik odtwarzania odrzucił polecenie.", "The player rejected the command."));
                 ShowChannelListOnly();
             }
             else if (archiveProgramme is not null)
@@ -1665,7 +1734,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 throw new ArchivePlaybackException(exception is TimeoutException
                     ? ArchivePlaybackFailure.TimedOut : ArchivePlaybackFailure.Rejected);
             }
-            await ReportFailureAsync($"Nie udało się odtworzyć kanału {channel.Name}", exception.Message);
+            await ReportFailureAsync(T($"Nie udało się odtworzyć kanału {channel.Name}", $"Could not play channel {channel.Name}"), exception.Message);
             ShowChannelListOnly();
         }
         finally
@@ -1745,7 +1814,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             ReturnToChannelList();
             if (IsCurrentPlayerActivation(stoppedActivationGeneration))
             {
-                await ReportFailureAsync("Nie udało się zatrzymać odtwarzania", exception.Message);
+                await ReportFailureAsync(T("Nie udało się zatrzymać odtwarzania", "Could not stop playback"), exception.Message);
             }
 
             return;
@@ -1784,16 +1853,16 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 IsArchiveSection ? FocusTarget.Archive : FocusTarget.ChannelList,
                 lastSelectedChannelId,
                 preserveExistingFocus: true);
-            string selectedChannelAnnouncement = IsArchiveSection ? "Odtwarzanie zatrzymane. Archiwum telewizyjne." : SelectedChannel is { } selected
-                ? $"Odtwarzanie zatrzymane. Zaznaczony kanał: {selected.AccessibleName}."
-                : "Odtwarzanie zatrzymane. Lista kanałów.";
+            string selectedChannelAnnouncement = IsArchiveSection ? T("Odtwarzanie zatrzymane. Archiwum telewizyjne.", "Playback stopped. TV archive.") : SelectedChannel is { } selected
+                ? T($"Odtwarzanie zatrzymane. Zaznaczony kanał: {selected.AccessibleName}.", $"Playback stopped. Selected channel: {selected.AccessibleName}.")
+                : T("Odtwarzanie zatrzymane. Lista kanałów.", "Playback stopped. Channel list.");
             accessibleStatus.AnnounceStatus(selectedChannelAnnouncement);
         }
         catch (Exception exception)
         {
             if (IsCurrentPlayerActivation(stoppedActivationGeneration))
             {
-                await ReportFailureAsync("Nie udało się zatrzymać odtwarzania", exception.Message);
+                await ReportFailureAsync(T("Nie udało się zatrzymać odtwarzania", "Could not stop playback"), exception.Message);
             }
         }
     }
@@ -1803,7 +1872,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         if (programme.Stop is not { } end)
         {
-            throw new InvalidOperationException("Audycja nie ma godziny zakończenia.");
+            throw new InvalidOperationException(T("Audycja nie ma godziny zakończenia.", "The program has no end time."));
         }
         if (!CatchUpPlayback.TryCreatePlaybackChannel(
                 channel, programme.Start, end, DateTimeOffset.Now, out var archiveChannel, out var error))
@@ -1812,7 +1881,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         var item = channelItemsById.GetValueOrDefault(channel.Id.ToString())
-            ?? new ChannelListItemViewModel(channel.Id.ToString(), channel.Name, channel.GroupTitle ?? "Bez grupy");
+            ?? new ChannelListItemViewModel(channel.Id.ToString(), channel.Name, channel.GroupTitle ?? T("Bez grupy", "No group"));
         await PlayChannelAsync(item, archiveChannel!, requestFocus: true, programme,
             archiveSource: channel, cancellationToken: cancellationToken);
     }
@@ -1846,12 +1915,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                     var position = await playbackService.GetPositionAsync();
                     if (disposed || activation != playerViewActivationGeneration || !CanSeekArchive()) return;
                     accessibleStatus.AnnounceStatus(position is { } current
-                        ? $"Pozycja audycji: {(int)(archivePlaybackOffset + current).TotalSeconds} s."
-                        : "Przewinięto audycję.");
+                        ? T($"Pozycja audycji: {(int)(archivePlaybackOffset + current).TotalSeconds} s.", $"Program position: {(int)(archivePlaybackOffset + current).TotalSeconds} s.")
+                        : T("Przewinięto audycję.", "Playback position changed."));
                     return;
                 }
                 accessibleStatus.AnnounceStatus(result.Message ??
-                    (seconds < 0 ? "Cofnięto audycję o 30 sekund." : "Przesunięto audycję o 30 sekund do przodu."));
+                    (seconds < 0 ? T("Cofnięto audycję o 30 sekund.", "Skipped backward by 30 seconds.") : T("Przesunięto audycję o 30 sekund do przodu.", "Skipped forward by 30 seconds.")));
             }
             else if (result.Status == PlaybackCommandStatus.Unsupported
                 && archivePlaybackSource is { } source && archivePlaybackProgramme is { Stop: { } end } programme)
@@ -1860,7 +1929,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 if (disposed || activation != playerViewActivationGeneration || !CanSeekArchive()) return;
                 if (position is null)
                 {
-                    accessibleStatus.ReportError("Pozycja odtwarzania nie jest jeszcze dostępna.");
+                    accessibleStatus.ReportError(T("Pozycja odtwarzania nie jest jeszcze dostępna.", "Playback position is not available yet."));
                     return;
                 }
                 var target = TimeSpan.FromSeconds(Math.Clamp(
@@ -1869,12 +1938,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 if (!CatchUpPlayback.TryCreatePlaybackChannel(source, programme.Start + target, end,
                     DateTimeOffset.Now, out var channel, out _))
                 {
-                    accessibleStatus.ReportError("Wybrana pozycja nie jest dostępna w archiwum.");
+                    accessibleStatus.ReportError(T("Wybrana pozycja nie jest dostępna w archiwum.", "The selected item is not available in the archive."));
                     return;
                 }
                 bool paused = playbackService.Current.State == PlaybackState.Paused;
                 var item = channelItemsById.GetValueOrDefault(source.Id.ToString())
-                    ?? new ChannelListItemViewModel(source.Id.ToString(), source.Name, source.GroupTitle ?? "Bez grupy");
+                    ?? new ChannelListItemViewModel(source.Id.ToString(), source.Name, source.GroupTitle ?? T("Bez grupy", "No group"));
                 // The next activation is ours only until another Play or Stop supersedes it.
                 int expectedActivation = activation + 1;
                 activation = expectedActivation;
@@ -1886,23 +1955,23 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                     var pauseResult = await playbackService.TogglePauseAsync();
                     if (!pauseResult.IsSuccess && !disposed && playerViewActivationGeneration == expectedActivation)
                     {
-                        accessibleStatus.ReportError("Przewinięto audycję, ale nie udało się przywrócić pauzy.");
+                        accessibleStatus.ReportError(T("Przewinięto audycję, ale nie udało się przywrócić pauzy.", "Skipped to the new position, but could not restore pause."));
                         return;
                     }
                 }
                 if (!disposed && playerViewActivationGeneration == expectedActivation)
-                    accessibleStatus.AnnounceStatus($"Pozycja audycji: {(int)target.TotalSeconds} s.");
+                    accessibleStatus.AnnounceStatus(T($"Pozycja audycji: {(int)target.TotalSeconds} s.", $"Program position: {(int)target.TotalSeconds} s."));
             }
             else
             {
-                accessibleStatus.ReportError(result.Message ?? "Ten strumień archiwum nie obsługuje przewijania.");
+                accessibleStatus.ReportError(result.Message ?? T("Ten strumień archiwum nie obsługuje przewijania.", "This archive stream does not support seeking."));
             }
         }
         catch (Exception)
         {
             if (!disposed && activation == playerViewActivationGeneration)
             {
-                accessibleStatus.ReportError("Nie udało się przewinąć audycji archiwalnej.");
+                accessibleStatus.ReportError(T("Nie udało się przewinąć audycji archiwalnej.", "Could not seek in the archived program."));
             }
         }
         finally { archiveSeekGate.Release(); }
@@ -1915,13 +1984,13 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             var result = await playbackService.TogglePauseAsync();
             if (!result.IsSuccess)
             {
-                accessibleStatus.ReportError(result.Message ?? "Nie można zmienić stanu pauzy.");
-                await windowService.ShowMessageAsync("Pauza niedostępna", result.Message ?? "Ten strumień nie obsługuje pauzy.");
+                accessibleStatus.ReportError(result.Message ?? T("Nie można zmienić stanu pauzy.", "Could not change the pause state."));
+                await windowService.ShowMessageAsync(T("Pauza niedostępna", "Pause unavailable"), result.Message ?? T("Ten strumień nie obsługuje pauzy.", "This stream does not support pausing."));
             }
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się zmienić stanu pauzy", exception.Message);
+            await ReportFailureAsync(T("Nie udało się zmienić stanu pauzy", "Could not change the pause state"), exception.Message);
         }
     }
 
@@ -1931,11 +2000,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             await playbackService.SetMutedAsync(target);
-            accessibleStatus.ReportStatus(target ? "Dźwięk wyciszony." : "Dźwięk włączony.");
+            accessibleStatus.ReportStatus(target ? T("Dźwięk wyciszony.", "Sound muted.") : T("Dźwięk włączony.", "Sound on."));
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się zmienić wyciszenia", exception.Message);
+            await ReportFailureAsync(T("Nie udało się zmienić wyciszenia", "Could not mute or unmute"), exception.Message);
         }
     }
 
@@ -1960,11 +2029,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             await playbackService.SetVolumeAsync(target);
-            accessibleStatus.ReportStatus($"Głośność {target} procent.");
+            accessibleStatus.ReportStatus(T($"Głośność {target} procent.", $"Volume {target} percent."));
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się zmienić głośności", exception.Message);
+            await ReportFailureAsync(T("Nie udało się zmienić głośności", "Could not change the volume"), exception.Message);
         }
     }
 
@@ -1976,17 +2045,17 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             if (tracks.Count == 0)
             {
                 await windowService.ShowMessageAsync(
-                    kind == MediaTrackKind.Audio ? "Ścieżki dźwiękowe" : "Napisy",
+                    kind == MediaTrackKind.Audio ? T("Ścieżki dźwiękowe", "Audio tracks") : "Napisy",
                     kind == MediaTrackKind.Audio
-                        ? "Odtwarzany strumień nie udostępnia listy ścieżek dźwiękowych."
-                        : "Odtwarzany strumień nie udostępnia napisów.");
+                        ? T("Odtwarzany strumień nie udostępnia listy ścieżek dźwiękowych.", "The stream does not provide a list of audio tracks.")
+                        : T("Odtwarzany strumień nie udostępnia napisów.", "The stream does not provide subtitles."));
                 return;
             }
 
-            var title = kind == MediaTrackKind.Audio ? "Ścieżki dźwiękowe" : "Napisy";
+            var title = kind == MediaTrackKind.Audio ? T("Ścieżki dźwiękowe", "Audio tracks") : "Napisy";
             var description = kind == MediaTrackKind.Audio
-                ? "Wybierz ścieżkę dźwiękową odtwarzanego kanału."
-                : "Wybierz ścieżkę napisów. Pozycja „Wyłączone” wyłącza napisy, jeżeli udostępnia ją strumień.";
+                ? T("Wybierz ścieżkę dźwiękową odtwarzanego kanału.", "Choose an audio track for the current channel.")
+                : T("Wybierz ścieżkę napisów. Pozycja „Wyłączone” wyłącza napisy, jeżeli udostępnia ją strumień.", "Choose a subtitle track. Select Off to turn off subtitles when the stream offers that option.");
             var viewModel = new TrackSelectionViewModel(
                 title,
                 description,
@@ -2005,17 +2074,17 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             if (result.IsSuccess)
             {
                 accessibleStatus.ReportStatus(kind == MediaTrackKind.Audio
-                    ? "Zmieniono ścieżkę dźwiękową."
-                    : "Zmieniono ustawienie napisów.");
+                    ? T("Zmieniono ścieżkę dźwiękową.", "Audio track changed.")
+                    : T("Zmieniono ustawienie napisów.", "Subtitle selection changed."));
             }
             else
             {
-                await ReportFailureAsync("Nie udało się zmienić ścieżki", result.Message ?? "Silnik odrzucił wybór.");
+                await ReportFailureAsync(T("Nie udało się zmienić ścieżki", "Could not change the track"), result.Message ?? T("Silnik odrzucił wybór.", "The player rejected the selection."));
             }
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync("Nie udało się pobrać ścieżek", exception.Message);
+            await ReportFailureAsync(T("Nie udało się pobrać ścieżek", "Could not load tracks"), exception.Message);
         }
     }
 
@@ -2090,7 +2159,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 if (result == EpgRefreshResult.Failed)
                 {
                     throw new InvalidOperationException(
-                        epgService.Status.ErrorMessage ?? "Nie udało się odświeżyć danych EPG.");
+                        epgService.Status.ErrorMessage ?? T("Nie udało się odświeżyć danych EPG.", "Could not refresh EPG data."));
                 }
 
                 RefreshCurrentProgramItems(DateTimeOffset.Now);
@@ -2141,7 +2210,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         Archive.CancelPendingPlayback();
         if (!channelsById.TryGetValue(channelId, out var channel))
         {
-            throw new InvalidOperationException("Wybrany kanał nie jest już dostępny.");
+            throw new InvalidOperationException(T("Wybrany kanał nie jest już dostępny.", "The selected channel is no longer available."));
         }
 
         var activationGeneration = Interlocked.Increment(ref playerViewActivationGeneration);
@@ -2149,7 +2218,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         SelectedChannel = Channels.FirstOrDefault(item => item.Id == channelId) ?? SelectedChannel;
         var wasPlayerViewVisible = IsPlayerViewVisible;
         var wasChannelListViewVisible = IsChannelListViewVisible;
-        accessibleStatus.ReportStatus($"Łączenie z kanałem {channel.Name}.");
+        accessibleStatus.ReportStatus(T($"Łączenie z kanałem {channel.Name}.", $"Connecting to {channel.Name}."));
         try
         {
             await playbackService.PrepareAsync(cancellationToken);
@@ -2179,7 +2248,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
             if (!result.IsSuccess)
             {
-                throw new InvalidOperationException(result.Message ?? "Silnik odtwarzania odrzucił polecenie.");
+                throw new InvalidOperationException(result.Message ?? T("Silnik odtwarzania odrzucił polecenie.", "The player rejected the command."));
             }
         }
         catch
@@ -2207,7 +2276,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsArchiveSection));
         OnPropertyChanged(nameof(IsArchiveViewVisible));
         OnPropertyChanged(nameof(IsChannelsViewEnabled));
-        OnPropertyChanged(nameof(IsPlaylistManagementVisible));
+        OnPropertyChanged(nameof(IsChannelGroupFilterVisible));
         OnPropertyChanged(nameof(SearchAccessibleName));
         OnPropertyChanged(nameof(SearchLabel));
         OnPropertyChanged(nameof(SearchHelpText));
@@ -2251,13 +2320,13 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             IsRecording = progress.State is RecordingState.Preparing or RecordingState.Recording or RecordingState.Stopping;
             RecordingStatusText = progress.State switch
             {
-                RecordingState.Preparing => "Przygotowywanie nagrywania",
-                RecordingState.Recording => $"Nagrywanie trwa: {progress.Elapsed:hh\\:mm\\:ss}",
-                RecordingState.Stopping => "Zatrzymywanie nagrywania",
-                RecordingState.Completed => "Nagrywanie zakończone",
-                RecordingState.Cancelled => "Nagrywanie anulowane",
-                RecordingState.Error => "Błąd nagrywania",
-                _ => "Nagrywanie nieaktywne",
+                RecordingState.Preparing => T("Przygotowywanie nagrywania", "Preparing recording"),
+                RecordingState.Recording => T($"Nagrywanie trwa: {progress.Elapsed:hh\\:mm\\:ss}", $"Recording in progress: {progress.Elapsed:hh\\:mm\\:ss}"),
+                RecordingState.Stopping => T("Zatrzymywanie nagrywania", "Stopping recording"),
+                RecordingState.Completed => T("Nagrywanie zakończone", "Recording complete"),
+                RecordingState.Cancelled => T("Nagrywanie anulowane", "Recording canceled"),
+                RecordingState.Error => T("Błąd nagrywania", "Recording error"),
+                _ => T("Nagrywanie nieaktywne", "No active recording"),
             };
         });
     }
@@ -2272,20 +2341,20 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(IsArchivePlayback));
             OnPropertyChanged(nameof(PlaybackHeading));
         }
-        CurrentChannelName = snapshot.ChannelName ?? "Nic nie jest odtwarzane";
+        CurrentChannelName = snapshot.ChannelName ?? T("Nic nie jest odtwarzane", "Nothing is playing");
         CurrentProgramName = archivePlaybackProgramme?.Title ?? (snapshot.ChannelId is { } currentChannelId
             && FindPlaybackChannel(currentChannelId.ToString()) is { } currentChannel
             && epgService.GetCurrentProgramme(currentChannel, DateTimeOffset.Now) is { } currentProgramme
                 ? currentProgramme.Title
-                : "Brak danych o bieżącej audycji");
+                : T("Brak danych o bieżącej audycji", "No data for the current program"));
         PlaybackStateText = snapshot.State switch
         {
-            PlaybackState.Idle => "Zatrzymano",
-            PlaybackState.Connecting => "Łączenie",
-            PlaybackState.Playing => "Odtwarzanie",
-            PlaybackState.Paused => "Pauza",
-            PlaybackState.Stopping => "Zatrzymywanie",
-            PlaybackState.Error => "Błąd odtwarzania",
+            PlaybackState.Idle => T("Zatrzymano", "Stopped"),
+            PlaybackState.Connecting => T("Łączenie", "Connecting"),
+            PlaybackState.Playing => T("Odtwarzanie", "Playing"),
+            PlaybackState.Paused => T("Pauza", "Paused"),
+            PlaybackState.Stopping => T("Zatrzymywanie", "Stopping"),
+            PlaybackState.Error => T("Błąd odtwarzania", "Playback error"),
             _ => snapshot.State.ToString(),
         };
         // LibVLC reports -1 while the native audio output is being created.
@@ -2364,13 +2433,15 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task ReportFailureAsync(string title, string message)
     {
-        var safeMessage = string.IsNullOrWhiteSpace(message) ? "Wystąpił nieznany błąd." : message.Trim();
+        var safeMessage = string.IsNullOrWhiteSpace(message) ? T("Wystąpił nieznany błąd.", "An unknown error occurred.") : message.Trim();
         accessibleStatus.ReportError($"{title}. {safeMessage}");
         await windowService.ShowMessageAsync(title, safeMessage);
     }
 
     private void RefreshCommandStates()
     {
+        (OpenArchiveSettingsCommand as AsyncRelayCommand)?.NotifyCanExecuteChanged();
+        (ActivateSourceCommand as AsyncRelayCommand)?.NotifyCanExecuteChanged();
         (RefreshSourceCommand as AsyncRelayCommand)?.NotifyCanExecuteChanged();
         (RemoveSourceCommand as AsyncRelayCommand)?.NotifyCanExecuteChanged();
         (CancelLoadingCommand as RelayCommand)?.NotifyCanExecuteChanged();

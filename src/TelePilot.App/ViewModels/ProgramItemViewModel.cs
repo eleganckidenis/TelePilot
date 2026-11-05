@@ -1,3 +1,5 @@
+using static TelePilot.Core.Localization.Localizer;
+
 namespace TelePilot.App.ViewModels;
 
 public sealed record ProgramItemViewModel(
@@ -12,7 +14,7 @@ public sealed record ProgramItemViewModel(
     bool IsNow)
 {
     public string TimeRange => End is null
-        ? $"od {Start:HH:mm}, godzina zakończenia nieznana"
+        ? T($"od {Start:HH:mm}, godzina zakończenia nieznana", $"from {Start:HH:mm}, end time unknown")
         : $"{Start:HH:mm}–{End:HH:mm}";
 
     public string AccessibleName
@@ -27,7 +29,7 @@ public sealed record ProgramItemViewModel(
 
             if (!string.IsNullOrWhiteSpace(Category))
             {
-                parts.Add($"kategoria: {Category}");
+                parts.Add(T($"kategoria: {Category}", $"category: {Category}"));
             }
 
             return string.Join(", ", parts);
@@ -43,22 +45,22 @@ public sealed record ProgramItemViewModel(
             var lines = new List<string>
             {
                 Title,
-                $"Godzina: {TimeRange}",
+                T($"Godzina: {TimeRange}", $"Time: {TimeRange}"),
             };
 
             if (!string.IsNullOrWhiteSpace(Category))
             {
-                lines.Add($"Kategoria: {Category}");
+                lines.Add(T($"Kategoria: {Category}", $"Category: {Category}"));
             }
 
             if (!string.IsNullOrWhiteSpace(Episode))
             {
-                lines.Add($"Odcinek: {Episode}");
+                lines.Add(T($"Odcinek: {Episode}", $"Episode: {Episode}"));
             }
 
             if (Year is not null)
             {
-                lines.Add($"Rok: {Year}");
+                lines.Add(T($"Rok: {Year}", $"Year: {Year}"));
             }
 
             if (!string.IsNullOrWhiteSpace(Description))

@@ -1,6 +1,7 @@
 using System.Net;
 using TelePilot.Core.Contracts;
 using TelePilot.Core.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Playlists;
 
@@ -33,7 +34,7 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
             PlaylistSourceKind.Url => LoadUrlAsync(source, cancellationToken),
             _ => Task.FromResult(Failure(
                 PlaylistLoadErrorCode.InvalidSource,
-                "Nieznany rodzaj źródła playlisty.")),
+                T("Nieznany rodzaj źródła playlisty.", "Unknown playlist source type."))),
         };
     }
 
@@ -51,7 +52,7 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
         {
             return Failure(
                 PlaylistLoadErrorCode.InvalidSource,
-                "Ścieżka pliku playlisty jest nieprawidłowa.");
+                T("Ścieżka pliku playlisty jest nieprawidłowa.", "The playlist file path is invalid."));
         }
 
         try
@@ -83,19 +84,19 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
         {
             return Failure(
                 PlaylistLoadErrorCode.FileNotFound,
-                "Nie znaleziono pliku playlisty.");
+                T("Nie znaleziono pliku playlisty.", "The playlist file was not found."));
         }
         catch (DirectoryNotFoundException)
         {
             return Failure(
                 PlaylistLoadErrorCode.FileNotFound,
-                "Nie znaleziono folderu zawierającego playlistę.");
+                T("Nie znaleziono folderu zawierającego playlistę.", "The folder containing the playlist was not found."));
         }
         catch (UnauthorizedAccessException)
         {
             return Failure(
                 PlaylistLoadErrorCode.AccessDenied,
-                "Brak uprawnień do odczytu pliku playlisty.");
+                T("Brak uprawnień do odczytu pliku playlisty.", "Permission denied reading the playlist file."));
         }
         catch (ContentTooLargeException)
         {
@@ -105,7 +106,7 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
         {
             return Failure(
                 PlaylistLoadErrorCode.ReadFailure,
-                "Nie udało się odczytać pliku playlisty.");
+                T("Nie udało się odczytać pliku playlisty.", "Could not read the playlist file."));
         }
     }
 
@@ -118,7 +119,7 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
         {
             return Failure(
                 PlaylistLoadErrorCode.InvalidSource,
-                "Adres źródła playlisty musi być poprawnym adresem HTTP lub HTTPS.");
+                T("Adres źródła playlisty musi być poprawnym adresem HTTP lub HTTPS.", "The playlist source must have a valid HTTP or HTTPS address."));
         }
 
         using var timeoutSource = new CancellationTokenSource(source.DownloadTimeout);
@@ -168,7 +169,7 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
         {
             return Failure(
                 PlaylistLoadErrorCode.Timeout,
-                "Przekroczono limit czasu pobierania playlisty.");
+                T("Przekroczono limit czasu pobierania playlisty.", "The playlist download timed out."));
         }
         catch (ContentTooLargeException)
         {
@@ -178,26 +179,26 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
         {
             return Failure(
                 PlaylistLoadErrorCode.InsecureRedirect,
-                "Serwer próbował przekierować połączenie HTTPS do niezabezpieczonego HTTP. Przekierowanie zostało zablokowane, aby chronić dane uwierzytelniające.");
+                T("Serwer próbował przekierować połączenie HTTPS do niezabezpieczonego HTTP. Przekierowanie zostało zablokowane, aby chronić dane uwierzytelniające.", "The server tried to redirect HTTPS to unsecured HTTP. The redirect was blocked to protect credentials."));
         }
         catch (TooManyRedirectsException)
         {
             return Failure(
                 PlaylistLoadErrorCode.HttpFailure,
-                "Serwer przesłał zbyt wiele przekierowań podczas pobierania playlisty.");
+                T("Serwer przesłał zbyt wiele przekierowań podczas pobierania playlisty.", "The server sent too many redirects while downloading the playlist."));
         }
         catch (HttpRequestException exception)
         {
             return PlaylistLoadResult.Failure(new PlaylistLoadError(
                 PlaylistLoadErrorCode.NetworkFailure,
-                "Nie udało się pobrać playlisty z sieci.",
+                T("Nie udało się pobrać playlisty z sieci.", "Could not download the playlist."),
                 exception.StatusCode is null ? null : (int)exception.StatusCode.Value));
         }
         catch (IOException)
         {
             return Failure(
                 PlaylistLoadErrorCode.NetworkFailure,
-                "Połączenie zostało przerwane podczas pobierania playlisty.");
+                T("Połączenie zostało przerwane podczas pobierania playlisty.", "The connection closed while downloading the playlist."));
         }
     }
 
@@ -267,11 +268,11 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
     private static string DescribeHttpFailure(HttpStatusCode statusCode) => statusCode switch
     {
         HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
-            "Serwer odmówił dostępu do playlisty.",
+            T("Serwer odmówił dostępu do playlisty.", "The server denied access to the playlist."),
         HttpStatusCode.NotFound =>
-            "Serwer nie znalazł playlisty.",
+            T("Serwer nie znalazł playlisty.", "The server could not find the playlist."),
         _ =>
-            $"Serwer zwrócił błąd HTTP {(int)statusCode}.",
+            T($"Serwer zwrócił błąd HTTP {(int)statusCode}.", $"The server returned HTTP error {(int)statusCode}."),
     };
 
     private static bool IsInsecureRedirect(Uri requestUri, HttpResponseMessage response)
@@ -318,7 +319,7 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
 
     private static PlaylistLoadResult TooLargeFailure() => Failure(
         PlaylistLoadErrorCode.ContentTooLarge,
-        "Playlista przekracza dozwolony rozmiar.");
+        T("Playlista przekracza dozwolony rozmiar.", "The playlist exceeds the allowed size."));
 
     private static PlaylistLoadResult Failure(
         PlaylistLoadErrorCode code,

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Core.Models;
 
@@ -9,7 +10,7 @@ public readonly record struct PlaylistSourceId
     {
         if (value == Guid.Empty)
         {
-            throw new ArgumentException("Identyfikator źródła playlisty nie może być pusty.", nameof(value));
+            throw new ArgumentException(T("Identyfikator źródła playlisty nie może być pusty.", "The playlist source ID cannot be empty."), nameof(value));
         }
 
         Value = value;
@@ -28,7 +29,7 @@ public readonly record struct ChannelId
     {
         if (value == Guid.Empty)
         {
-            throw new ArgumentException("Identyfikator kanału nie może być pusty.", nameof(value));
+            throw new ArgumentException(T("Identyfikator kanału nie może być pusty.", "The channel ID cannot be empty."), nameof(value));
         }
 
         Value = value;

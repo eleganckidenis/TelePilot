@@ -1,4 +1,5 @@
 using TelePilot.Core.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Infrastructure;
 
@@ -101,7 +102,7 @@ public sealed class ManagedPlaylistFileCollisionException : ManagedPlaylistFileE
 {
     public ManagedPlaylistFileCollisionException(Exception? innerException = null)
         : base(
-            "TelePilot nie może utworzyć kopii playlisty, ponieważ przeznaczony dla niej plik już istnieje.",
+            T("TelePilot nie może utworzyć kopii playlisty, ponieważ przeznaczony dla niej plik już istnieje.", "TelePilot cannot copy the playlist because the destination file already exists."),
             innerException ?? new IOException("Managed playlist destination already exists."))
     {
     }

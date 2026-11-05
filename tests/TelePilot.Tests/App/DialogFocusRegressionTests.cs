@@ -277,6 +277,8 @@ public sealed class DialogFocusRegressionTests
         {
             Grid root = Assert.IsType<Grid>(window.Content);
             AccessibleComboBox firstControl = Assert.IsType<AccessibleComboBox>(
+                window.FindControl<AccessibleComboBox>("LanguagePicker"));
+            AccessibleComboBox sort = Assert.IsType<AccessibleComboBox>(
                 window.FindControl<AccessibleComboBox>("SortPicker"));
             Button lastControl = Assert.IsType<Button>(window.FindControl<Button>("SaveButton"));
             AccessibleTextBox epgUrl = Assert.IsType<AccessibleTextBox>(
@@ -294,8 +296,10 @@ public sealed class DialogFocusRegressionTests
             AccessibleTextBox buffer = Assert.IsType<AccessibleTextBox>(window.FindControl<AccessibleTextBox>("BufferSecondsBox"));
             AccessibleTextBox maximum = Assert.IsType<AccessibleTextBox>(window.FindControl<AccessibleTextBox>("BufferMaximumBox"));
             AccessibleTextBox cap = Assert.IsType<AccessibleTextBox>(window.FindControl<AccessibleTextBox>("VariantCapBox"));
-            Assert.Same(buffer, firstControl.NextTabTarget);
-            Assert.Same(firstControl, buffer.PreviousTabTarget);
+            Assert.Same(sort, firstControl.NextTabTarget);
+            Assert.Same(firstControl, sort.PreviousTabTarget);
+            Assert.Same(buffer, sort.NextTabTarget);
+            Assert.Same(sort, buffer.PreviousTabTarget);
             Assert.Same(maximum, buffer.NextTabTarget);
             Assert.Same(buffer, maximum.PreviousTabTarget);
             Assert.Same(cap, maximum.NextTabTarget);

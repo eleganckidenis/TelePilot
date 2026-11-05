@@ -81,6 +81,11 @@ internal static class Program
 
     private static void RestoreAndActivate(Window window)
     {
+        while (window.OwnedWindows.LastOrDefault(owned => owned.IsVisible) is { } dialog)
+        {
+            window = dialog;
+        }
+
         if (window.WindowState == WindowState.Minimized)
         {
             window.WindowState = WindowState.Normal;

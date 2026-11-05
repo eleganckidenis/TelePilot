@@ -5,6 +5,7 @@ using TelePilot.Core.CatchUp;
 using TelePilot.Core.Models;
 using TelePilot.Epg.Models;
 using TelePilot.Epg.Services;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.ViewModels;
 
@@ -26,7 +27,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
     private ArchiveProgramItemViewModel? selectedProgram;
     private DateTime? selectedDate;
     private ArchiveDateOption? selectedDateOption;
-    private string statusMessage = "Dodaj playlistę, aby wybrać kanał i sprawdzić informacje o jego archiwum.";
+    private string statusMessage = T("Dodaj playlistę, aby wybrać kanał i sprawdzić informacje o jego archiwum.", "Add a playlist to select a channel and see its archive information.");
     private bool updatingChannels;
     private bool updatingDates;
     private bool showChannelsWithoutArchive;
@@ -102,7 +103,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
                 CancelPlay();
                 ClearPrograms();
                 SynchronizeDateOption();
-                StatusMessage = value is null ? "Wybierz dzień archiwum z listy." : "Wybierz Pokaż dzień, aby wczytać audycje z tej daty.";
+                StatusMessage = value is null ? T("Wybierz dzień archiwum z listy.", "Choose an archive day from the list.") : T("Wybierz Pokaż dzień, aby wczytać audycje z tej daty.", "Choose Show day to load programs for that date.");
                 OnPropertyChanged(nameof(DateSelectorAccessibleName));
                 NotifyCommands();
             }
@@ -145,7 +146,8 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
         get => statusMessage;
         private set
         {
-            bool includeSummary = announceChannelSummary && value is not "Wczytywanie archiwum…" and not "Odświeżanie EPG archiwum…";
+            bool includeSummary = announceChannelSummary && value != T("Wczytywanie archiwum…", "Loading archive…")
+                && value != T("Odświeżanie EPG archiwum…", "Refreshing archive EPG…");
             string message = includeSummary ? $"{ChannelSummary} {value}" : value;
             if (includeSummary)
             {
@@ -155,18 +157,18 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
         }
     }
 
-    public string SelectedProgramDetails => SelectedProgram?.Details ?? "Wybierz zakończoną audycję, aby poznać szczegóły i odtworzyć ją z archiwum.";
-    public string ChannelSelectorAccessibleName => SelectedChannel is null ? "Kanał archiwum, nie wybrano" : $"Kanał archiwum, wybrano: {SelectedChannel.Name}";
-    public string DateSelectorAccessibleName => SelectedDateOption is null ? "Data archiwum, nie wybrano" : $"Data archiwum, wybrano: {SelectedDate:dddd, d MMMM yyyy}";
-    public string ChannelSummary => $"Kanały ze skonfigurowanym archiwum: {Channels.Count} z {allChannels.Length}. Na liście: {VisibleChannels.Count}.";
+    public string SelectedProgramDetails => SelectedProgram?.Details ?? T("Wybierz zakończoną audycję, aby poznać szczegóły i odtworzyć ją z archiwum.", "Choose a completed program to see its details and play it from the archive.");
+    public string ChannelSelectorAccessibleName => SelectedChannel is null ? T("Kanał archiwum, nie wybrano", "Archive channel, none selected") : T($"Kanał archiwum, wybrano: {SelectedChannel.Name}", $"Archive channel, selected: {SelectedChannel.Name}");
+    public string DateSelectorAccessibleName => SelectedDateOption is null ? T("Data archiwum, nie wybrano", "Archive date, none selected") : T($"Data archiwum, wybrano: {SelectedDate:dddd, d MMMM yyyy}", $"Archive date, selected: {SelectedDate:dddd, d MMMM yyyy}");
+    public string ChannelSummary => T($"Kanały ze skonfigurowanym archiwum: {Channels.Count} z {allChannels.Length}. Na liście: {VisibleChannels.Count}.", $"Channels with archive settings: {Channels.Count} of {allChannels.Length}. Shown: {VisibleChannels.Count}.");
     public string AvailabilityMessage => SelectedChannel is not null && CatchUpPlayback.IsSupported(SelectedChannel) && CatchUpPlayback.TryGetRetentionDays(SelectedChannel, out double days)
         ? IsManualProfile(SelectedChannel)
-            ? $"Archiwum skonfigurowane ręcznie: do {days:0.##} dni. Ustawienia nie potwierdzają dostępności u dostawcy. Lista obejmuje zakończone audycje z pobranego EPG."
-            : $"Archiwum według danych playlisty: do {days:0.##} dni. Lista obejmuje zakończone audycje z pobranego EPG; ich dostępność zależy od dostawcy."
+            ? T($"Archiwum skonfigurowane ręcznie: do {days:0.##} dni. Ustawienia nie potwierdzają dostępności u dostawcy. Lista obejmuje zakończone audycje z pobranego EPG.", $"Archive configured manually: up to {days:0.##} days. These settings do not confirm availability from your provider. The list shows completed programs from the EPG.")
+            : T($"Archiwum według danych playlisty: do {days:0.##} dni. Lista obejmuje zakończone audycje z pobranego EPG; ich dostępność zależy od dostawcy.", $"Archive according to the playlist: up to {days:0.##} days. The list shows completed programs from the EPG; availability depends on your provider.")
         : SelectedChannel is not null ? GetUnavailableMessage(SelectedChannel)
-        : "Wybierz kanał, aby sprawdzić informacje o jego archiwum. Sam program EPG nie potwierdza dostępności nagrań u dostawcy.";
+        : T("Wybierz kanał, aby sprawdzić informacje o jego archiwum. Sam program EPG nie potwierdza dostępności nagrań u dostawcy.", "Choose a channel to see its archive information. EPG data alone does not confirm that the provider has recordings.");
 
-    private const string MissingArchiveInformation = "Playlista nie deklaruje archiwum dla tego kanału. Sam program EPG nie potwierdza dostępności nagrań. Jeśli dostawca potwierdza archiwum, skonfiguruj je dla tego źródła w ustawieniach.";
+    private static string MissingArchiveInformation => T("Playlista nie deklaruje archiwum dla tego kanału. Sam program EPG nie potwierdza dostępności nagrań. Jeśli dostawca potwierdza archiwum, skonfiguruj je dla tego źródła w ustawieniach.", "The playlist does not declare an archive for this channel. EPG data alone does not confirm that recordings exist. If your provider confirms the archive, configure it for this source in Settings.");
 
     private static bool IsManualProfile(Channel channel) =>
         channel.Attributes.GetValueOrDefault("telepilot-catchup-profile") == "manual";
@@ -174,14 +176,14 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
     private static string GetUnavailableMessage(Channel channel) => CatchUpPlayback.GetSupportStatus(channel) switch
     {
         CatchUpSupportStatus.Disabled when IsManualProfile(channel) && channel.Attributes.GetValueOrDefault("catchup") == "none" =>
-            "Archiwum dla tej playlisty jest wyłączone w ustawieniach.",
-        CatchUpSupportStatus.Disabled => "Playlista oznacza archiwum tego kanału jako wyłączone.",
-        CatchUpSupportStatus.MissingRetention => "Informacje o archiwum nie określają liczby dostępnych dni. Sprawdź ją u dostawcy i uzupełnij ustawienia archiwum tego źródła.",
-        CatchUpSupportStatus.InvalidRetention => "Informacje o archiwum zawierają nieprawidłową liczbę dostępnych dni. Sprawdź dane playlisty lub ustawienia archiwum tego źródła.",
-        CatchUpSupportStatus.UnsupportedMode => "Ten format archiwum nie jest obsługiwany przez TelePilot. Sprawdź format udostępniany przez dostawcę i ustawienia archiwum tego źródła.",
-        CatchUpSupportStatus.InvalidTemplate => "Szablon adresu archiwum jest nieprawidłowy lub nieobsługiwany. Poproś dostawcę o zgodną playlistę archiwalną.",
-        CatchUpSupportStatus.InvalidCorrection => "Korekta czasu archiwum jest nieprawidłowa. Sprawdź dane playlisty lub ustawienia archiwum tego źródła.",
-        CatchUpSupportStatus.UnsupportedStreamUrl => "Nie można zbudować adresu archiwum z adresu tego kanału. Poproś dostawcę o zgodną playlistę archiwalną.",
+            T("Archiwum dla tej playlisty jest wyłączone w ustawieniach.", "The archive for this playlist is disabled in Settings."),
+        CatchUpSupportStatus.Disabled => T("Playlista oznacza archiwum tego kanału jako wyłączone.", "The playlist marks the archive for this channel as disabled."),
+        CatchUpSupportStatus.MissingRetention => T("Informacje o archiwum nie określają liczby dostępnych dni. Sprawdź ją u dostawcy i uzupełnij ustawienia archiwum tego źródła.", "The archive information does not specify how many days are available. Check with your provider and update the archive settings for this source."),
+        CatchUpSupportStatus.InvalidRetention => T("Informacje o archiwum zawierają nieprawidłową liczbę dostępnych dni. Sprawdź dane playlisty lub ustawienia archiwum tego źródła.", "The archive information specifies an invalid number of days. Check the playlist or the archive settings for this source."),
+        CatchUpSupportStatus.UnsupportedMode => T("Ten format archiwum nie jest obsługiwany przez TelePilot. Sprawdź format udostępniany przez dostawcę i ustawienia archiwum tego źródła.", "TelePilot does not support this archive format. Check the format from your provider and the archive settings for this source."),
+        CatchUpSupportStatus.InvalidTemplate => T("Szablon adresu archiwum jest nieprawidłowy lub nieobsługiwany. Poproś dostawcę o zgodną playlistę archiwalną.", "The archive address template is invalid or unsupported. Ask your provider for a compatible archive playlist."),
+        CatchUpSupportStatus.InvalidCorrection => T("Korekta czasu archiwum jest nieprawidłowa. Sprawdź dane playlisty lub ustawienia archiwum tego źródła.", "The archive time correction is invalid. Check the playlist or the archive settings for this source."),
+        CatchUpSupportStatus.UnsupportedStreamUrl => T("Nie można zbudować adresu archiwum z adresu tego kanału. Poproś dostawcę o zgodną playlistę archiwalną.", "Cannot build an archive address from this channel's address. Ask your provider for a compatible archive playlist."),
         _ => MissingArchiveInformation,
     };
 
@@ -287,8 +289,8 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
 
     private bool CanLoad() => !disposed && SelectedChannel is not null && CatchUpPlayback.IsSupported(SelectedChannel) && SelectedDate is not null;
     private string GetEmptyChannelMessage() => allChannels.Length == 0
-        ? "Dodaj playlistę, aby wybrać kanał i sprawdzić informacje o jego archiwum."
-        : "Brak kanałów ze skonfigurowanym archiwum. Zaznacz opcję pokazywania kanałów bez informacji o archiwum, aby sprawdzić każdy kanał.";
+        ? T("Dodaj playlistę, aby wybrać kanał i sprawdzić informacje o jego archiwum.", "Add a playlist to select a channel and see its archive information.")
+        : T("Brak kanałów ze skonfigurowanym archiwum. Zaznacz opcję pokazywania kanałów bez informacji o archiwum, aby sprawdzić każdy kanał.", "No channels have archive settings. Enable showing channels without archive information to inspect every channel.");
     private bool CanGoBackward() => CanLoad() && AvailableDates.Count > 0 && SelectedDate!.Value > AvailableDates[^1].Date;
     private bool CanGoForward() => CanLoad() && AvailableDates.Count > 0 && SelectedDate!.Value < AvailableDates[0].Date;
 
@@ -342,7 +344,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
                     ? GetUnavailableMessage(SelectedChannel)
                     : SelectedChannel is null
                         ? GetEmptyChannelMessage()
-                        : "Wybierz dzień archiwum z listy.";
+                        : T("Wybierz dzień archiwum z listy.", "Choose an archive day from the list.");
             }
             return;
         }
@@ -355,7 +357,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
         CancellationToken token = operation.Token;
         try
         {
-            StatusMessage = refresh ? "Odświeżanie EPG archiwum…" : "Wczytywanie archiwum…";
+            StatusMessage = refresh ? T("Odświeżanie EPG archiwum…", "Refreshing archive EPG…") : T("Wczytywanie archiwum…", "Loading archive…");
             if (refresh)
             {
                 EpgRefreshResult refreshResult = await epg.RefreshAsync(token);
@@ -363,7 +365,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
                 if (refreshResult == EpgRefreshResult.Failed)
                 {
                     ClearPrograms();
-                    StatusMessage = "Nie udało się odświeżyć EPG archiwum. Sprawdź źródło EPG i spróbuj ponownie.";
+                    StatusMessage = T("Nie udało się odświeżyć EPG archiwum. Sprawdź źródło EPG i spróbuj ponownie.", "Could not refresh the archive EPG. Check the EPG source and try again.");
                     return;
                 }
             }
@@ -378,8 +380,8 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
             Programs.ReplaceAll(available);
             SelectedProgram = Programs.FirstOrDefault(programme => programme.Programme.Start == previousStart) ?? Programs.FirstOrDefault();
             StatusMessage = Programs.Count == 0
-                ? $"{channel.Name}, {date:d}: brak zakończonych audycji w zasięgu archiwum. EPG może nie zawierać wcześniejszych danych. Wybierz inny dzień lub odśwież EPG."
-                : $"{channel.Name}, {date:d}: dostępnych audycji: {Programs.Count}. Enter odtwarza wybraną audycję z archiwum.";
+                ? T($"{channel.Name}, {date:d}: brak zakończonych audycji w zasięgu archiwum. EPG może nie zawierać wcześniejszych danych. Wybierz inny dzień lub odśwież EPG.", $"{channel.Name}, {date:d}: no completed programs within the archive period. The EPG may not have older data. Choose a different day or refresh EPG.")
+                : T($"{channel.Name}, {date:d}: dostępnych audycji: {Programs.Count}. Enter odtwarza wybraną audycję z archiwum.", $"{channel.Name}, {date:d}: available programs: {Programs.Count}. Press Enter to play the selected program from the archive.");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -389,7 +391,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
             if (!token.IsCancellationRequested)
             {
                 ClearPrograms();
-                StatusMessage = "Nie udało się wczytać archiwum. Sprawdź źródło EPG i spróbuj ponownie.";
+                StatusMessage = T("Nie udało się wczytać archiwum. Sprawdź źródło EPG i spróbuj ponownie.", "Could not load the archive. Check the EPG source and try again.");
             }
         }
         finally
@@ -406,7 +408,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
     {
         if (!CanPlay())
         {
-            StatusMessage = "Wybrana audycja nie jest już dostępna w archiwum. Odśwież listę audycji.";
+            StatusMessage = T("Wybrana audycja nie jest już dostępna w archiwum. Odśwież listę audycji.", "The selected program is no longer available in the archive. Refresh the program list.");
             playCommand.NotifyCanExecuteChanged();
             return;
         }
@@ -421,7 +423,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
             await playArchive(channel, programme, token);
             if (!token.IsCancellationRequested && !disposed && ReferenceEquals(channel, SelectedChannel))
             {
-                StatusMessage = $"Uruchomiono archiwum: {channel.Name}, {programme.Title}.";
+                StatusMessage = T($"Uruchomiono archiwum: {channel.Name}, {programme.Title}.", $"Playing from archive: {channel.Name}, {programme.Title}.");
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -438,7 +440,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
         {
             if (!token.IsCancellationRequested && !disposed)
             {
-                StatusMessage = "Nie udało się odtworzyć archiwum. Sprawdź dostępność audycji u dostawcy i spróbuj ponownie.";
+                StatusMessage = T("Nie udało się odtworzyć archiwum. Sprawdź dostępność audycji u dostawcy i spróbuj ponownie.", "Could not play the archive. Check program availability with your provider and try again.");
             }
         }
         finally

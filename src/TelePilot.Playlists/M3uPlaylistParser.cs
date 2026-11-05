@@ -3,6 +3,7 @@ using System.Text;
 using TelePilot.Core.Channels;
 using TelePilot.Core.Contracts;
 using TelePilot.Core.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Playlists;
 
@@ -60,7 +61,7 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                         PlaylistDiagnosticCode.MissingExtendedHeader,
                         PlaylistDiagnosticSeverity.Warning,
                         lineNumber,
-                        "Brak nagłówka #EXTM3U. Podjęto próbę odczytania playlisty."));
+                        T("Brak nagłówka #EXTM3U. Podjęto próbę odczytania playlisty.", "No #EXTM3U header. Tried to read the playlist anyway.")));
                 }
             }
 
@@ -86,7 +87,7 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                         PlaylistDiagnosticCode.EntryWithoutStream,
                         PlaylistDiagnosticSeverity.Warning,
                         pending.LineNumber,
-                        "Pominięto wpis kanału bez następującego po nim adresu strumienia."));
+                        T("Pominięto wpis kanału bez następującego po nim adresu strumienia.", "Skipped a channel entry with no stream address after it.")));
                 }
 
                 pending = ParseExtInf(
@@ -148,8 +149,8 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                     PlaylistDiagnosticSeverity.Warning,
                     lineNumber,
                     failureCode == PlaylistDiagnosticCode.RelativeUrlWithoutBase
-                        ? "Pominięto względny adres strumienia, ponieważ źródło nie ma adresu bazowego."
-                        : "Pominięto nieprawidłowy adres strumienia."));
+                        ? T("Pominięto względny adres strumienia, ponieważ źródło nie ma adresu bazowego.", "Skipped a relative stream address because the source has no base address.")
+                        : T("Pominięto nieprawidłowy adres strumienia.", "Skipped an invalid stream address.")));
                 pending = null;
                 continue;
             }
@@ -219,7 +220,7 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                 PlaylistDiagnosticCode.EntryWithoutStream,
                 PlaylistDiagnosticSeverity.Warning,
                 pending.LineNumber,
-                "Pominięto ostatni wpis kanału, ponieważ nie zawiera adresu strumienia."));
+                T("Pominięto ostatni wpis kanału, ponieważ nie zawiera adresu strumienia.", "Skipped the last channel entry because it has no stream address.")));
         }
 
         if (!foundHeader && !inspectedFirstContentLine)
@@ -228,7 +229,7 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                 PlaylistDiagnosticCode.MissingExtendedHeader,
                 PlaylistDiagnosticSeverity.Warning,
                 null,
-                "Playlista jest pusta i nie zawiera nagłówka #EXTM3U."));
+                T("Playlista jest pusta i nie zawiera nagłówka #EXTM3U.", "The playlist is empty and has no #EXTM3U header.")));
         }
 
         return new PlaylistParseResult(
@@ -291,7 +292,7 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                 PlaylistDiagnosticCode.MalformedExtInf,
                 PlaylistDiagnosticSeverity.Warning,
                 lineNumber,
-                "Wpis #EXTINF nie zawiera separatora nazwy. Użyto dostępnych atrybutów."));
+                T("Wpis #EXTINF nie zawiera separatora nazwy. Użyto dostępnych atrybutów.", "The #EXTINF entry has no name separator. Available attributes were used.")));
         }
 
         var attributeText = metadata.Trim();
@@ -321,7 +322,7 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                 PlaylistDiagnosticCode.MalformedAttribute,
                 PlaylistDiagnosticSeverity.Warning,
                 lineNumber,
-                "Co najmniej jeden atrybut #EXTINF był uszkodzony i został pominięty."));
+                T("Co najmniej jeden atrybut #EXTINF był uszkodzony i został pominięty.", "At least one invalid #EXTINF attribute was skipped.")));
         }
 
         return new PendingEntry(lineNumber, name, parsed.Attributes);
@@ -347,7 +348,7 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                 PlaylistDiagnosticCode.MalformedHeader,
                 PlaylistDiagnosticSeverity.Warning,
                 lineNumber,
-                "Część atrybutów nagłówka #EXTM3U była uszkodzona."));
+                T("Część atrybutów nagłówka #EXTM3U była uszkodzona.", "Some #EXTM3U header attributes were invalid.")));
         }
 
         foreach (var key in new[] { "x-tvg-url", "url-tvg" })
@@ -372,7 +373,7 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                         PlaylistDiagnosticCode.InvalidEpgUrl,
                         PlaylistDiagnosticSeverity.Warning,
                         lineNumber,
-                        "Pominięto nieprawidłowy adres EPG z nagłówka playlisty."));
+                        T("Pominięto nieprawidłowy adres EPG z nagłówka playlisty.", "Skipped an invalid EPG address in the playlist header.")));
                 }
             }
         }
@@ -394,12 +395,12 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
         var name = FirstNonEmpty(entry.Name, tvgName);
         if (name is null)
         {
-            name = $"Kanał {generatedNumber.ToString(CultureInfo.InvariantCulture)}";
+            name = T($"Kanał {generatedNumber.ToString(CultureInfo.InvariantCulture)}", $"Channel {generatedNumber.ToString(CultureInfo.InvariantCulture)}");
             diagnostics.Add(new PlaylistDiagnostic(
                 PlaylistDiagnosticCode.GeneratedChannelName,
                 PlaylistDiagnosticSeverity.Warning,
                 entry.LineNumber,
-                "Wpis nie zawierał nazwy kanału. Nadano nazwę zastępczą."));
+                T("Wpis nie zawierał nazwy kanału. Nadano nazwę zastępczą.", "The entry had no channel name. A fallback name was assigned.")));
         }
 
         var resolvedLogo = logoUrl;

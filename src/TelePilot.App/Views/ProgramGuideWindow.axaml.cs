@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using TelePilot.App.ViewModels;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Views;
 
@@ -81,7 +82,7 @@ public sealed partial class ProgramGuideWindow : Window
 
         AutomationProperties.SetName(container, program.AccessibleName);
         AutomationProperties.SetAutomationId(container, program.AutomationId);
-        AutomationProperties.SetHelpText(container, "Strzałkami wybierz audycję. Szczegóły są w następnym polu.");
+        AutomationProperties.SetHelpText(container, T("Strzałkami wybierz audycję. Szczegóły są w następnym polu.", "Use the arrow keys to select a program. Details are in the next field."));
     }
 
     private void OnClosed(object? sender, EventArgs e)

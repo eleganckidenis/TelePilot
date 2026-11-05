@@ -6,6 +6,7 @@ using TelePilot.Core.CatchUp;
 using TelePilot.Core.Channels;
 using TelePilot.Recording;
 using TelePilot.App.Services;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.ViewModels;
 
@@ -35,15 +36,17 @@ public sealed class SettingsWindowViewModel : ObservableObject
         Guid? selectedArchiveSourceId = null)
     {
         ArgumentNullException.ThrowIfNull(preferences);
+        LanguageOptions = LanguagePreference.Options();
+        SelectedLanguage = LanguageOptions.First(option => option.Code == (LanguagePreference.Normalize(preferences.Language) ?? LanguagePreference.SystemLanguage));
         var buffering = preferences.Buffering.Normalize();
         bufferSeconds = buffering.Seconds.ToString(CultureInfo.CurrentCulture);
         bufferMaximum = buffering.MaximumSeconds.ToString(CultureInfo.CurrentCulture);
         variantCap = buffering.VariantMaxMbps.ToString(CultureInfo.CurrentCulture);
         SortOptions =
         [
-            new ChannelSortOption(ChannelSortMode.SourceOrder, "Kolejność z playlisty"),
-            new ChannelSortOption(ChannelSortMode.Name, "Nazwa kanału"),
-            new ChannelSortOption(ChannelSortMode.GroupThenName, "Grupa, potem nazwa"),
+            new ChannelSortOption(ChannelSortMode.SourceOrder, T("Kolejność z playlisty", "Playlist order")),
+            new ChannelSortOption(ChannelSortMode.Name, T("Nazwa kanału", "Channel name")),
+            new ChannelSortOption(ChannelSortMode.GroupThenName, T("Grupa, potem nazwa", "Group, then name")),
         ];
         AudioFormats =
         [
@@ -65,8 +68,8 @@ public sealed class SettingsWindowViewModel : ObservableObject
         favorites = [.. preferences.Favorites];
         ArchiveModeOptions =
         [
-            new ArchiveModeOption(CatchUpSourceMode.Automatic, "Automatycznie z playlisty"),
-            new ArchiveModeOption(CatchUpSourceMode.Disabled, "Wyłączone"),
+            new ArchiveModeOption(CatchUpSourceMode.Automatic, T("Automatycznie z playlisty", "Automatic from playlist")),
+            new ArchiveModeOption(CatchUpSourceMode.Disabled, T("Wyłączone", "Off")),
             new ArchiveModeOption(CatchUpSourceMode.FlussonicHls, "Flussonic HLS"),
             new ArchiveModeOption(CatchUpSourceMode.FlussonicTs, "Flussonic MPEG-TS"),
             new ArchiveModeOption(CatchUpSourceMode.Shift, "Shift (UTC)"),
@@ -90,7 +93,13 @@ public sealed class SettingsWindowViewModel : ObservableObject
         CancelCommand = new RelayCommand(() => CloseRequested?.Invoke(this, null));
     }
 
+    internal bool FocusArchiveOnOpen { get; init; }
+
     public event EventHandler<AppPreferences?>? CloseRequested;
+
+    public IReadOnlyList<LanguageOption> LanguageOptions { get; }
+
+    public LanguageOption SelectedLanguage { get; set; }
 
     public IReadOnlyList<ChannelSortOption> SortOptions { get; }
 
@@ -108,8 +117,8 @@ public sealed class SettingsWindowViewModel : ObservableObject
         && SelectedArchiveMode.Mode is not (CatchUpSourceMode.Automatic or CatchUpSourceMode.Disabled);
 
     public string ArchiveSourceMessage => HasArchiveSources
-        ? "Tryb automatyczny odczytuje archiwum z danych playlisty. Ustawienia ręczne dotyczą tylko wybranego źródła: podaj typ i liczbę dni potwierdzone przez dostawcę. Samo EPG ani zmiana ustawień nie tworzą nagrań na serwerze."
-        : "Dodaj źródło playlisty w głównym oknie, aby ustawić jego archiwum.";
+        ? T("Tryb automatyczny odczytuje archiwum z danych playlisty. Ustawienia ręczne dotyczą tylko wybranego źródła: podaj typ i liczbę dni potwierdzone przez dostawcę. Samo EPG ani zmiana ustawień nie tworzą nagrań na serwerze.", "Automatic mode reads archive settings from the playlist. Manual settings apply to the selected source: enter the type and number of days your provider confirms. EPG and settings cannot create recordings on the server.")
+        : T("Dodaj źródło w menedżerze playlist, aby ustawić jego archiwum.", "Add a source in Playlist Manager to configure its archive.");
 
     public PlaylistSourceItemViewModel? SelectedArchiveSource
     {
@@ -202,8 +211,8 @@ public sealed class SettingsWindowViewModel : ObservableObject
 
     public string ExternalEpgPrivacyMessage =>
         TelePilot.Core.Security.SensitiveDataRedactor.ContainsPotentialSecret(ExternalEpgUrl.Trim())
-            ? "Adres zawiera parametry lub dane logowania. Będzie używany tylko do zamknięcia programu; po restarcie wpisz go ponownie."
-            : "Adres bez parametrów i danych logowania zostanie zapisany w ustawieniach.";
+            ? T("Adres zawiera parametry lub dane logowania. Będzie używany tylko do zamknięcia programu; po restarcie wpisz go ponownie.", "The address contains parameters or sign-in details. It will be used until you close the app; enter it again after restarting.")
+            : T("Adres bez parametrów i danych logowania zostanie zapisany w ustawieniach.", "Addresses without parameters or sign-in details are saved in Settings.");
 
     public string FfmpegPath
     {
@@ -243,7 +252,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
             !TryReadArchiveNumber(BufferMaximum, out var maximum) || maximum < seconds || maximum > 300 ||
             !TryReadArchiveNumber(VariantCap, out var cap) || cap < 0 || cap > 500)
         {
-            ValidationMessage = "Podaj dodatni bufor i maksimum do 300 sekund, nie mniejsze niż bufor. Limit HLS: od 0 do 500 Mb/s; 0 wyłącza limit.";
+            ValidationMessage = T("Podaj dodatni bufor i maksimum do 300 sekund, nie mniejsze niż bufor. Limit HLS: od 0 do 500 Mb/s; 0 wyłącza limit.", "Enter a positive buffer and a maximum of up to 300 seconds, at least as large as the buffer. The HLS limit must be 0 to 500 Mbps; 0 disables it.");
             return;
         }
         StoreArchiveDraft();
@@ -266,13 +275,13 @@ public sealed class SettingsWindowViewModel : ObservableObject
         var normalizedEpgUrl = AppPreferencesService.NormalizeExternalEpgUrl(ExternalEpgUrl);
         if (!string.IsNullOrWhiteSpace(ExternalEpgUrl) && normalizedEpgUrl is null)
         {
-            ValidationMessage = "Wpisz prawidłowy adres HTTP lub HTTPS programu XMLTV albo pozostaw pole puste.";
+            ValidationMessage = T("Wpisz prawidłowy adres HTTP lub HTTPS programu XMLTV albo pozostaw pole puste.", "Enter a valid HTTP or HTTPS address for the XMLTV guide, or leave the field blank.");
             return;
         }
 
         if (!TryNormalizePath(RecordingDirectory, requireFile: false, out var outputDirectory))
         {
-            ValidationMessage = "Wpisz prawidłowy folder nagrań.";
+            ValidationMessage = T("Wpisz prawidłowy folder nagrań.", "Enter a valid recording folder.");
             return;
         }
 
@@ -281,14 +290,14 @@ public sealed class SettingsWindowViewModel : ObservableObject
         {
             if (!TryNormalizePath(FfmpegPath, requireFile: true, out normalizedFfmpeg))
             {
-                ValidationMessage = "Wskazany plik FFmpeg nie istnieje.";
+                ValidationMessage = T("Wskazany plik FFmpeg nie istnieje.", "The selected FFmpeg file does not exist.");
                 return;
             }
         }
 
         if (string.IsNullOrWhiteSpace(FileNameTemplate))
         {
-            ValidationMessage = "Format nazwy pliku nie może być pusty.";
+            ValidationMessage = T("Format nazwy pliku nie może być pusty.", "The file name format cannot be empty.");
             return;
         }
 
@@ -297,6 +306,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
             this,
             new AppPreferences
             {
+                Language = SelectedLanguage?.Code ?? LanguagePreference.SystemLanguage,
                 ChannelSortMode = SelectedSort.Mode,
                 Buffering = new TelePilot.Core.Models.PlaybackBufferSettings(seconds, maximum, cap).Normalize(),
                 ExternalEpgUrl = normalizedEpgUrl,
@@ -348,13 +358,13 @@ public sealed class SettingsWindowViewModel : ObservableObject
 
         if (!TryReadArchiveNumber(draft.RetentionDays, out var days) || days is < 0.01 or > 36500)
         {
-            error = "Podaj liczbę dni archiwum od 0,01 do 36500 dla wybranego źródła.";
+            error = T("Podaj liczbę dni archiwum od 0,01 do 36500 dla wybranego źródła.", "Enter the number of archive days, from 0.01 to 36500, for the selected source.");
             return false;
         }
 
         if (!TryReadArchiveNumber(draft.CorrectionHours, out var correction) || correction is < -24 or > 24)
         {
-            error = "Podaj korektę czasu archiwum od -24 do 24 godzin dla wybranego źródła.";
+            error = T("Podaj korektę czasu archiwum od -24 do 24 godzin dla wybranego źródła.", "Enter an archive time correction between -24 and 24 hours for the selected source.");
             return false;
         }
 

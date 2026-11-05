@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Xml.Linq;
 using TelePilot.App.Models;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.App.Services;
 
@@ -81,7 +82,7 @@ public sealed class WindowsRecordingTaskScheduler : IRecordingTaskScheduler
                 new XAttribute("version", "1.4"),
                 new XElement(
                     taskNamespace + "RegistrationInfo",
-                    new XElement(taskNamespace + "Description", $"Nagranie TelePilot: {entry.ChannelName}")),
+                    new XElement(taskNamespace + "Description", T($"Nagranie TelePilot: {entry.ChannelName}", $"TelePilot recording: {entry.ChannelName}"))),
                 new XElement(
                     taskNamespace + "Triggers",
                     new XElement(
@@ -146,7 +147,7 @@ public sealed class WindowsRecordingTaskScheduler : IRecordingTaskScheduler
         {
             if (!process.Start())
             {
-                throw new InvalidOperationException("Nie udało się uruchomić Harmonogramu zadań Windows.");
+                throw new InvalidOperationException(T("Nie udało się uruchomić Harmonogramu zadań Windows.", "Could not open Windows Task Scheduler."));
             }
 
             var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
@@ -158,13 +159,13 @@ public sealed class WindowsRecordingTaskScheduler : IRecordingTaskScheduler
             {
                 throw new InvalidOperationException(
                     string.IsNullOrWhiteSpace(output)
-                        ? "Harmonogram zadań Windows odrzucił zadanie nagrywania."
-                        : $"Harmonogram zadań Windows odrzucił zadanie: {output}");
+                        ? T("Harmonogram zadań Windows odrzucił zadanie nagrywania.", "Windows Task Scheduler rejected the recording task.")
+                        : T($"Harmonogram zadań Windows odrzucił zadanie: {output}", $"Windows Task Scheduler rejected the task: {output}"));
             }
         }
         catch (System.ComponentModel.Win32Exception exception)
         {
-            throw new InvalidOperationException("Nie udało się uruchomić Harmonogramu zadań Windows.", exception);
+            throw new InvalidOperationException(T("Nie udało się uruchomić Harmonogramu zadań Windows.", "Could not open Windows Task Scheduler."), exception);
         }
     }
 
@@ -172,7 +173,7 @@ public sealed class WindowsRecordingTaskScheduler : IRecordingTaskScheduler
     {
         if (!OperatingSystem.IsWindows())
         {
-            throw new PlatformNotSupportedException("Planowanie nagrań jest obecnie dostępne tylko w Windows.");
+            throw new PlatformNotSupportedException(T("Planowanie nagrań jest obecnie dostępne tylko w Windows.", "Recording scheduling is currently only available on Windows."));
         }
     }
 }

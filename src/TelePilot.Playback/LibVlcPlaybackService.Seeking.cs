@@ -1,6 +1,7 @@
 using TelePilot.Core.Models;
 using System.Diagnostics;
 using VlcState = LibVLCSharp.Shared.VLCState;
+using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Playback;
 
@@ -47,7 +48,7 @@ public sealed partial class LibVlcPlaybackService
         var channel = Volatile.Read(ref _channel);
         if (channel is null || Current.State is not (PlaybackState.Playing or PlaybackState.Paused))
         {
-            return Task.FromResult(PlaybackCommandResult.Rejected("Najpierw rozpocznij odtwarzanie audycji."));
+            return Task.FromResult(PlaybackCommandResult.Rejected(T("Najpierw rozpocznij odtwarzanie audycji.", "Start playing a program first.")));
         }
 
         return EnqueueAsync(
@@ -58,14 +59,14 @@ public sealed partial class LibVlcPlaybackService
                     || !ReferenceEquals(channel, _channel)
                     || Current.State is not (PlaybackState.Playing or PlaybackState.Paused))
                 {
-                    return PlaybackCommandResult.Rejected("Odtwarzana audycja została zmieniona lub zatrzymana.");
+                    return PlaybackCommandResult.Rejected(T("Odtwarzana audycja została zmieniona lub zatrzymana.", "The program being played changed or stopped."));
                 }
 
                 if (!_nativeResources.IsValueCreated
                     || _mediaPlayer.State is not (VlcState.Playing or VlcState.Paused)
                     || !_mediaPlayer.IsSeekable)
                 {
-                    return PlaybackCommandResult.Unsupported("Ten strumień nie obsługuje przewijania.");
+                    return PlaybackCommandResult.Unsupported(T("Ten strumień nie obsługuje przewijania.", "This stream does not support seeking."));
                 }
 
                 if (!_seekEventsSubscribed)
@@ -85,7 +86,7 @@ public sealed partial class LibVlcPlaybackService
                     _lastSeekSessionGeneration == generation && _lastSeekResumeGeneration == resumeGeneration);
                 if (currentTime < 0)
                 {
-                    return PlaybackCommandResult.Unsupported("Pozycja odtwarzania nie jest jeszcze dostępna.");
+                    return PlaybackCommandResult.Unsupported(T("Pozycja odtwarzania nie jest jeszcze dostępna.", "Playback position is not available yet."));
                 }
 
                 var target = ClampSeekTime(currentTime, _mediaPlayer.Length, offset);
@@ -97,7 +98,7 @@ public sealed partial class LibVlcPlaybackService
                 _lastSeekWasPaused = paused;
                 return new PlaybackCommandResult(
                     PlaybackCommandStatus.Succeeded,
-                    $"Pozycja odtwarzania: {(long)(target / 1_000d + _archiveResumeOffset)} s.");
+                    T($"Pozycja odtwarzania: {(long)(target / 1_000d + _archiveResumeOffset)} s.", $"Playback position: {(long)(target / 1_000d + _archiveResumeOffset)} s."));
             },
             cancellationToken);
     }
