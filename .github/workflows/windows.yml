@@ -75,7 +75,7 @@ jobs:
         shell: pwsh
         run: |
           $setupPath = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
-          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $setupPath
+          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $setupPath -MaximumRetryCount 3 -RetryIntervalSec 3
           $hash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash
           if ($hash -ne '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732') {
             throw 'Inno Setup SHA-256 mismatch.'

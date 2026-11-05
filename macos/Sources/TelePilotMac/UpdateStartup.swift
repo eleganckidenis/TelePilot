@@ -41,7 +41,12 @@ import AppKit
                 await Task.detached(priority: .utility) {
                     (try? ReleaseUpdate.verify(file, asset: asset)) == true
                 }.value
-            }, open: { NSWorkspace.shared.open($0) }, terminate: { NSApp.terminate(nil) })
+            }, open: { NSWorkspace.shared.open($0) }, terminate: {
+                // AppKit may enter its termination modal loop synchronously.
+                // Leave this MainActor task before asking it to quit so the
+                // delegate can finish its asynchronous shutdown and reply.
+                NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0)
+            })
             guard result == .failed else { return }
 
             let failure = NSAlert()
