@@ -9,7 +9,7 @@
     <Description>Accessible IPTV player with a programme guide and recording.</Description>
     <Company>TelePilot</Company>
     <Authors>TelePilot contributors</Authors>
-    <Version>2.0.2</Version>
+    <Version>2.0.3</Version>
     <ApplicationIcon
         Condition="('$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))) Or $([System.Text.RegularExpressions.Regex]::IsMatch('$(RuntimeIdentifier)', '^win-'))">Assets\TelePilot.ico</ApplicationIcon>
     <ApplicationManifest

@@ -58,7 +58,7 @@ public enum HLSVariant {
                         if data.count >= 512_000 { break }
                     }
                     try Task.checkCancellation()
-                    return select(parse(String(decoding: data, as: UTF8.self), baseURL: url), cap: cap)?.url ?? url
+                    return select(parse(String(decoding: data, as: UTF8.self), baseURL: response.url ?? url), cap: cap)?.url ?? url
                 }
                 group.addTask { try await Task.sleep(for: .milliseconds(400)); return url }
                 defer { group.cancelAll() }

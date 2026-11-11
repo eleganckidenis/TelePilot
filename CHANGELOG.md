@@ -1,5 +1,23 @@
 # Changelog / Historia zmian
 
+## 2.0.3
+
+### Polski
+
+- Windows: anulowanie pobierania EPG przerywa również zatrzymany transfer XML lub gzip. Kolejne wczytywanie może ruszyć bez oczekiwania na poprzednie.
+- Windows: zamknięcie okna programu telewizyjnego anuluje jego trwające odświeżanie.
+- macOS: poprawiono odtwarzanie HLS oraz import i odświeżanie playlist z względnymi adresami po przekierowaniu serwera. Zapisana kopia playlisty zachowuje poprawne adresy po restarcie.
+- macOS: umożliwiono nagrywanie strumieni RTMPS.
+- macOS: ponowne wybranie zakończenia aplikacji podczas zamykania nie przerywa już rozpoczętego zamykania. Po anulowaniu można ponowić próbę.
+
+### English
+
+- Windows: cancelling a TV guide download also interrupts a stalled XML or gzip transfer, allowing the next guide load to proceed.
+- Windows: closing the TV guide window cancels its pending refresh.
+- macOS: fixed HLS playback and playlist import/refresh when a server redirects a playlist containing relative addresses. Saved playlist copies retain the correct addresses after restarting.
+- macOS: enabled recording RTMPS streams.
+- macOS: repeated quit requests no longer interrupt an ongoing shutdown. Cancelling quit still allows another attempt.
+
 ## 2.0.2
 
 ### Polski

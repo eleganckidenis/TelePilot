@@ -122,6 +122,64 @@ public sealed class XmlTvParserTests
         Assert.All(document.Warnings, static warning => Assert.True(warning.LineNumber > 0));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ParseAsync_CancelInterruptsAStalledBodyRead(bool gzip)
+    {
+        // Headers and a valid prefix arrive, then the source stalls. XmlReader's
+        // internal reads do not supply the caller's CancellationToken.
+        var content = gzip ? Compress("<tv>") : Encoding.UTF8.GetBytes("<tv>");
+        await using var stream = new StalledReadStream(content);
+        using var cancellation = new CancellationTokenSource();
+        var parsing = new XmlTvParser().ParseAsync(stream, cancellation.Token);
+        await stream.WaitingForBody.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        cancellation.Cancel();
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await parsing.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            // Also release the read on the unfixed implementation so a failing
+            // regression never leaves work running in the test process.
+            stream.Release.TrySetResult();
+            try { await parsing; } catch (Exception) { }
+        }
+    }
+
+    private sealed class StalledReadStream(byte[] content) : Stream
+    {
+        private int position;
+        public TaskCompletionSource WaitingForBody { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (position < content.Length)
+            {
+                var count = Math.Min(buffer.Length, content.Length - position);
+                content.AsMemory(position, count).CopyTo(buffer);
+                position += count;
+                return count;
+            }
+
+            WaitingForBody.TrySetResult();
+            await Release.Task.WaitAsync(cancellationToken);
+            return 0;
+        }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     private static byte[] Compress(string value)
     {
         using MemoryStream output = new();

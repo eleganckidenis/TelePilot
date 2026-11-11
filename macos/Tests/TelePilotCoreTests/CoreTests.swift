@@ -147,6 +147,24 @@ struct CoreTests {
         do { _ = try await reopened.loadCached(added); Issue.record("Removed sources must not remain loadable") }
         catch { #expect(error is TelePilotError) }
     }
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TELEPILOT_TEST_HTTP_BASE"] != nil))
+    func redirectedPlaylistRetainsFinalBaseAcrossCacheAndRefresh() async throws {
+        let address = try #require(ProcessInfo.processInfo.environment["TELEPILOT_TEST_HTTP_BASE"])
+        let base = try #require(URL(string: address))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let key = Data(repeating: 9, count: 32)
+        let repository = try PlaylistRepository(directory: root, keyData: key)
+        let added = try await repository.addURL(base.appendingPathComponent("redirect/playlist.m3u"), name: "Redirected")
+        let imported = try await repository.loadCached(added)
+        #expect(imported.channels.first?.streamURL == base.appendingPathComponent("cdn/streams/channel.ts"))
+        #expect(imported.epgURLs.first == base.appendingPathComponent("cdn/guide.xml"))
+        let reopened = try PlaylistRepository(directory: root, keyData: key)
+        #expect(try await reopened.loadCached(added).channels.first?.streamURL == imported.channels.first?.streamURL)
+        let refreshed = try await reopened.load(added)
+        #expect(refreshed.channels.first?.streamURL == base.appendingPathComponent("cdn/streams/channel.ts"))
+        #expect(refreshed.epgURLs == imported.epgURLs)
+    }
     @Test func orphanCleanupOnlyRemovesUnreferencedManagedCopies() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

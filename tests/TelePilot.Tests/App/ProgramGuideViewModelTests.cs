@@ -110,6 +110,37 @@ public sealed class ProgramGuideViewModelTests
         Assert.Contains(channel.Name, viewModel.StatusMessage, StringComparison.CurrentCulture);
     }
 
+    [Fact]
+    public async Task Dispose_CancelsPendingGuideRefresh()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken refreshToken = default;
+        using var viewModel = new ProgramGuideViewModel(
+            [new ChannelListItemViewModel("test", "Test", "Test")],
+            (_, _, _, _) => Task.FromResult<IReadOnlyList<ProgramItemViewModel>>([]),
+            (_, _) => Task.CompletedTask,
+            async token =>
+            {
+                refreshToken = token;
+                entered.TrySetResult();
+                await release.Task.WaitAsync(token);
+            });
+        var refresh = viewModel.RefreshCommand.ExecuteAsync(null);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        viewModel.Dispose();
+        try
+        {
+            Assert.True(refreshToken.IsCancellationRequested);
+            await refresh.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await refresh;
+        }
+    }
+
     private static ProgramGuideViewModel CreateViewModel(
         IEnumerable<ChannelListItemViewModel> channels,
         LoadRecorder loader,

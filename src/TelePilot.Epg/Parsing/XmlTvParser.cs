@@ -71,7 +71,7 @@ public sealed class XmlTvParser
         }
 
         byte[] prefix = await ReadPrefixAsync(input, cancellationToken).ConfigureAwait(false);
-        PrefixReadStream replay = new(prefix, input);
+        PrefixReadStream replay = new(prefix, input, cancellationToken);
         bool isGzip = prefix.Length >= 2 && prefix[0] == 0x1F && prefix[1] == 0x8B;
         Stream content = isGzip
             ? new GZipStream(replay, CompressionMode.Decompress, leaveOpen: false)

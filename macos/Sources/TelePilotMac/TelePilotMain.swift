@@ -34,6 +34,7 @@ import Darwin
     var instanceLock:Int32 = -1
     var activateObserver:NSObjectProtocol?
     private var restartRequested = false
+    private let termination = ApplicationTermination()
     private var activationName: Notification.Name {
         .init(usesTestProfile ? "pl.telepilot.native.activate.\(directory.path)" : "pl.telepilot.native.activate")
     }
@@ -85,14 +86,11 @@ import Darwin
         guard let controller else {return .terminateNow}
         let restart = restartRequested
         restartRequested = false
-        Task {
-            guard await controller.prepareToTerminate() else {
-                sender.reply(toApplicationShouldTerminate: false)
-                return
-            }
-            if restart { await openReplacement() }
-            sender.reply(toApplicationShouldTerminate: true)
-        }
+        termination.request(prepare: {
+            guard await controller.prepareToTerminate() else { return false }
+            if restart { await self.openReplacement() }
+            return true
+        }, reply: { sender.reply(toApplicationShouldTerminate: $0) })
         return .terminateLater
     }
     private func openReplacement() async {
@@ -124,5 +122,24 @@ import Darwin
         if let controller { controller.queueFileImports(urls) }
         else { pendingImports += urls }
         sender.reply(toOpenOrPrint: .success)
+    }
+}
+
+@MainActor final class ApplicationTermination {
+    private var pending = false
+
+    @discardableResult
+    func request(prepare: @escaping @MainActor () async -> Bool,
+                 reply: @escaping @MainActor (Bool) -> Void) -> Bool {
+        // Repeated quit requests must share the original asynchronous shutdown.
+        // A second prepare would report "already terminating" and cancel it.
+        guard !pending else { return false }
+        pending = true
+        Task {
+            let allowed = await prepare()
+            if !allowed { pending = false }
+            reply(allowed)
+        }
+        return true
     }
 }

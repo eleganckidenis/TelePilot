@@ -4,16 +4,18 @@ internal sealed class PrefixReadStream : Stream
 {
     private readonly Stream _inner;
     private readonly byte[] _prefix;
+    private readonly CancellationToken _operationCancellation;
     private int _position;
     private bool _disposed;
 
-    public PrefixReadStream(byte[] prefix, Stream inner)
+    public PrefixReadStream(byte[] prefix, Stream inner, CancellationToken operationCancellation = default)
     {
         ArgumentNullException.ThrowIfNull(prefix);
         ArgumentNullException.ThrowIfNull(inner);
 
         _prefix = prefix;
         _inner = inner;
+        _operationCancellation = operationCancellation;
     }
 
     public override bool CanRead => !_disposed && _inner.CanRead;
@@ -73,6 +75,7 @@ internal sealed class PrefixReadStream : Stream
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _operationCancellation.ThrowIfCancellationRequested();
         cancellationToken.ThrowIfCancellationRequested();
 
         int copied = CopyPrefix(buffer.Span);
@@ -81,7 +84,21 @@ internal sealed class PrefixReadStream : Stream
             return copied;
         }
 
-        return copied + await _inner.ReadAsync(buffer[copied..], cancellationToken).ConfigureAwait(false);
+        // XmlReader.ReadAsync does not accept a token, so its stream reads
+        // normally carry CancellationToken.None. Preserve parser cancellation
+        // through both the plain XML and gzip decoding paths.
+        if (!cancellationToken.CanBeCanceled || cancellationToken == _operationCancellation)
+        {
+            return copied + await _inner.ReadAsync(buffer[copied..], _operationCancellation).ConfigureAwait(false);
+        }
+
+        if (!_operationCancellation.CanBeCanceled)
+        {
+            return copied + await _inner.ReadAsync(buffer[copied..], cancellationToken).ConfigureAwait(false);
+        }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_operationCancellation, cancellationToken);
+        return copied + await _inner.ReadAsync(buffer[copied..], linked.Token).ConfigureAwait(false);
     }
 
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();

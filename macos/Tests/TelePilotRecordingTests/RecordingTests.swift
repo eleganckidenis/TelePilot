@@ -42,6 +42,16 @@ struct RecordingTests {
     #expect(local.arguments(output: directory.appendingPathComponent("out.ts")).contains("/tmp/input file.ts"))
 }
 
+@Test func testSecureRTMPRecordingPreservesSourceAddress() throws {
+    let directory = URL(fileURLWithPath: "/tmp/recordings")
+    let source = URL(string: "rtmps://example.invalid/live/channel?token=synthetic")!
+    let item = RecordingRequest(streamURL: source, channelName: "Channel", programmeTitle: nil,
+        directory: directory, mode: .video)
+    try item.validate()
+    let args = item.arguments(output: directory.appendingPathComponent("out.ts"))
+    #expect(args[args.firstIndex(of: "-i")! + 1] == source.absoluteString)
+}
+
 @Test func testFilenameCannotEscapeAndIsByteBounded() {
     let item = RecordingRequest(streamURL: URL(string: "https://example.invalid")!, channelName: String(repeating: "ą", count: 300),
         programmeTitle: nil, directory: URL(fileURLWithPath: "/tmp"), mode: .video, filenameTemplate: "../../{channel}/\n")

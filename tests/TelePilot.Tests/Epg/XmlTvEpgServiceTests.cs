@@ -239,6 +239,63 @@ public sealed class XmlTvEpgServiceTests
         Assert.Empty(service.Channels);
     }
 
+    [Fact]
+    public async Task RefreshAsync_CancelStalledReadReleasesGateForNextRefresh()
+    {
+        var source = new StalledDataSource();
+        using var service = new XmlTvEpgService(source);
+        using var cancellation = new CancellationTokenSource();
+        var refresh = service.RefreshAsync(cancellation.Token);
+        await source.WaitingForBody.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        cancellation.Cancel();
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await refresh.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
+            Assert.Equal(EpgServiceState.Empty, service.Status.State);
+            Assert.Equal(EpgRefreshResult.Success, await service.RefreshAsync(TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
+            Assert.Single(service.Channels);
+        }
+        finally
+        {
+            source.Release.TrySetResult();
+            try { await refresh; } catch (OperationCanceledException) { }
+        }
+    }
+
+    private sealed class StalledDataSource : IEpgDataSource
+    {
+        private bool opened;
+        public string Description => "synthetic stalled EPG";
+        public TaskCompletionSource WaitingForBody { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public ValueTask<Stream> OpenReadAsync(CancellationToken cancellationToken = default)
+        {
+            if (opened)
+            {
+                return ValueTask.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(
+                    "<tv><channel id='test'><display-name>Test</display-name></channel></tv>")));
+            }
+            opened = true;
+            return ValueTask.FromResult<Stream>(new StalledStream(this));
+        }
+
+        private sealed class StalledStream(StalledDataSource source) : MemoryStream(Encoding.UTF8.GetBytes("<tv>"))
+        {
+            public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            {
+                if (Position < Length)
+                {
+                    return await base.ReadAsync(buffer, cancellationToken);
+                }
+                source.WaitingForBody.TrySetResult();
+                await source.Release.Task.WaitAsync(cancellationToken);
+                return 0;
+            }
+        }
+    }
+
     private static Channel CreateChannel(string name, string? tvgId = null) =>
         new(
             ChannelId.New(),

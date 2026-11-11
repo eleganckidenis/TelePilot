@@ -182,6 +182,14 @@ struct PlaybackBufferingTests {
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TELEPILOT_TEST_HTTP_BASE"] != nil))
+    func redirectedHLSProbeResolvesVariantsAgainstFinalURL() async throws {
+        let address = try #require(ProcessInfo.processInfo.environment["TELEPILOT_TEST_HTTP_BASE"])
+        let base = try #require(URL(string: address))
+        let master = base.appendingPathComponent("redirect/master.m3u8")
+        #expect(await HLSVariant.resolve(master, cap: 3) == base.appendingPathComponent("cdn/low.m3u8"))
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TELEPILOT_TEST_HTTP_BASE"] != nil))
     func actualHLSProbeSelectsVariantAndFallsBackQuickly() async throws {
         let address = try #require(ProcessInfo.processInfo.environment["TELEPILOT_TEST_HTTP_BASE"])
         let base = try #require(URL(string: address))

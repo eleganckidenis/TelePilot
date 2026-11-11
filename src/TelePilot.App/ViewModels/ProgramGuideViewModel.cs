@@ -19,6 +19,7 @@ public sealed class ProgramGuideViewModel : ObservableObject, IDisposable
     private readonly AsyncRelayCommand goToNowCommand;
     private readonly AsyncRelayCommand scheduleProgrammeCommand;
     private readonly AsyncRelayCommand scheduleChannelCommand;
+    private readonly CancellationTokenSource lifetimeCancellation = new();
     private CancellationTokenSource? activeLoad;
     private ChannelListItemViewModel? selectedChannel;
     private ProgramItemViewModel? selectedProgram;
@@ -157,6 +158,8 @@ public sealed class ProgramGuideViewModel : ObservableObject, IDisposable
         }
 
         disposed = true;
+        lifetimeCancellation.Cancel();
+        lifetimeCancellation.Dispose();
         activeLoad?.Cancel();
         activeLoad?.Dispose();
         activeLoad = null;
@@ -211,19 +214,30 @@ public sealed class ProgramGuideViewModel : ObservableObject, IDisposable
 
     private async Task RefreshAsync()
     {
+        if (disposed)
+        {
+            return;
+        }
+
         try
         {
             StatusMessage = T("Odświeżanie programu…", "Refreshing TV guide…");
-            await refreshGuide(CancellationToken.None);
+            await refreshGuide(lifetimeCancellation.Token);
             await LoadAsync();
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = T("Anulowano odświeżanie programu.", "TV guide refresh canceled.");
+            if (!disposed)
+            {
+                StatusMessage = T("Anulowano odświeżanie programu.", "TV guide refresh canceled.");
+            }
         }
         catch (Exception)
         {
-            StatusMessage = T("Nie udało się odświeżyć programu. Sprawdź źródło EPG i spróbuj ponownie.", "Could not refresh the TV guide. Check the EPG source and try again.");
+            if (!disposed)
+            {
+                StatusMessage = T("Nie udało się odświeżyć programu. Sprawdź źródło EPG i spróbuj ponownie.", "Could not refresh the TV guide. Check the EPG source and try again.");
+            }
         }
     }
 

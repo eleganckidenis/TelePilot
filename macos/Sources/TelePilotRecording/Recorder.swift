@@ -24,7 +24,7 @@ public struct RecordingRequest: Codable, Sendable {
         self.duration = duration; self.filenameTemplate = filenameTemplate
     }
     func validate() throws {
-        guard ["http", "https", "file", "rtsp", "rtmp", "udp", "rtp"].contains(streamURL.scheme?.lowercased() ?? ""),
+        guard ["http", "https", "file", "rtsp", "rtmp", "rtmps", "udp", "rtp"].contains(streamURL.scheme?.lowercased() ?? ""),
               directory.isFileURL, !channelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               (32...512).contains(bitrate), duration == nil || (duration!.isFinite && duration! > 0) else {
             throw RecordingError.invalidRequest

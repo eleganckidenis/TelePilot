@@ -21,6 +21,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         try:
+            if self.path in ["/redirect/master.m3u8", "/redirect/playlist.m3u"]:
+                target = "/cdn/" + self.path.rsplit("/", 1)[1]
+                self.send_response(302)
+                self.send_header("Location", target)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if self.path == "/cdn/playlist.m3u":
+                body = b'#EXTM3U x-tvg-url="guide.xml"\n#EXTINF:-1,Channel\nstreams/channel.ts\n'
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/x-mpegurl")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if self.path.endswith(".m3u8"):
                 if self.path == "/slow.m3u8":
                     time.sleep(1.5)

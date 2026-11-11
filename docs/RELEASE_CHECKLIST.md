@@ -1,6 +1,6 @@
 # Lista kontrolna wydania TelePilot
 
-## Aktualny zakres 2.0.2
+## Aktualny zakres 2.0.3
 
 - Windows x64 i ARM64: pełne testy na właściwych runnerach Windows, natywne syntetyczne
   odtwarzanie, budowanie instalatora, weryfikacja FFmpeg i SHA-256. Wydanie bez

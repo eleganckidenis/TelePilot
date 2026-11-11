@@ -4,6 +4,9 @@ import Security
 
 public enum HTTPDataLoader {
     public static func load(_ url: URL, maximumBytes: Int = M3UParser.maximumBytes) async throws -> Data {
+        try await loadResponse(url, maximumBytes: maximumBytes).data
+    }
+    static func loadResponse(_ url: URL, maximumBytes: Int = M3UParser.maximumBytes) async throws -> (data: Data, url: URL) {
         guard validHTTP(url), maximumBytes > 0 else { throw TelePilotError.invalidURL }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 30; configuration.timeoutIntervalForResource = 90
@@ -24,7 +27,7 @@ public enum HTTPDataLoader {
                 data.append(byte)
             }
             try Task.checkCancellation()
-            return data
+            return (data, finalURL)
         } catch {
             if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
             if let safe = error as? TelePilotError { throw safe }
@@ -49,7 +52,15 @@ public actor PlaylistRepository {
     private let directory: URL
     private let key: SymmetricKey
     private var items: [PlaylistSource]
-    private struct Payload: Codable { var originalURL: URL; var remote: Bool; var data: Data }
+    private struct Payload: Codable {
+        var originalURL: URL
+        var remote: Bool
+        var data: Data
+        // Optional to preserve previously sealed playlists. Refresh still uses the
+        // original source; relative media and EPG locations use the final response URL.
+        var resolvedURL: URL? = nil
+        var baseURL: URL { resolvedURL ?? originalURL }
+    }
     public init(directory: URL) throws {
         let keyData = try RepositoryKeychain.key(account: stableID(directory.standardizedFileURL.path))
         try self.init(directory: directory, keyData: keyData)
@@ -82,11 +93,11 @@ public actor PlaylistRepository {
         return source
     }
     public func addURL(_ url: URL, name: String) async throws -> PlaylistSource {
-        let data = try await HTTPDataLoader.load(url)
+        let response = try await HTTPDataLoader.loadResponse(url)
         try Task.checkCancellation()
         let source = PlaylistSource(name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Playlista" : name)
-        _ = try M3UParser.parse(data, sourceID: source.id, baseURL: url)
-        try insert(source, payload: Payload(originalURL: url, remote: true, data: data))
+        _ = try M3UParser.parse(response.data, sourceID: source.id, baseURL: response.url)
+        try insert(source, payload: Payload(originalURL: url, remote: true, data: response.data, resolvedURL: response.url))
         return source
     }
     /// Reads the last successfully imported/refreshed copy without contacting the
@@ -95,20 +106,22 @@ public actor PlaylistRepository {
         try Task.checkCancellation()
         guard items.contains(where: { $0.id == source.id }) else { throw TelePilotError.sourceUnavailable }
         let payload = try readPayload(source.id)
-        return try M3UParser.parse(payload.data, sourceID: source.id, baseURL: payload.originalURL)
+        return try M3UParser.parse(payload.data, sourceID: source.id, baseURL: payload.baseURL)
     }
     public func load(_ source: PlaylistSource) async throws -> Playlist {
         guard items.contains(where: { $0.id == source.id }) else { throw TelePilotError.sourceUnavailable }
         var payload = try readPayload(source.id)
         if payload.remote {
-            payload.data = try await HTTPDataLoader.load(payload.originalURL)
+            let response = try await HTTPDataLoader.loadResponse(payload.originalURL)
+            payload.data = response.data
+            payload.resolvedURL = response.url
         } else if FileManager.default.fileExists(atPath: payload.originalURL.path) {
             payload.data = try readFile(payload.originalURL)
         }
         try Task.checkCancellation()
         // An import can be removed while the actor is suspended for an HTTP request.
         guard items.contains(where: { $0.id == source.id }) else { throw TelePilotError.sourceUnavailable }
-        let playlist = try M3UParser.parse(payload.data, sourceID: source.id, baseURL: payload.originalURL)
+        let playlist = try M3UParser.parse(payload.data, sourceID: source.id, baseURL: payload.baseURL)
         try writePayload(payload, id: source.id)
         return playlist
     }

@@ -54,7 +54,8 @@ def main():
     parser.add_argument("--windows-rid", action="append", choices=("win-x64", "win-arm64"),
                         help="Windows package to verify; defaults to both architectures")
     parser.add_argument("--github-json", type=Path, help="Release object from GitHub REST API")
-    parser.add_argument("--shared-vlc-sources", type=Path, help="Local copy of the 2.0.1 VLC source asset reused in 2.0.2")
+    parser.add_argument("--shared-vlc-sources", type=Path, help="Local copy of the unchanged 2.0.1 VLC source asset")
+    parser.add_argument("--shared-vlc-release-json", type=Path, help="Public v2.0.1 release metadata for unchanged VLC sources")
     parser.add_argument("--published", action="store_true", help="Require a public release in GitHub metadata")
     args = parser.parse_args()
     version = args.version
@@ -69,9 +70,23 @@ def main():
     mac_sources_zip = f"{stem}-macos-third-party-sources.zip"
     names = [*windows_installers, mac_installer, source_zip, mac_sources_zip]
     vlc_sources_zip = None
-    if version == "2.0.2":
-        require(args.shared_vlc_sources is not None, "Provide the shared VLC source archive for 2.0.2")
-        require(file_digest(args.shared_vlc_sources) == SHARED_VLC_SHA256, "Shared VLC archive differs from v2.0.1")
+    shared_vlc = version in ("2.0.2", "2.0.3")
+    if shared_vlc:
+        require(args.shared_vlc_sources is not None or args.shared_vlc_release_json is not None,
+                "Provide the shared VLC archive or its public release metadata")
+        if args.shared_vlc_sources is not None:
+            require(file_digest(args.shared_vlc_sources) == SHARED_VLC_SHA256, "Shared VLC archive differs from v2.0.1")
+        if args.shared_vlc_release_json is not None:
+            shared = json.loads(args.shared_vlc_release_json.read_text(encoding="utf-8"))
+            require(shared["tag_name"] == "v2.0.1" and shared["draft"] is False and shared["prerelease"] is False,
+                    "Shared VLC sources must be the published v2.0.1 asset")
+            matches = [asset for asset in shared["assets"] if asset["name"] == SHARED_VLC_SOURCES]
+            require(len(matches) == 1, "Missing or duplicate shared VLC source asset")
+            asset = matches[0]
+            require(asset["digest"] == "sha256:" + SHARED_VLC_SHA256 and asset["size"] == 747632051
+                    and asset["state"] == "uploaded"
+                    and asset["browser_download_url"] == f"https://github.com/{REPOSITORY}/releases/download/v2.0.1/{SHARED_VLC_SOURCES}",
+                    "Shared VLC source metadata differs from the verified archive")
     elif tuple(map(int, version.split("."))) >= (2, 0, 1):
         vlc_sources_zip = f"{stem}-vlc-third-party-sources.zip"
         names.append(vlc_sources_zip)
@@ -128,13 +143,13 @@ def main():
 
     if vlc_sources_zip is not None:
         verify_vlc_sources(args.directory / vlc_sources_zip)
-    elif version == "2.0.2":
+    elif shared_vlc and args.shared_vlc_sources is not None:
         verify_vlc_sources(args.shared_vlc_sources)
 
     if args.github_json is not None:
         release = json.loads(args.github_json.read_text(encoding="utf-8"))
         require(release["tag_name"] == tag and release["prerelease"] is False, "Wrong GitHub release")
-        if version == "2.0.2":
+        if shared_vlc:
             base = f"https://github.com/{REPOSITORY}/releases/download/v2.0.1/{SHARED_VLC_SOURCES}"
             links = re.findall(r"\]\((https://[^\s)]+)\)", release["body"] or "")
             require(base in links and f"{base}.sha256" in links, "Release notes must link to the shared VLC sources and checksum")
