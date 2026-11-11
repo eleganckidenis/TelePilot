@@ -49,6 +49,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
                 return
+            if self.path == "/failed.ts":
+                self.send_error(503)
+                return
             if self.path == "/finite.ts":
                 # Three seconds of this generated TS, served as a finite input.
                 body = content[:max(188, (len(content) // 5 // 188) * 188)]

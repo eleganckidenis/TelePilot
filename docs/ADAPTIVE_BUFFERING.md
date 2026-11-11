@@ -57,7 +57,18 @@ it. Independently, 90 seconds without actual progress ends an unsuccessful
 session, including pending work. Explicit pause suspends this deadline; resume
 starts a fresh observation window while retaining the retry count.
 
-True engine EOF ends playback immediately. EOF, exhausted retries and the
+Native adapters retain the current input's `EncounteredError` event. VLC 3.0.24
+can overwrite its Error state with Ended when the input thread dies, including
+after HTTP 503. Such an input is passed to recovery as Error, not genuine EOF.
+Clean EOF also requires the current input's `EndReached` event, allowing even
+files shorter than the polling interval to finish correctly. Raw Ended without
+either event receives at most one second for event delivery, then becomes a
+failed-input retry. Error evidence takes precedence. The latches are cleared
+after stopping the old input and before opening the next one; callbacks do not
+invoke blocking VLC APIs. Finite EOF without an error still ends playback
+immediately.
+
+EOF, exhausted retries and the
 no-progress deadline release playback, cancel old work and return focus and
 selection to the channel list. They do not quit the app or stop independent
 recording. Session/attempt guards prevent old callbacks, seeks and track dialogs
@@ -80,3 +91,5 @@ provider connection.
 Primary implementation references: [LibVLC media options](https://docs.videolan.me/libvlcsharp/api/LibVLCSharp.Shared.Media.html),
 [VLC 3.0.24 decoder accounting](https://github.com/videolan/vlc/blob/3.0.24/src/input/decoder.c),
 [video output accounting](https://github.com/videolan/vlc/blob/3.0.24/src/video_output/video_output.c).
+The Error-to-Ended distinction follows
+[LibVLC's input state/death handling](https://github.com/videolan/vlc/blob/3.0.24/lib/media_player.c).

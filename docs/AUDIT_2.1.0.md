@@ -30,6 +30,13 @@ watch timing, stale terminal UI callbacks, cancellation on alternative play
 routes, and terminal volume/mute updates. These prepublication findings are not
 all defects in v2.0.3.
 
+Real HTTP 503 tests on both Windows architectures and the packaged Mac app
+additionally exposed a native-state ambiguity: VLC emits an error, then overwrites
+its state with Ended on input-thread death. Polling alone misclassified the failed
+connection as EOF. Each adapter now retains the current attempt's error event,
+while real finite EOF remains terminal. The original failing HTTP 503 regression
+is retained rather than replaced with an easier error fixture.
+
 The 32 deterministic cross-platform traces (2,422 steps) cover EOF in live/archive/pending/paused
 states; all six retries; stable sparse/frequent polling; starvation versus output
 freeze; repeated buffering; actual versus desired cache; pause, seek and tracks;

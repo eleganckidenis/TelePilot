@@ -186,6 +186,26 @@ struct OnboardingTests {
                 #expect(controller.window?.firstResponder === controller.table)
                 #expect(controller.recoveryTask == nil)
                 #expect(await player.state() == 5)
+                let beforeFailedOpens = controller.playbackAttempt
+                controller.play(channel, url: base.appendingPathComponent("failed.ts"))
+                var observedRetries = 0
+                let failedDeadline = ProcessInfo.processInfo.systemUptime + 65
+                while controller.playing != nil && ProcessInfo.processInfo.systemUptime < failedDeadline {
+                    await controller.poll()
+                    observedRetries = max(observedRetries, controller.recovery?.attempts ?? 0)
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+                #expect(observedRetries == 6)
+                #expect(controller.playbackAttempt - beforeFailedOpens == 7)
+                #expect(controller.playing == nil)
+                #expect(controller.status.stringValue == "Could not recover the stream. Select a channel to try again.")
+                #expect(controller.selectedChannel?.id == channel.id)
+                #expect(controller.window?.firstResponder === controller.table)
+                #expect(controller.recoveryTask == nil)
+                #expect(await player.state() == 5)
+                let terminalAttempt = controller.playbackAttempt
+                try await Task.sleep(for: .seconds(3))
+                #expect(controller.playbackAttempt == terminalAttempt)
             }
             await player.shutdown()
         }

@@ -66,7 +66,16 @@ struct PlaybackIntegrationTests {
         #expect(await player.selectTrack(-1, subtitles: false, generation: 3, attempt: 0) == false)
         await player.stop(generation: 4)
         if let address = environment["TELEPILOT_TEST_HTTP_BASE"], let base = URL(string: address) {
-            try await player.play(base.appendingPathComponent("finite.ts"), viewAddress: 0, generation: 5, options: options)
+            try await player.play(base.appendingPathComponent("failed.ts"), viewAddress: 0, generation: 5, options: options)
+            let failureDeadline = ProcessInfo.processInfo.systemUptime + 5
+            while await player.state() != 7 && ProcessInfo.processInfo.systemUptime < failureDeadline { try await Task.sleep(for: .milliseconds(100)) }
+            #expect(await player.state() == 7)
+            try await Task.sleep(for: .seconds(1))
+            #expect(await player.state() == 7)
+            await player.stop(generation: 6)
+            #expect(await player.state() == 5)
+            // A later clean finite input cannot inherit the failed input's latch.
+            try await player.play(base.appendingPathComponent("finite.ts"), viewAddress: 0, generation: 7, options: options)
             let deadline = ProcessInfo.processInfo.systemUptime + 12
             var eof = await player.sample()
             while eof.state != 6 && ProcessInfo.processInfo.systemUptime < deadline {
@@ -75,7 +84,7 @@ struct PlaybackIntegrationTests {
             #expect(eof.state == 6)
             var policy = PlaybackRecovery(live: true, url: base.appendingPathComponent("finite.ts"), now: 0)
             #expect(policy.evaluate(eof, now: 1) == .finished)
-            await player.stop(generation: 6)
+            await player.stop(generation: 8)
             #expect(await player.state() == 5)
         }
         await player.shutdown()

@@ -17,6 +17,9 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
     private readonly Channel<Func<Task>> _commandQueue;
     private readonly Task _commandWorker;
     private readonly Lock _stateLock = new();
+    private readonly NativePlaybackAttemptSignals _nativeAttemptSignals = new();
+    private EventHandler<EventArgs>? _attemptErrorHandler;
+    private EventHandler<EventArgs>? _attemptEndHandler;
     private CancellationTokenSource _retryCancellation = new();
     private PlaybackSnapshot _current = PlaybackSnapshot.Initial;
     private CoreChannel? _channel;
@@ -132,7 +135,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             {
                 ResetRetryCancellation();
                 _recovery = null;
-                Interlocked.Increment(ref _playbackSessionGeneration);
+                _nativeAttemptSignals.BeginAttempt(Interlocked.Increment(ref _playbackSessionGeneration));
                 UpdateCurrent(Current with
                 {
                     State = PlaybackState.Stopping,
@@ -308,7 +311,12 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
 
     private PlaybackCommandResult PlayInternal(CoreChannel channel, Uri streamUri, PlaybackOptions options, bool quickStart = false)
     {
-        Interlocked.Increment(ref _playbackSessionGeneration);
+        // Stop drains the previous native input before new callback identities
+        // or latches can be associated with its replacement.
+        _mediaPlayer.Stop();
+        var attemptGeneration = Interlocked.Increment(ref _playbackSessionGeneration);
+        _nativeAttemptSignals.BeginAttempt(attemptGeneration);
+        BindNativeAttemptEvents(attemptGeneration);
         UpdateCurrent(new PlaybackSnapshot(
             PlaybackState.Connecting,
             channel.Id,
@@ -318,7 +326,6 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             false,
             T($"Łączenie z kanałem {channel.Name}.", $"Connecting to {channel.Name}.")));
 
-        _mediaPlayer.Stop();
         var appliedCache = _recovery?.Target ?? 2;
         _recovery?.BeginAttempt(MonotonicNow, appliedCache);
 
@@ -350,8 +357,6 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
         player.Playing += OnPlaying;
         player.Paused += OnPaused;
         player.Stopped += OnStopped;
-        player.EndReached += OnEndReached;
-        player.EncounteredError += OnEncounteredError;
         player.ESAdded += OnTracksChanged;
         player.ESDeleted += OnTracksChanged;
         player.ESSelected += OnTracksChanged;
@@ -364,8 +369,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
         _mediaPlayer.Playing -= OnPlaying;
         _mediaPlayer.Paused -= OnPaused;
         _mediaPlayer.Stopped -= OnStopped;
-        _mediaPlayer.EndReached -= OnEndReached;
-        _mediaPlayer.EncounteredError -= OnEncounteredError;
+        UnbindNativeAttemptEvents();
         _mediaPlayer.ESAdded -= OnTracksChanged;
         _mediaPlayer.ESDeleted -= OnTracksChanged;
         _mediaPlayer.ESSelected -= OnTracksChanged;
@@ -424,46 +428,56 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
         }
     }
 
-    private void OnEndReached(object? sender, EventArgs eventArgs) => QueuePlaybackEvent(ApplyEndReached);
+    private void BindNativeAttemptEvents(long generation)
+    {
+        UnbindNativeAttemptEvents();
+        _attemptErrorHandler = (_, _) =>
+        {
+            if (_disposed || !_nativeAttemptSignals.RecordError(generation)) return;
+            QueuePlaybackEvent(ApplyEncounteredError, generation);
+        };
+        _attemptEndHandler = (_, _) =>
+        {
+            if (_disposed || !_nativeAttemptSignals.RecordEnd(generation)) return;
+            QueuePlaybackEvent(ApplyEndReached, generation);
+        };
+        _mediaPlayer.EncounteredError += _attemptErrorHandler;
+        _mediaPlayer.EndReached += _attemptEndHandler;
+    }
+
+    private void UnbindNativeAttemptEvents()
+    {
+        if (_attemptErrorHandler is not null) _mediaPlayer.EncounteredError -= _attemptErrorHandler;
+        if (_attemptEndHandler is not null) _mediaPlayer.EndReached -= _attemptEndHandler;
+        _attemptErrorHandler = _attemptEndHandler = null;
+    }
 
     private void ApplyEndReached()
     {
-        if (_mediaPlayer.State != VLCState.Ended
-            || _channel is null
-            || Current.ChannelId != _channel.Id)
-        {
-            return;
-        }
-
+        if (_channel is null || Current.ChannelId != _channel.Id) return;
         PollPlaybackHealth();
     }
-
-    private void OnEncounteredError(object? sender, EventArgs eventArgs) => QueuePlaybackEvent(ApplyEncounteredError);
 
     private void ApplyEncounteredError()
     {
         var channel = _channel;
-        if (_mediaPlayer.State != VLCState.Error
-            || channel is null
-            || Current.ChannelId != channel.Id)
-        {
-            return;
-        }
-
+        if (channel is null || Current.ChannelId != channel.Id) return;
         LogPlaybackError(_logger, channel.Name, channel.Id);
+        // Read fresh facts for this attempt. A queued callback must never
+        // replay an old failure against a replacement input.
         PollPlaybackHealth();
     }
 
     private void OnTracksChanged(object? sender, EventArgs eventArgs) => QueuePlayerMetadataRefresh();
 
-    private void QueuePlaybackEvent(Action operation)
+    private void QueuePlaybackEvent(Action operation, long? capturedGeneration = null)
     {
         if (_disposed)
         {
             return;
         }
 
-        var sessionGeneration = Volatile.Read(ref _playbackSessionGeneration);
+        var sessionGeneration = capturedGeneration ?? Volatile.Read(ref _playbackSessionGeneration);
         _commandQueue.Writer.TryWrite(() =>
         {
             if (_disposed || sessionGeneration != Volatile.Read(ref _playbackSessionGeneration))

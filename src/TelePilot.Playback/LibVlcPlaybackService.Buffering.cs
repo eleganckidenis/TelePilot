@@ -46,7 +46,9 @@ public sealed partial class LibVlcPlaybackService
         var radio = _channel.Attributes.TryGetValue("radio", out var radioHint) &&
             radioHint.Trim().ToLowerInvariant() is "true" or "1" or "yes";
         var videoTracks = _mediaPlayer.VideoTrackCount;
-        EvaluateRecovery(new RecoverySample((int)_mediaPlayer.State, _mediaPlayer.Time / 1000d, _mediaPlayer.Length / 1000d,
+        var now = MonotonicNow;
+        var state = _nativeAttemptSignals.NormalizeState((int)_mediaPlayer.State, now);
+        EvaluateRecovery(new RecoverySample(state, _mediaPlayer.Time / 1000d, _mediaPlayer.Length / 1000d,
             progress, radio || videoTracks == 0, _mediaPlayer.AudioTrack != -1, _videoSurfaceVisible && videoTracks > 0, videoTracks >= 0 ? videoTracks : null));
         RestoreSelectedTracks();
     }
@@ -86,7 +88,7 @@ public sealed partial class LibVlcPlaybackService
         _resumePosition = _archiveResumeOffset = 0;
         _tracksToRestore.Clear();
         _rememberedTracks.Clear();
-        Interlocked.Increment(ref _playbackSessionGeneration);
+        _nativeAttemptSignals.BeginAttempt(Interlocked.Increment(ref _playbackSessionGeneration));
         var volume = ReadKnownVolume();
         var muted = _mediaPlayer.Mute;
         _mediaPlayer.Stop();
