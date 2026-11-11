@@ -159,6 +159,85 @@ public sealed class ReleaseUpdateTests
         Assert.Empty(Directory.EnumerateFileSystemEntries(folder.Path));
     }
 
+    [Theory]
+    [InlineData(403)]
+    [InlineData(429)]
+    [InlineData(503)]
+    public async Task FailedChecksAreDistinctFromNoUpdate(int status)
+    {
+        using var client = new HttpClient(new MockHttp(_ => new((HttpStatusCode)status)));
+        var result = await new ReleaseUpdate(client, "", Architecture.X64).CheckDetailedAsync(new(2, 0, 2), CancellationToken.None);
+        Assert.Equal(UpdateCheckStatus.Failed, result.Status);
+        Assert.Equal((HttpStatusCode)status, result.HttpStatus);
+    }
+
+    [Fact]
+    public async Task InvalidMetadataIsDistinctFromCurrentVersion()
+    {
+        using var bad = new HttpClient(new MockHttp(_ => TextResponse("not JSON")));
+        Assert.Equal(UpdateCheckStatus.InvalidMetadata,
+            (await new ReleaseUpdate(bad, "", Architecture.X64).CheckDetailedAsync(new(2, 0, 2), CancellationToken.None)).Status);
+        using var current = new HttpClient(new MockHttp(_ => TextResponse(Release())));
+        Assert.Equal(UpdateCheckStatus.NoUpdate,
+            (await new ReleaseUpdate(current, "", Architecture.X64).CheckDetailedAsync(new(2, 10, 0), CancellationToken.None)).Status);
+    }
+
+    [Fact]
+    public async Task MetadataRetriesAreBoundedAndRespectServerDelay()
+    {
+        var calls = 0;
+        var delays = new List<double>();
+        using var client = new HttpClient(new MockHttp(_ => ++calls < 3 ? new(HttpStatusCode.ServiceUnavailable) : TextResponse(Release())));
+        var result = await UpdateStartup.CheckWithRetryAsync(new ReleaseUpdate(client, "", Architecture.X64), new(2, 0, 2),
+            CancellationToken.None, (delay, _) => { delays.Add(delay.TotalSeconds); return Task.CompletedTask; });
+        Assert.Equal(UpdateCheckStatus.Available, result.Status);
+        Assert.Equal(3, calls); Assert.Equal([2d, 5d], delays);
+        calls = 0; delays.Clear();
+        using var limited = new HttpClient(new MockHttp(_ =>
+        {
+            calls++;
+            var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            response.Headers.RetryAfter = new(TimeSpan.FromMinutes(2));
+            return response;
+        }));
+        result = await UpdateStartup.CheckWithRetryAsync(new ReleaseUpdate(limited, "", Architecture.X64), new(2, 0, 2),
+            CancellationToken.None, (delay, _) => { delays.Add(delay.TotalSeconds); return Task.CompletedTask; });
+        Assert.Equal(UpdateCheckStatus.Failed, result.Status); Assert.Equal(1, calls); Assert.Empty(delays);
+        Assert.Equal(TimeSpan.FromMinutes(2), result.RetryAfter);
+    }
+
+    [Fact]
+    public async Task PersistentTransientFailureStopsAfterThreeChecksAndCancellationStopsBackoff()
+    {
+        var calls = 0;
+        using var client = new HttpClient(new MockHttp(_ => { calls++; return new(HttpStatusCode.ServiceUnavailable); }));
+        var update = new ReleaseUpdate(client, "", Architecture.X64);
+        var result = await UpdateStartup.CheckWithRetryAsync(update, new(2, 0, 2), CancellationToken.None,
+            (_, _) => Task.CompletedTask);
+        Assert.Equal(UpdateCheckStatus.Failed, result.Status); Assert.Equal(3, calls);
+        calls = 0;
+        using var cancellation = new CancellationTokenSource();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => UpdateStartup.CheckWithRetryAsync(update, new(2, 0, 2), cancellation.Token,
+            (_, token) => { cancellation.Cancel(); token.ThrowIfCancellationRequested(); return Task.CompletedTask; }));
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task DownloadReportsProgressAndKeepsStrictVerification()
+    {
+        using var folder = new TemporaryFolder();
+        using var client = new HttpClient(new MockHttp(request => request.RequestUri!.Host == "api.github.com" ? TextResponse(Release()) : ByteResponse(Payload)));
+        var update = new ReleaseUpdate(client, folder.Path, Architecture.X64);
+        var asset = await update.CheckAsync(new(2, 0, 2), CancellationToken.None);
+        var reports = new List<int>();
+        var path = await update.DownloadAsync(asset!, CancellationToken.None, new InlineProgress(reports.Add));
+        Assert.Equal(100, reports.Last());
+        Assert.True(await ReleaseUpdate.VerifyAsync(path, asset!, CancellationToken.None));
+    }
+
+    private sealed class InlineProgress(Action<int> report) : IProgress<int>
+    { public void Report(int value) => report(value); }
+
     [Fact]
     public async Task LiveGitHubUpdateDownloadsAndVerifiesPublicInstaller()
     {

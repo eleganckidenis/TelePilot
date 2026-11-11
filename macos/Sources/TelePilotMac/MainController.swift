@@ -167,7 +167,9 @@ import TelePilotRecording
         sources = await repository.sources()
         if firstRun { showPlaylistManager() }
         libraryDidChange()
-        if let window { UpdateStartup.start(window: window) }
+        if let window { UpdateStartup.start(window: window, status: { [weak self] in
+            self?.setStatus($0, speak: NSApp.isActive && NSApp.modalWindow == nil && self?.window?.attachedSheet == nil)
+        }) }
         if !sources.isEmpty { await loadSources() }
     }
     func loadSources() async {

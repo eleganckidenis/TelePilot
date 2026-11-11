@@ -51,15 +51,25 @@ struct ReleaseUpdate {
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-              http.url == Self.latestReleaseURL, http.expectedContentLength <= Self.maximumMetadataBytes else { return nil }
+              http.url == Self.latestReleaseURL, http.expectedContentLength <= Self.maximumMetadataBytes else {
+            if let http = response as? HTTPURLResponse { throw UpdateError.metadataHTTP(http.statusCode) }
+            throw UpdateError.invalidMetadata
+        }
 
         var metadata = Data()
         for try await byte in bytes {
-            guard metadata.count < Self.maximumMetadataBytes else { return nil }
+            guard metadata.count < Self.maximumMetadataBytes else { throw UpdateError.invalidMetadata }
             metadata.append(byte)
         }
 
-        return try Self.selectAsset(from: metadata, current: current)
+        let selected = try Self.selectAsset(from: metadata, current: current)
+        if selected == nil {
+            let release = try JSONDecoder().decode(Release.self, from: metadata)
+            guard !release.draft, !release.prerelease, release.tagName.hasPrefix("v"),
+                  let version = UpdateVersion(String(release.tagName.dropFirst())) else { throw UpdateError.invalidMetadata }
+            if version > current { throw UpdateError.invalidMetadata }
+        }
+        return selected
     }
 
     static func selectAsset(from metadata: Data, current: UpdateVersion) throws -> UpdateAsset? {
@@ -78,12 +88,15 @@ struct ReleaseUpdate {
         return UpdateAsset(version: version, name: name, url: url, size: match.size, sha256: String(digest.dropFirst(7)).lowercased())
     }
 
-    func download(_ asset: UpdateAsset, session: URLSession) async throws -> URL {
+    func download(_ asset: UpdateAsset, session: URLSession, progress: (@Sendable (Int, Int) -> Void)? = nil) async throws -> URL {
+        try Task.checkCancellation()
+        progress?(0, asset.size)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let destination = directory.appendingPathComponent(asset.name)
         if try Self.verify(destination, asset: asset) {
             try Self.markFromInternet(destination, asset: asset)
             removeOldDownloads(keeping: asset.name)
+            progress?(asset.size, asset.size)
             return destination
         }
 
@@ -105,11 +118,15 @@ struct ReleaseUpdate {
         var hash = SHA256()
         var buffer = Data(capacity: Self.bufferBytes)
         var size = 0
+        var lastProgress = ProcessInfo.processInfo.systemUptime
         for try await byte in bytes {
             guard size < asset.size else { throw UpdateError.invalidDownload }
             buffer.append(byte)
             size += 1
             if buffer.count == Self.bufferBytes {
+                try Task.checkCancellation()
+                let now = ProcessInfo.processInfo.systemUptime
+                if now - lastProgress >= 0.2 { progress?(size, asset.size); lastProgress = now }
                 hash.update(data: buffer)
                 try output.write(contentsOf: buffer)
                 buffer.removeAll(keepingCapacity: true)
@@ -124,6 +141,7 @@ struct ReleaseUpdate {
         try Task.checkCancellation()
         guard Darwin.rename(partial.path, destination.path) == 0 else { throw UpdateError.fileUnavailable }
         removeOldDownloads(keeping: asset.name)
+        progress?(asset.size, asset.size)
         return destination
     }
 
@@ -205,9 +223,17 @@ struct ReleaseUpdate {
         }
     }
 
-    enum UpdateError: Error {
+    enum UpdateError: Error, Equatable {
         case invalidDownload
         case fileUnavailable
+        case metadataHTTP(Int)
+        case invalidMetadata
+
+        static func isTransient(_ error: Error) -> Bool {
+            if case let UpdateError.metadataHTTP(status) = error { return status == 408 || (500...599).contains(status) }
+            guard let error = error as? URLError else { return false }
+            return [.timedOut, .notConnectedToInternet, .cannotConnectToHost, .networkConnectionLost, .dnsLookupFailed].contains(error.code)
+        }
     }
 }
 

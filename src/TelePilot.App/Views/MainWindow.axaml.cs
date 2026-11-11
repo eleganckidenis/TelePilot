@@ -13,6 +13,7 @@ using LibVLCSharp.Shared;
 using TelePilot.App.Accessibility;
 using TelePilot.App.Controls;
 using TelePilot.App.ViewModels;
+using TelePilot.App.Services;
 using TelePilot.Playback;
 using static TelePilot.Core.Localization.Localizer;
 
@@ -36,6 +37,7 @@ public sealed partial class MainWindow : Window
     private int videoOutputFocusRecoveryQueued;
     private DateTimeOffset focusRecoverySuspendedUntil;
     private bool closeApproved;
+    private bool updateShutdownComplete;
     private bool closePromptActive;
     private IInputElement? focusBeforeMainMenu;
     private bool isMainMenuFocusRestorePending;
@@ -1347,6 +1349,8 @@ public sealed partial class MainWindow : Window
             : new FocusRequest(FocusTarget.SearchBox);
     }
 
+    private void OnCheckForUpdates(object? sender, RoutedEventArgs args) => UpdateStartup.CheckManually(this);
+
     private void OnCloseRequested(object? sender, EventArgs e)
     {
         closeApproved = true;
@@ -1356,10 +1360,8 @@ public sealed partial class MainWindow : Window
     private async void OnClosing(object? sender, WindowClosingEventArgs e)
     {
         var currentViewModel = CurrentViewModel;
-        if (closeApproved || currentViewModel?.IsRecording != true)
-        {
-            return;
-        }
+        if (closeApproved && updateShutdownComplete
+            || (closeApproved || currentViewModel?.IsRecording != true) && !UpdateStartup.HasWork(this)) return;
 
         e.Cancel = true;
         if (closePromptActive)
@@ -1370,8 +1372,12 @@ public sealed partial class MainWindow : Window
         closePromptActive = true;
         try
         {
-            if (await currentViewModel.ConfirmCloseAsync())
+            if (closeApproved || currentViewModel?.IsRecording != true || await currentViewModel.ConfirmCloseAsync())
             {
+                // Cancel only after recording/quit consent, while the UI loop
+                // remains alive to finish dialogs and delete partial downloads.
+                await UpdateStartup.StopAsync(this);
+                updateShutdownComplete = true;
                 closeApproved = true;
                 Close();
             }

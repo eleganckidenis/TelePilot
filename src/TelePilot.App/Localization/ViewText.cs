@@ -5,6 +5,7 @@ namespace TelePilot.App.Localization;
 /// <summary>Text shared by XAML views, including keyboard mnemonics and screen reader labels.</summary>
 public static class ViewText
 {
+    public static string CheckForUpdates => T("Sprawdź aktualizacje…", "Check for updates…");
     public static string ANameToHelpYouRecognize => T("Własna nazwa ułatwiająca rozpoznanie playlisty.", "A name to help you recognize this playlist.");
     public static string Add => T("Dodaj", "Add");
     public static string AddCurrentChannelToFavorites => T("Dodaj aktualnie _odtwarzany do ulubionych", "Add _current channel to favorites");

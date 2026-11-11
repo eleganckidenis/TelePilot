@@ -1,5 +1,23 @@
 # Changelog / Historia zmian
 
+## 2.1.1
+
+### Polski
+
+- Aktualizator informuje o znalezionej wersji i pokazuje postęp automatycznego pobierania. Okno można anulować bez blokowania odtwarzania.
+- Dodano **Pomoc → Sprawdź aktualizacje**, możliwość ponowienia próby oraz otwarcia oficjalnej strony pobierania.
+- Błędy połączenia, odpowiedzi serwera, zapisu i weryfikacji paczki nie kończą się już bez informacji. Przejściowe problemy podczas sprawdzania mają ograniczone ponowienia.
+- Uporządkowano równoczesne wywołania, anulowanie, zamykanie programu i przywracanie fokusu.
+- Sprawdzono także oryginalny aktualizator 2.0.2: jego komunikat pojawia się dopiero po pobraniu całego instalatora i uaktywnieniu okna. Starszą aplikację można jednorazowo uaktualnić ze strony wydań.
+
+### English
+
+- The updater announces an available version and displays automatic download progress. You can cancel the update window while continuing playback.
+- Added **Help → Check for Updates**, retry and the official download-page action.
+- Connection, server, file and verification failures now show a useful message. Transient update-check failures receive bounded retries.
+- Fixed coordination of repeated checks, cancellation, shutdown and focus restoration.
+- Also checked the original 2.0.2 updater: it displays its notice after downloading the complete installer and activating the app window. Older installations can receive a one-time update from the release download page.
+
 ## 2.1.0
 
 ### Polski

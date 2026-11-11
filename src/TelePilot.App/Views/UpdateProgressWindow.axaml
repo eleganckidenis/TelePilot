@@ -1,0 +1,33 @@
+<Window
+    x:Class="TelePilot.App.Views.UpdateProgressWindow"
+    x:DataType="vm:UpdateProgressViewModel"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:automation="using:Avalonia.Automation"
+    xmlns:vm="using:TelePilot.App.ViewModels"
+    Width="560" Height="300" MinWidth="420" MinHeight="260"
+    Title="{Binding Title}" WindowStartupLocation="CenterOwner"
+    automation:AutomationProperties.Name="{Binding Title}"
+    automation:AutomationProperties.AutomationId="update-progress-window">
+  <Grid Margin="20" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="16" KeyboardNavigation.TabNavigation="Cycle">
+    <TextBlock Text="{Binding Title}" Classes="section-heading" automation:AutomationProperties.HeadingLevel="1" />
+    <TextBlock x:Name="MessageText" Grid.Row="1" Text="{Binding Message}" TextWrapping="Wrap" Focusable="True"
+        automation:AutomationProperties.Name="{Binding Message}"
+        automation:AutomationProperties.AutomationId="update-progress-text"
+        automation:AutomationProperties.LiveSetting="Polite" />
+    <ProgressBar Grid.Row="2" Minimum="0" Maximum="100" Value="{Binding Percent}"
+        IsVisible="{Binding IsBusy}" IsIndeterminate="{Binding IsIndeterminate}"
+        automation:AutomationProperties.Name="{Binding Message}"
+        automation:AutomationProperties.AutomationId="update-progress-bar" />
+    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+      <Button x:Name="CancelButton" Content="{Binding CancelLabel}" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}"
+          automation:AutomationProperties.Name="{Binding CancelLabel}" automation:AutomationProperties.AutomationId="update-cancel" />
+      <Button x:Name="RetryButton" Content="{Binding RetryLabel}" Command="{Binding RetryCommand}" IsVisible="{Binding CanRetry}"
+          automation:AutomationProperties.Name="{Binding RetryLabel}" automation:AutomationProperties.AutomationId="update-retry" />
+      <Button Content="{Binding DownloadPageLabel}" Command="{Binding OpenPageCommand}" IsVisible="{Binding CanOpenPage}"
+          automation:AutomationProperties.Name="{Binding DownloadPageLabel}" automation:AutomationProperties.AutomationId="update-download-page" />
+      <Button x:Name="CloseButton" Content="{Binding CloseLabel}" Command="{Binding CloseCommand}" IsVisible="{Binding IsComplete}"
+          automation:AutomationProperties.Name="{Binding CloseLabel}" automation:AutomationProperties.AutomationId="update-close" />
+    </StackPanel>
+  </Grid>
+</Window>

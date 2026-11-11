@@ -18,7 +18,9 @@ The Windows installer is unsigned. The Mac app is signed ad hoc and has no Apple
 2. In **File → Playlist Manager**, add a playlist from a file or web address. This window opens automatically the first time you use TelePilot.
 3. Choose a channel and press **Enter**. See **Help** for keyboard shortcuts.
 
-TelePilot checks for a new release at startup and verifies the downloaded installer. On Mac, click **OK** in the download confirmation to open the disk image and quit TelePilot.
+TelePilot checks for a new release at startup and verifies the downloaded installer. You can also use **Help → Check for Updates**. The update window shows download progress and lets you cancel or retry. On Mac, click **OK** when the download is ready to open the disk image and quit TelePilot.
+
+Older versions, including 2.0.2, show a notification only after downloading the complete installer. If no notification appears, you can install the latest version from the [download page](https://github.com/eleganckidenis/TelePilot/releases/latest).
 
 Network buffering adjusts automatically to playback conditions. When a stream ends or six reconnection retries fail, TelePilot returns to the channel list.
 

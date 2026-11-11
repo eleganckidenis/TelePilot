@@ -141,6 +141,9 @@
       </MenuItem>
 
       <MenuItem Header="{x:Static loc:ViewText.Help}" IsTabStop="False" automation:AutomationProperties.Name="{x:Static loc:ViewText.Help2}" automation:AutomationProperties.AccessKey="{x:Static loc:ViewText.AltH}" automation:AutomationProperties.AutomationId="menu-help">
+        <MenuItem Header="{x:Static loc:ViewText.CheckForUpdates}" Click="OnCheckForUpdates"
+            automation:AutomationProperties.Name="{x:Static loc:ViewText.CheckForUpdates}"
+            automation:AutomationProperties.AutomationId="menu-check-updates" />
         <MenuItem
             Header="{x:Static loc:ViewText.KeyboardShortcuts}"
             Command="{Binding OpenKeyboardShortcutsCommand}"

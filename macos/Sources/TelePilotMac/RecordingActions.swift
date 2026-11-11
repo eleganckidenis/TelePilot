@@ -54,6 +54,7 @@ extension MainController {
             if a.runModal() != .alertFirstButtonReturn { terminating = false; return false }
             do { try await recorder.stop() } catch { alert(l("Nie domknięto nagrania", "Could Not Finalize Recording"), recordingErrorMessage(error), window: window); terminating = false; return false }
         }
+        await UpdateStartup.shutdown()
         playbackGeneration += 1; playbackTask?.cancel(); loadingTask?.cancel(); epgTask?.cancel(); pollTask?.cancel()
         await player.shutdown(); savePreferences()
         return true

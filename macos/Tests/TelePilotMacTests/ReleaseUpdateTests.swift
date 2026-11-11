@@ -7,7 +7,7 @@ import Testing
 @Suite struct ReleaseUpdateTests {
     private static let name = "TelePilot-2.10.0-Apple-Silicon.dmg"
     private static let url = "https://github.com/eleganckidenis/TelePilot/releases/download/v2.10.0/\(name)"
-    fileprivate static let payload = Data("installer fixture".utf8)
+    static let payload = Data("installer fixture".utf8)
     private static let digest = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
 
     @Test func selectsExactNewerAssetAndIgnoresOtherReleaseFiles() throws {
@@ -163,7 +163,7 @@ import Testing
         return URLSession(configuration: configuration)
     }
 
-    fileprivate static func release(tag: String = "v2.10.0", draft: Bool = false, prerelease: Bool = false, assets: [[String: Any]]? = nil) -> Data {
+    static func release(tag: String = "v2.10.0", draft: Bool = false, prerelease: Bool = false, assets: [[String: Any]]? = nil) -> Data {
         try! JSONSerialization.data(withJSONObject: ["tag_name": tag, "draft": draft, "prerelease": prerelease, "assets": assets ?? [asset()]])
     }
 

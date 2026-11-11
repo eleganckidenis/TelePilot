@@ -810,6 +810,58 @@ public sealed class MainWindowPlaybackNavigationTests
         Assert.Equal(expectedStopCalls, recording.StopCallCount);
     }
 
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RecordingQuitConsentPrecedesUpdaterCancellation(bool acceptQuit)
+    {
+        var recording = new ControllableRecordingCoordinator();
+        using var model = new MainWindowViewModel(
+            new FixedPlaylistService(PlaylistLoadResult.Success(new PlaylistParseResult(new PlaylistHeader(), [], [], "UTF-8", 0))),
+            new FixedPlaylistSourceStore(), new ImmediatePlaybackService(), new EmptyEpgSourceManager(),
+            new NoOpWindowService(acceptQuit), new RecordingAccessibleStatusService(), new FocusCoordinator(), recordingCoordinator: recording);
+        var handler = new HeldUpdateMetadata();
+        var window = new MainWindow { DataContext = model };
+        window.Show(); window.Activate();
+        await using var update = new UpdateStartupSession(window, new Version(2, 0, 2), System.Runtime.InteropServices.Architecture.X64,
+            () => new HttpClient(handler));
+        UpdateStartup.ForOwner(window, _ => update);
+        try
+        {
+            recording.Publish(RecordingState.Recording); Dispatcher.UIThread.RunJobs();
+            update.Request(manual: false);
+            await handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            window.Close(); Dispatcher.UIThread.RunJobs();
+            if (acceptQuit)
+            {
+                await update.Completion;
+                for (var tick = 0; tick < 100 && window.IsVisible; tick++) { await Task.Delay(10); Dispatcher.UIThread.RunJobs(); }
+                Assert.False(window.IsVisible); Assert.True(handler.Token.IsCancellationRequested);
+            }
+            else
+            {
+                Assert.True(window.IsVisible); Assert.False(handler.Token.IsCancellationRequested);
+                Assert.True(update.HasWork); Assert.Equal(0, recording.StopCallCount);
+            }
+        }
+        finally
+        {
+            await update.StopAsync(); recording.Publish(RecordingState.Completed); Dispatcher.UIThread.RunJobs(); window.Close();
+        }
+    }
+
+    private sealed class HeldUpdateMetadata : HttpMessageHandler
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public CancellationToken Token { get; private set; }
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Token = cancellationToken; Started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+        }
+    }
+
     [AvaloniaFact]
     public async Task Favorites_AreLoadedPersistedAndFilterTheExistingChannelList()
     {

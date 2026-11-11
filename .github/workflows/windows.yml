@@ -92,6 +92,43 @@ jobs:
         id: build_installer
         shell: pwsh
         run: ./scripts/build-windows-installer.ps1 -Runtime $env:TELEPILOT_BUILD_RUNTIME -InnoCompiler (Join-Path $env:RUNNER_TEMP 'inno-setup-6\ISCC.exe') -SkipTests
+      - name: Exercise the current updater through native Windows UI
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'native-updater-ui'
+          $qaApp = Join-Path $stage 'test-version-app'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          $release = gh api repos/eleganckidenis/TelePilot/releases/latest | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $release.draft -or $release.prerelease) { throw 'Could not get the real latest public release.' }
+          $targetVersion = $release.tag_name.Substring(1)
+          $name = "TelePilot-$targetVersion-$env:TELEPILOT_BUILD_RUNTIME-setup.exe"
+          gh release download $release.tag_name --repo eleganckidenis/TelePilot --pattern $name --dir $stage
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download the verified reference installer.' }
+          $env:VlcWindowsX64Enabled = ($env:TELEPILOT_BUILD_RUNTIME -eq 'win-x64').ToString().ToLowerInvariant()
+          $env:VlcWindowsArm64Enabled = ($env:TELEPILOT_BUILD_RUNTIME -eq 'win-arm64').ToString().ToLowerInvariant()
+          $env:VlcWindowsX86Enabled = 'false'
+          # Only this separate QA app has an older assembly version; release files above remain 2.1.1.
+          dotnet publish src/TelePilot.App/TelePilot.App.csproj -c Release -r $env:TELEPILOT_BUILD_RUNTIME --self-contained true --no-restore -p:Version=2.0.2 -p:UsedAvaloniaProducts= -o $qaApp
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build the current-source updater QA app.' }
+          $profile = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'TelePilot'
+          if (Test-Path -LiteralPath $profile) { throw 'Expected a fresh disposable runner profile.' }
+          try {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-windows-update-startup.ps1 -Executable (Join-Path $qaApp 'TelePilot.exe') -ReferenceInstaller (Join-Path $stage $name) -Runtime $env:TELEPILOT_BUILD_RUNTIME -ExpectedVersion $targetVersion -EvidenceDirectory (Join-Path $stage 'evidence')
+            if ($LASTEXITCODE -ne 0) { throw 'The current-source native updater UI failed.' }
+          } finally {
+            if (Test-Path -LiteralPath $profile) { Move-Item -LiteralPath $profile -Destination (Join-Path $stage 'test-profile') }
+          }
+      - name: Keep native updater UI evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: updater-ui-${{ matrix.runtime }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: ${{ runner.temp }}/native-updater-ui/evidence/
       - name: Install and uninstall the release package in both languages
         shell: pwsh
         run: |

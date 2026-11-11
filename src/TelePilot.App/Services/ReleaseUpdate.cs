@@ -9,6 +9,14 @@ namespace TelePilot.App.Services;
 
 internal sealed record UpdateAsset(Version Version, string Name, Uri Uri, long Size, byte[] Digest);
 
+internal enum UpdateCheckStatus { Available, NoUpdate, Unsupported, Failed, InvalidMetadata }
+internal sealed record UpdateCheckResult(UpdateCheckStatus Status, UpdateAsset? Asset = null,
+    HttpStatusCode? HttpStatus = null, TimeSpan? RetryAfter = null)
+{
+    internal bool IsTransient => Status == UpdateCheckStatus.Failed
+        && (HttpStatus is null or HttpStatusCode.RequestTimeout || (int)HttpStatus >= 500);
+}
+
 internal sealed class ReleaseUpdate(HttpClient client, string directory, Architecture architecture)
 {
     internal const long MaximumAssetBytes = 512L * 1024 * 1024;
@@ -37,43 +45,66 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory, Archite
         ConnectTimeout = TimeSpan.FromSeconds(10),
     });
 
-    internal async Task<UpdateAsset?> CheckAsync(Version current, CancellationToken cancellationToken)
-    {
-        if (assetSuffix is null)
-        {
-            return null;
-        }
+    internal async Task<UpdateAsset?> CheckAsync(Version current, CancellationToken cancellationToken) =>
+        (await CheckDetailedAsync(current, cancellationToken).ConfigureAwait(false)).Asset;
 
+    internal async Task<UpdateCheckResult> CheckDetailedAsync(Version current, CancellationToken cancellationToken)
+    {
+        if (assetSuffix is null) return new(UpdateCheckStatus.Unsupported);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
-        using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseUri);
-        request.Headers.UserAgent.ParseAdd("TelePilot-Updater");
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
-        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
-        if (response.StatusCode != HttpStatusCode.OK || response.Content.Headers.ContentLength > MaximumMetadataBytes)
+        try
         {
-            return null;
-        }
-
-        await using var content = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
-        using var metadata = new MemoryStream();
-        byte[] buffer = new byte[BufferBytes];
-        int count;
-        while ((count = await content.ReadAsync(buffer.AsMemory(), timeout.Token).ConfigureAwait(false)) != 0)
-        {
-            if (metadata.Length + count > MaximumMetadataBytes)
+            using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseUri);
+            request.Headers.UserAgent.ParseAdd("TelePilot-Updater");
+            request.Headers.Accept.ParseAdd("application/vnd.github+json");
+            request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+            if (response.StatusCode != HttpStatusCode.OK)
+                return new(UpdateCheckStatus.Failed, HttpStatus: response.StatusCode, RetryAfter: ReadRetryAfter(response));
+            if (response.Content.Headers.ContentLength > MaximumMetadataBytes) return new(UpdateCheckStatus.InvalidMetadata);
+            await using var content = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+            using var metadata = new MemoryStream();
+            byte[] buffer = new byte[BufferBytes];
+            int count;
+            while ((count = await content.ReadAsync(buffer.AsMemory(), timeout.Token).ConfigureAwait(false)) != 0)
             {
-                return null;
+                if (metadata.Length + count > MaximumMetadataBytes) return new(UpdateCheckStatus.InvalidMetadata);
+                metadata.Write(buffer, 0, count);
             }
-
-            metadata.Write(buffer, 0, count);
+            var release = JsonSerializer.Deserialize<Release>(metadata.GetBuffer().AsSpan(0, (int)metadata.Length));
+            if (release is not { Draft: false, Prerelease: false, Tag: { } tag }
+                || !tag.StartsWith('v') || !TryReleaseVersion(tag[1..], out var version))
+                return new(UpdateCheckStatus.InvalidMetadata);
+            if (version <= current) return new(UpdateCheckStatus.NoUpdate);
+            var asset = SelectAsset(release, current, assetSuffix);
+            return asset is null ? new(UpdateCheckStatus.InvalidMetadata) : new(UpdateCheckStatus.Available, asset);
         }
-
-        return SelectAsset(JsonSerializer.Deserialize<Release>(metadata.GetBuffer().AsSpan(0, (int)metadata.Length)), current, assetSuffix);
+        catch (JsonException) { return new(UpdateCheckStatus.InvalidMetadata); }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return new(UpdateCheckStatus.Failed); }
+        catch (Exception exception) when (exception is HttpRequestException or IOException) { return new(UpdateCheckStatus.Failed); }
     }
 
-    internal async Task<string> DownloadAsync(UpdateAsset asset, CancellationToken cancellationToken)
+    private static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
+    {
+        var delay = response.Headers.RetryAfter?.Delta;
+        if (delay is null && response.Headers.RetryAfter?.Date is { } date) delay = date - DateTimeOffset.UtcNow;
+        if (delay is null && response.StatusCode == HttpStatusCode.Forbidden
+            && response.Headers.TryGetValues("X-RateLimit-Remaining", out var remaining) && remaining.Contains("0"))
+        {
+            delay = TimeSpan.FromMinutes(1);
+            if (response.Headers.TryGetValues("X-RateLimit-Reset", out var reset)
+                && long.TryParse(reset.FirstOrDefault(), out var seconds))
+            {
+                try { delay = DateTimeOffset.FromUnixTimeSeconds(seconds) - DateTimeOffset.UtcNow; }
+                catch (ArgumentOutOfRangeException) { }
+            }
+        }
+        if (delay is null && response.StatusCode == HttpStatusCode.TooManyRequests) delay = TimeSpan.FromMinutes(1);
+        return delay is { } value ? (value > TimeSpan.Zero ? value : TimeSpan.FromSeconds(1)) : null;
+    }
+
+    internal async Task<string> DownloadAsync(UpdateAsset asset, CancellationToken cancellationToken, IProgress<int>? progress = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromMinutes(10));
@@ -84,6 +115,7 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory, Archite
         {
             await MarkFromInternetAsync(destination, asset, token).ConfigureAwait(false);
             RemoveOldDownloads(asset.Name);
+            progress?.Report(100);
             return destination;
         }
 
@@ -100,7 +132,7 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory, Archite
             await using (var input = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false))
             await using (var output = new FileStream(partial, FileMode.CreateNew, FileAccess.Write, FileShare.None, BufferBytes, FileOptions.Asynchronous))
             {
-                if (!await VerifyStreamAsync(input, output, asset, token).ConfigureAwait(false))
+                if (!await VerifyStreamAsync(input, output, asset, token, progress).ConfigureAwait(false))
                 {
                     throw new InvalidDataException();
                 }
@@ -202,11 +234,12 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory, Archite
     }
 
     private static async Task<bool> VerifyStreamAsync(
-        Stream input, Stream? output, UpdateAsset asset, CancellationToken cancellationToken)
+        Stream input, Stream? output, UpdateAsset asset, CancellationToken cancellationToken, IProgress<int>? progress = null)
     {
         using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = new byte[BufferBytes];
         long total = 0;
+        var previousPercent = -1;
         int count;
         while ((count = await input.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) != 0)
         {
@@ -217,6 +250,8 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory, Archite
             }
 
             sha256.AppendData(buffer.AsSpan(0, count));
+            var percent = (int)(total * 100 / asset.Size);
+            if (percent != previousPercent) { previousPercent = percent; progress?.Report(percent); }
             if (output is not null)
             {
                 await output.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
