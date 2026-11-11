@@ -232,6 +232,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
                 var chosen = ReadTracks(kind).FirstOrDefault(track => track.EngineId == engineId);
                 _rememberedTracks[kind] = (engineId, chosen?.Description ?? string.Empty);
                 _tracksToRestore.Remove(kind);
+                _recovery?.ResetObservation(MonotonicNow);
                 PublishTracks(kind);
                 return PlaybackCommandResult.Success();
             },
@@ -318,11 +319,11 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             T($"Łączenie z kanałem {channel.Name}.", $"Connecting to {channel.Name}.")));
 
         _mediaPlayer.Stop();
-        _recovery?.BeginAttempt(MonotonicNow);
+        var appliedCache = _recovery?.Target ?? 2;
+        _recovery?.BeginAttempt(MonotonicNow, appliedCache);
 
         using var media = new Media(_libVlc, streamUri);
-        var settings = _recovery?.Settings ?? new PlaybackBufferSettings();
-        foreach (var option in settings.MediaOptions(_recovery?.Target ?? settings.Seconds, options.IsLive, quickStart)) media.AddOption(option);
+        foreach (var option in PlaybackBufferSettings.MediaOptions(appliedCache, options.IsLive, quickStart)) media.AddOption(option);
         media.AddOption($":http-user-agent={HlsVariantResolver.UserAgent}");
         if (_resumePosition > 0 && !options.IsLive) media.AddOption(":start-time=" + _resumePosition.ToString(System.Globalization.CultureInfo.InvariantCulture));
         if (!_mediaPlayer.Play(media))
@@ -382,9 +383,6 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             return;
         }
 
-        // Keep the retry budget until 120 seconds of stability. A transient
-        // Playing event must not reset the bounded recovery cycle.
-        _ = _recovery?.Evaluate(new RecoverySample(3), MonotonicNow);
         if (_restoringPause && _mediaPlayer.CanPause)
         {
             _restoringPause = false; _mediaPlayer.SetPause(true);
@@ -465,9 +463,10 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             return;
         }
 
+        var sessionGeneration = Volatile.Read(ref _playbackSessionGeneration);
         _commandQueue.Writer.TryWrite(() =>
         {
-            if (_disposed)
+            if (_disposed || sessionGeneration != Volatile.Read(ref _playbackSessionGeneration))
             {
                 return Task.CompletedTask;
             }

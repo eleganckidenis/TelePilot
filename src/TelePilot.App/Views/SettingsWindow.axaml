@@ -43,16 +43,6 @@
 
         <TextBlock Classes="section-heading" Text="{x:Static loc:ViewText.NetworkBuffer}" automation:AutomationProperties.HeadingLevel="2" />
         <StackPanel>
-          <Label Classes="field-label" Content="{x:Static loc:ViewText.TargetNetworkBufferInSeconds}" Target="BufferSecondsBox" />
-          <controls:AccessibleTextBox x:Name="BufferSecondsBox" Text="{Binding BufferSeconds}"
-              automation:AutomationProperties.Name="{x:Static loc:ViewText.TargetNetworkBufferInSeconds}" automation:AutomationProperties.AutomationId="settings-buffer-seconds" />
-        </StackPanel>
-        <StackPanel>
-          <Label Classes="field-label" Content="{x:Static loc:ViewText.MaximumNetworkBufferInSeconds}" Target="BufferMaximumBox" />
-          <controls:AccessibleTextBox x:Name="BufferMaximumBox" Text="{Binding BufferMaximum}"
-              automation:AutomationProperties.Name="{x:Static loc:ViewText.MaximumNetworkBufferInSeconds}" automation:AutomationProperties.AutomationId="settings-buffer-maximum" />
-        </StackPanel>
-        <StackPanel>
           <Label Classes="field-label" Content="{x:Static loc:ViewText.HLSQualityLimitInMbpsZero}" Target="VariantCapBox" />
           <controls:AccessibleTextBox x:Name="VariantCapBox" Text="{Binding VariantCap}"
               automation:AutomationProperties.Name="{x:Static loc:ViewText.HLSQualityLimitInMbpsZero}" automation:AutomationProperties.AutomationId="settings-variant-cap" />

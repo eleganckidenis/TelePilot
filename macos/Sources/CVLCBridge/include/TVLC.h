@@ -10,6 +10,7 @@ typedef struct TVLCProgress {
 int tvlc_progress(TVLC *, TVLCProgress *);
 int64_t tvlc_length(TVLC *);
 int tvlc_audio_only(TVLC *);
+int tvlc_video_track_count(TVLC *);
 void tvlc_stop(TVLC *);
 void tvlc_pause(TVLC *, int paused);
 int tvlc_can_pause(TVLC *);

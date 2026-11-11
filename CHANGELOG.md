@@ -1,5 +1,23 @@
 # Changelog / Historia zmian
 
+## 2.1.0
+
+### Polski
+
+- Buforowanie dobiera się automatycznie: reaguje na przerwy w dostarczaniu danych i stabilną pracę. Usunięto ręczne ustawienia czasu bufora i maksimum; opcjonalny limit jakości HLS pozostaje dostępny.
+- Ochrona przed przycięciami rozróżnia brak danych od zatrzymania obrazu lub dźwięku, uwzględnia pauzę, przewijanie i ukryte okno. Sam stan „odtwarzanie” nie odnawia już limitu ponowień.
+- Koniec strumienia oraz wyczerpanie sześciu prób ponownego połączenia zamykają odtwarzacz i przywracają listę kanałów z zaznaczeniem i fokusem.
+- Poprawiono anulowanie spóźnionych operacji odtwarzania, przywracanie ścieżek i pozycji archiwum oraz obsługę niepełnych statystyk silnika.
+- Windows x64, Windows ARM64 i macOS Apple Silicon przechodzą osobną weryfikację. [Zakres audytu i ograniczenia](docs/AUDIT_2.1.0.md).
+
+### English
+
+- Network buffering adjusts automatically to interruptions and sustained stable playback. Manual buffer-time and maximum-time settings have been removed; the optional HLS quality limit remains available.
+- Stall protection distinguishes missing input from stopped video or audio output and accounts for pause, seeking and hidden windows. A “playing” state alone no longer replenishes the retry budget.
+- When a stream ends or six reconnection retries fail, the player closes and restores the channel list, selection and keyboard focus.
+- Fixed cancellation of late playback operations, restoration of tracks and archive position, and handling of incomplete engine statistics.
+- Windows x64, Windows ARM64 and macOS Apple Silicon receive independent verification. [Audit scope and limits](docs/AUDIT_2.1.0.md).
+
 ## 2.0.3
 
 ### Polski

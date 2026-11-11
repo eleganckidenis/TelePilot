@@ -58,7 +58,7 @@ public static class ViewText
     public static string CancelSelectedScheduledRecording => T("Anuluj wybrane zaplanowane nagranie", "Cancel selected scheduled recording");
     public static string CancelSelectedTask => T("Anuluj wybrane zadanie", "Cancel selected task");
     public static string CancelTrackSelection => T("Anuluj wybór ścieżki", "Cancel track selection");
-    public static string ChangesApplyTheNextTimeYou => T("Zmiana działa od następnego uruchomienia kanału. Transmisja na żywo zaczyna od półsekundowego bufora; przy odzyskiwaniu połączenia używa pełnego celu. Wyższy bufor zwiększa opóźnienie.", "Changes apply the next time you play a channel. Live TV starts with a half-second buffer and uses the full target when reconnecting. A larger buffer increases delay.");
+    public static string ChangesApplyTheNextTimeYou => T("Bufor jest dobierany automatycznie do transmisji i jakości połączenia. Limit jakości HLS działa od następnego uruchomienia kanału; 0 wyłącza limit.", "Buffering adapts automatically to the stream and connection quality. The HLS quality limit applies the next time you play a channel; 0 disables the limit.");
     public static string Channel => T("_Kanał", "_Channel");
     public static string ChannelList => T("Lista _kanałów", "_Channel list");
     public static string ChannelList2 => T("Lista kanałów", "Channel list");

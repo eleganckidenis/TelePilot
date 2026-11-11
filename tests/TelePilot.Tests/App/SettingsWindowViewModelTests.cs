@@ -8,17 +8,17 @@ namespace TelePilot.Tests.App;
 public sealed class SettingsWindowViewModelTests
 {
     [Fact]
-    public void BufferSettingsValidateDecimalInputAndPreserveExistingPreferences()
+    public void HlsCapValidatesDecimalInputAndPreservesExistingPreferences()
     {
-        var original = new AppPreferences { Buffering = new(7, 40, 6), Recording = RecordingPreferences.CreateDefault(),
+        var original = new AppPreferences { Buffering = new(6), Recording = RecordingPreferences.CreateDefault(),
             Favorites = [new FavoriteChannelPreference(Guid.NewGuid(), Guid.NewGuid(), "Saved")] };
-        var viewModel = new SettingsWindowViewModel(original) { BufferSeconds = "8,5", BufferMaximum = "45", VariantCap = "3,5" };
+        var viewModel = new SettingsWindowViewModel(original) { VariantCap = "3,5" };
         AppPreferences? saved = null; viewModel.CloseRequested += (_, result) => saved = result;
         viewModel.SaveCommand.Execute(null);
-        Assert.NotNull(saved); Assert.Equal(new PlaybackBufferSettings(8.5, 45, 3.5), saved.Buffering);
-        Assert.Equal(original.Favorites, saved.Favorites); Assert.Equal(7, original.Buffering.Seconds);
-        viewModel.BufferMaximum = "1"; saved = null; viewModel.SaveCommand.Execute(null);
-        Assert.Null(saved); Assert.Contains("bufor", viewModel.ValidationMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(saved); Assert.Equal(new PlaybackBufferSettings(VariantMaxMbps: 3.5), saved.Buffering);
+        Assert.Equal(original.Favorites, saved.Favorites); Assert.Equal(6, original.Buffering.VariantMaxMbps);
+        viewModel.VariantCap = "501"; saved = null; viewModel.SaveCommand.Execute(null);
+        Assert.Null(saved); Assert.Contains("HLS", viewModel.ValidationMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]

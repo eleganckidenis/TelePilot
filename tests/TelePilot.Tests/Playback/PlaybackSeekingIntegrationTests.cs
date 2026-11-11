@@ -4,6 +4,7 @@ using TelePilot.Playback;
 
 namespace TelePilot.Tests.Playback;
 
+[Collection(nameof(NativePlaybackTestGroup))]
 public sealed class PlaybackSeekingIntegrationTests
 {
     [Fact]

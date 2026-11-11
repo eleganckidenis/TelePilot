@@ -85,7 +85,9 @@ public sealed record PlaybackSnapshot(
     bool IsMuted,
     bool CanPause,
     string? StatusMessage = null,
-    PlaybackError? Error = null)
+    PlaybackError? Error = null,
+    bool IsTerminal = false,
+    long TerminalSequence = 0)
 {
     public static PlaybackSnapshot Initial { get; } = new(
         PlaybackState.Idle,

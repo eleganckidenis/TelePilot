@@ -20,6 +20,8 @@ The Windows installer is unsigned. The Mac app is signed ad hoc and has no Apple
 
 TelePilot checks for a new release at startup and verifies the downloaded installer. On Mac, click **OK** in the download confirmation to open the disk image and quit TelePilot.
 
+Network buffering adjusts automatically to playback conditions. When a stream ends or six reconnection retries fail, TelePilot returns to the channel list.
+
 TelePilot does not provide channels, playlists or IPTV subscriptions.
 
 [Changelog](CHANGELOG.md) · [Report an issue](https://github.com/eleganckidenis/TelePilot/issues) · [License](LICENSE) · [Support development](https://revolut.me/michao077)

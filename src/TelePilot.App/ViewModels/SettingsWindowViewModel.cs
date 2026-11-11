@@ -21,7 +21,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
     private string fileNameTemplate;
     private bool wakeComputer;
     private string validationMessage = string.Empty;
-    private string bufferSeconds, bufferMaximum, variantCap;
+    private string variantCap;
     private readonly List<FavoriteChannelPreference> favorites;
     private readonly Dictionary<Guid, ArchiveDraft> archiveDrafts;
     private PlaylistSourceItemViewModel? selectedArchiveSource;
@@ -39,8 +39,6 @@ public sealed class SettingsWindowViewModel : ObservableObject
         LanguageOptions = LanguagePreference.Options();
         SelectedLanguage = LanguageOptions.First(option => option.Code == (LanguagePreference.Normalize(preferences.Language) ?? LanguagePreference.SystemLanguage));
         var buffering = preferences.Buffering.Normalize();
-        bufferSeconds = buffering.Seconds.ToString(CultureInfo.CurrentCulture);
-        bufferMaximum = buffering.MaximumSeconds.ToString(CultureInfo.CurrentCulture);
         variantCap = buffering.VariantMaxMbps.ToString(CultureInfo.CurrentCulture);
         SortOptions =
         [
@@ -232,8 +230,6 @@ public sealed class SettingsWindowViewModel : ObservableObject
         set => SetProperty(ref wakeComputer, value);
     }
 
-    public string BufferSeconds { get => bufferSeconds; set => SetProperty(ref bufferSeconds, value ?? string.Empty); }
-    public string BufferMaximum { get => bufferMaximum; set => SetProperty(ref bufferMaximum, value ?? string.Empty); }
     public string VariantCap { get => variantCap; set => SetProperty(ref variantCap, value ?? string.Empty); }
 
     public string ValidationMessage
@@ -252,11 +248,9 @@ public sealed class SettingsWindowViewModel : ObservableObject
 
     private void Save()
     {
-        if (!TryReadArchiveNumber(BufferSeconds, out var seconds) || seconds <= 0 ||
-            !TryReadArchiveNumber(BufferMaximum, out var maximum) || maximum < seconds || maximum > 300 ||
-            !TryReadArchiveNumber(VariantCap, out var cap) || cap < 0 || cap > 500)
+        if (!TryReadArchiveNumber(VariantCap, out var cap) || cap < 0 || cap > 500)
         {
-            ValidationMessage = T("Podaj dodatni bufor i maksimum do 300 sekund, nie mniejsze niż bufor. Limit HLS: od 0 do 500 Mb/s; 0 wyłącza limit.", "Enter a positive buffer and a maximum of up to 300 seconds, at least as large as the buffer. The HLS limit must be 0 to 500 Mbps; 0 disables it.");
+            ValidationMessage = T("Limit HLS: od 0 do 500 Mb/s; 0 wyłącza limit.", "The HLS limit must be 0 to 500 Mbps; 0 disables it.");
             return;
         }
         StoreArchiveDraft();
@@ -312,7 +306,7 @@ public sealed class SettingsWindowViewModel : ObservableObject
             {
                 Language = SelectedLanguage?.Code ?? LanguagePreference.SystemLanguage,
                 ChannelSortMode = SelectedSort.Mode,
-                Buffering = new TelePilot.Core.Models.PlaybackBufferSettings(seconds, maximum, cap).Normalize(),
+                Buffering = new TelePilot.Core.Models.PlaybackBufferSettings(VariantMaxMbps: cap).Normalize(),
                 ExternalEpgUrl = normalizedEpgUrl,
                 Recording = new RecordingPreferences
                 {

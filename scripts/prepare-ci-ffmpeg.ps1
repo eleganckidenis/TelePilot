@@ -31,4 +31,13 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $media -PathType Leaf))
 }
 $env:TELEPILOT_TEST_FFMPEG = $ffmpeg
 $env:TELEPILOT_TEST_MEDIA = $media
-Write-Host "Verified $Runtime FFmpeg and generated a synthetic recording fixture in the runner temporary directory."
+$seekMedia = Join-Path $root 'synthetic-seek.wav'
+& $ffmpeg -hide_banner -loglevel error -y `
+    -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 120 -c:a pcm_s16le $seekMedia
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $seekMedia -PathType Leaf)) {
+    throw 'Could not generate the synthetic media for native seek tests.'
+}
+$env:TELEPILOT_TEST_SEEK_MEDIA = $seekMedia
+$env:TELEPILOT_TEST_NATIVE_PLAYBACK = '1'
+$env:TELEPILOT_TEST_TASK_SCHEDULER = '1'
+Write-Host "Verified $Runtime FFmpeg and prepared isolated recording, native playback/seek and Task Scheduler tests."

@@ -21,12 +21,8 @@ public sealed partial class SettingsWindow : Window
         LanguagePicker.PreviousTabTarget = SaveButton;
         LanguagePicker.NextTabTarget = SortPicker;
         SortPicker.PreviousTabTarget = LanguagePicker;
-        SortPicker.NextTabTarget = BufferSecondsBox;
-        BufferSecondsBox.PreviousTabTarget = SortPicker;
-        BufferSecondsBox.NextTabTarget = BufferMaximumBox;
-        BufferMaximumBox.PreviousTabTarget = BufferSecondsBox;
-        BufferMaximumBox.NextTabTarget = VariantCapBox;
-        VariantCapBox.PreviousTabTarget = BufferMaximumBox;
+        SortPicker.NextTabTarget = VariantCapBox;
+        VariantCapBox.PreviousTabTarget = SortPicker;
         VariantCapBox.NextTabTarget = ExternalEpgUrlBox;
         ExternalEpgUrlBox.PreviousTabTarget = VariantCapBox;
         ExternalEpgUrlBox.NextTabTarget = RecordingDirectoryBox;

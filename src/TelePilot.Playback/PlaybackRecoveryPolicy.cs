@@ -2,129 +2,306 @@ using TelePilot.Core.Models;
 
 namespace TelePilot.Playback;
 
-internal readonly record struct PlaybackProgress(long Video, long Displayed, long Audio, long Played);
-internal readonly record struct RecoverySample(int State, double Position = -1, double Length = -1, PlaybackProgress? Progress = null, bool AudioOnly = false);
+internal readonly record struct PlaybackProgress(long Video, long Displayed, long Audio, long Played, long? InputBytes = null);
+internal readonly record struct RecoverySample(int State, double Position = -1, double Length = -1,
+    PlaybackProgress? Progress = null, bool AudioOnly = false, bool AudioEnabled = true, bool VideoEnabled = true, int? KnownVideoTrackCount = null);
 internal enum RecoveryKind { None, Retry, Lost, Finished }
 internal readonly record struct RecoveryAction(RecoveryKind Kind, double Delay = 0, bool QuickStart = false);
 
 internal sealed class PlaybackRecoveryPolicy
 {
-    private static readonly string[] ArchivePaths = ["/timeshift/", "/movie/", "/series/", "/archive/", "catchup", "recording"];
-    private static readonly string[] TsPaths = ["/auth/", "/stream/", "/play/"];
     public PlaybackBufferSettings Settings { get; }
-    public double Target { get; private set; }
+    public double Target { get; private set; } = 2;
+    public double Applied { get; private set; } = 2;
     public int Attempts { get; private set; }
     public bool Pending { get; private set; }
     public bool GaveUp { get; private set; }
-    private readonly bool live, dispatcharr, linearTs;
     private readonly int maximumAttempts;
-    private readonly double requestStart;
-    private double attemptStart;
-    private bool everPlayed, attemptPlayed;
-    private double? lastRestart, bufferingStart, lastAdjustment, lastVideo, lastAudio, lastPosition, clockStallStart;
-    private int refreshes, videoSamples, audioSamples;
-    private PlaybackProgress? previousProgress;
+    private double attemptStart, lastProgress, graceUntil, risk;
+    private double? lastObservation, bufferingStart, lastAdjustment, healthyStart, decayStart, clockAnchor, lastClock, inputLastAdvance;
+    private long? inputPrevious;
+    private bool inputProven, attemptPlayed, wasPaused;
+    private bool videoWasVisible = true;
+    private long? pendingDecodePrevious;
+    private int pendingDecodeIncrements;
+    private double? pendingPresentationStart;
+    private readonly OutputWatch video = new(), audio = new();
     private readonly List<double> bufferEvents = [];
 
     public PlaybackRecoveryPolicy(PlaybackOptions options, Uri url, bool dispatcharr, double now)
     {
-        Settings = options.Buffering?.Normalize() ?? new PlaybackBufferSettings(options.NetworkCachingMilliseconds / 1000d).Normalize();
-        Target = Settings.Seconds; live = options.IsLive; this.dispatcharr = dispatcharr; linearTs = IsLinearTs(url);
-        maximumAttempts = options.MaximumReconnectAttempts; requestStart = attemptStart = now;
+        Settings = options.Buffering?.Normalize() ?? new();
+        maximumAttempts = options.MaximumReconnectAttempts;
+        attemptStart = lastProgress = now;
+        ResetObservation(now);
     }
-    public void BeginAttempt(double now)
+
+    public void BeginAttempt(double now, double? applied = null)
     {
-        Pending = false; attemptStart = now; attemptPlayed = false; bufferingStart = null; bufferEvents.Clear(); ResetProgress();
+        Applied = Math.Clamp(applied ?? Target, 1, 30);
+        Pending = false;
+        attemptStart = now;
+        attemptPlayed = false;
+        bufferingStart = null;
+        ResetObservation(now);
     }
-    private void ResetProgress()
+
+    public void ResetObservation(double now)
     {
-        previousProgress = null; videoSamples = audioSamples = 0; lastVideo = lastAudio = lastPosition = clockStallStart = null;
+        ResetTelemetry(now);
+        attemptStart = now;
+        bufferingStart = null;
+        bufferEvents.Clear();
+        attemptPlayed = false;
     }
+
+    private void ResetTelemetry(double now)
+    {
+        video.Reset(); audio.Reset();
+        inputPrevious = null; inputLastAdvance = null; inputProven = false;
+        clockAnchor = lastClock = null;
+        healthyStart = decayStart = null;
+        graceUntil = now + 3;
+        clockLastAdvance = null;
+        ResetPendingPresentation();
+    }
+
     public static double ReconnectDelay(int attempt) => attempt <= 1 ? .4 : Math.Min(Math.Pow(2, attempt - 1), 8);
-    private RecoveryAction Retry(double now, bool increase)
+
+    private RecoveryAction Terminal(RecoveryKind kind)
+    {
+        GaveUp = true; Pending = false;
+        return new(kind);
+    }
+
+    private void Learn(double duration)
+    {
+        risk = .6 * risk + .4 * Math.Min(duration, 20);
+        Target = Math.Clamp(Math.Max(Target * 1.5, Math.Max(Applied + 2, risk * 2 + 1)), 1, 30);
+    }
+
+    private RecoveryAction Retry(double now, double? starvation = null)
     {
         if (Pending || GaveUp) return default;
-        if (lastRestart is { } previous)
-        {
-            if (now - previous >= 120) Attempts = 0;
-            if (now - previous < 2) return default;
-        }
-        if ((!everPlayed && now - requestStart >= 30) || Attempts >= maximumAttempts)
-        { GaveUp = true; return new(RecoveryKind.Lost); }
-        Attempts++; lastRestart = now; Pending = true;
-        if (increase && !(live && dispatcharr)) Target = Math.Min(Target + 1, Settings.MaximumSeconds);
+        if (Attempts >= maximumAttempts) return Terminal(RecoveryKind.Lost);
+        if (starvation is { } gap) Learn(gap);
+        Attempts++; Pending = true; healthyStart = decayStart = null;
         return new(RecoveryKind.Retry, ReconnectDelay(Attempts));
     }
+
     public RecoveryAction Evaluate(RecoverySample sample, double now, bool paused = false)
     {
         if (GaveUp) return default;
-        if (!Pending && sample.State is 3 or 4) { everPlayed = attemptPlayed = true; refreshes = 0; }
-        if (!everPlayed && now - requestStart >= 30) { GaveUp = true; Pending = false; return new(RecoveryKind.Lost); }
-        if (Pending) return default;
-        if (sample.State is 5 or 6 or 7)
+        // EOF is an explicit terminal event, including while a retry is pending.
+        if (sample.State == 6) return Terminal(RecoveryKind.Finished);
+        if (!double.IsFinite(now) || lastObservation is { } observed && now <= observed) return default;
+        var discontinuity = lastObservation is { } previous && now - previous > 5;
+        lastObservation = now;
+        if (discontinuity)
         {
-            if (live && linearTs && attemptPlayed)
-            {
-                if (refreshes >= 6) { GaveUp = true; return new(RecoveryKind.Lost); }
-                refreshes++; Pending = true; lastRestart = now; return new(RecoveryKind.Retry, .2, true);
-            }
-            if (sample.State == 6 && sample.Length > 0 && sample.Position >= 0 && sample.Length - sample.Position <= 10)
-                return new(RecoveryKind.Finished);
-            return Retry(now, sample.State == 7);
+            ResetTelemetry(now);
+            bufferingStart = null;
         }
-        if (sample.State == 4 || paused && sample.State == 3) { bufferingStart = null; ResetProgress(); return default; }
+        var isPaused = sample.State == 4 || paused && sample.State == 3;
+        if (isPaused)
+        {
+            if (!wasPaused) ResetObservation(now);
+            wasPaused = true;
+            lastProgress = now;
+            bufferingStart = null;
+            return default;
+        }
+        if (wasPaused)
+        {
+            wasPaused = false;
+            lastProgress = now;
+            ResetObservation(now);
+        }
+        if (now - lastProgress >= 90) return Terminal(RecoveryKind.Lost);
+        if (Pending) return default;
+        if (sample.State is 5 or 7) return Retry(now);
+
         if (sample.State == 2)
         {
-            ResetProgress(); bufferingStart ??= now;
-            if (attemptPlayed && now - bufferingStart >= 10) return Retry(now, true);
+            ResetPendingPresentation();
+            healthyStart = decayStart = null;
+            if (attemptPlayed)
+            {
+                bufferingStart ??= now;
+                if (now - bufferingStart >= Math.Max(8, Applied + 4)) return Retry(now, now - bufferingStart);
+            }
         }
         else if (bufferingStart is { } start)
         {
             bufferingStart = null;
-            if (now - start >= 1.25)
+            ResetTelemetry(now);
+            var duration = now - start;
+            if (duration >= .75)
             {
-                bufferEvents.Add(now); bufferEvents.RemoveAll(t => now - t > 60);
-                if (attemptPlayed && bufferEvents.Count >= 4 && (lastAdjustment is null || now - lastAdjustment >= 20))
+                Learn(duration);
+                bufferEvents.RemoveAll(time => now - time > 30);
+                if (bufferEvents.Count == 16) bufferEvents.RemoveAt(0);
+                bufferEvents.Add(now);
+                if (bufferEvents.Count >= 3 && (lastAdjustment is null || now - lastAdjustment >= 20))
                 {
-                    lastAdjustment = now; var action = Retry(now, true); if (action.Kind != RecoveryKind.None) return action;
+                    lastAdjustment = now;
+                    return Retry(now);
                 }
             }
         }
-        if (!attemptPlayed && sample.State is >= 0 and <= 2 && now - attemptStart >= 25) return Retry(now, false);
-        if (sample.State != 3) { ResetProgress(); return default; }
-        var armed = false;
-        if (live && sample.Progress is { } current)
+        if (sample.State != 3)
         {
-            if (previousProgress is { } previous)
+            healthyStart = decayStart = null;
+            if (!attemptPlayed && now - attemptStart >= Math.Max(8, Applied + 6)) return Retry(now);
+            return default;
+        }
+
+        if (sample.VideoEnabled != videoWasVisible)
+        {
+            video.Reset(); healthyStart = decayStart = null; graceUntil = now + 3;
+            videoWasVisible = sample.VideoEnabled;
+            ResetPendingPresentation();
+        }
+        var counterReset = false;
+        var outputProgress = false;
+        if (sample.AudioOnly || !sample.VideoEnabled) video.Reset();
+        if (!sample.AudioEnabled) audio.Reset();
+        if (sample.Progress is { } stats)
+        {
+            if (!sample.AudioOnly && sample.VideoEnabled) outputProgress |= video.Observe(stats.Displayed, now, out counterReset);
+            if (sample.AudioEnabled)
             {
-                if (current.Video != previous.Video || current.Displayed != previous.Displayed) { videoSamples++; lastVideo = now; }
-                if (current.Audio != previous.Audio || current.Played != previous.Played) { audioSamples++; lastAudio = now; }
+                outputProgress |= audio.Observe(stats.Played, now, out var audioReset);
+                counterReset |= audioReset;
             }
-            else { lastVideo = lastAudio = now; }
-            previousProgress = current;
-            var videoArmed = !sample.AudioOnly && videoSamples >= 2; var audioArmed = audioSamples >= 2;
-            armed = videoArmed || audioArmed;
-            if (now - attemptStart >= 12 + Target && ((videoArmed && now - lastVideo >= 10) || (audioArmed && now - lastAudio >= 10))) return Retry(now, true);
+            if (stats.InputBytes is >= 0 and var bytes)
+            {
+                if (inputPrevious is { } old)
+                {
+                    if (bytes > old) { inputProven = true; inputLastAdvance = now; }
+                    else if (bytes < old) { inputProven = false; inputLastAdvance = null; counterReset = true; }
+                }
+                inputPrevious = bytes;
+            }
+            else { inputPrevious = null; inputProven = false; inputLastAdvance = null; }
         }
-        else { previousProgress = null; videoSamples = audioSamples = 0; lastVideo = lastAudio = null; }
-        if (armed) { lastPosition = sample.Position; clockStallStart = null; return default; }
-        if (now - attemptStart < 12 + Target || sample.Position < 0) { lastPosition = clockStallStart = null; return default; }
-        if (lastPosition is { } position && sample.Position >= position - 1 && sample.Position <= position + .2)
+        else { video.Reset(); audio.Reset(); inputPrevious = null; inputProven = false; inputLastAdvance = null; }
+
+        if (counterReset)
         {
-            clockStallStart ??= now;
-            if (now - clockStallStart >= 10) return Retry(now, true);
+            ResetPendingPresentation();
+            healthyStart = decayStart = null;
+            graceUntil = now + 3;
         }
-        else clockStallStart = null;
-        lastPosition = sample.Position; return default;
+        if (!counterReset && sample.Progress is { Displayed: 0, Video: >= 0 } decoding
+            && !sample.AudioOnly && sample.VideoEnabled && sample.KnownVideoTrackCount is > 0)
+        {
+            if (pendingDecodePrevious is { } decoded)
+            {
+                if (decoding.Video > decoded)
+                {
+                    pendingDecodeIncrements++;
+                    if (pendingDecodeIncrements >= 2) pendingPresentationStart ??= now;
+                }
+                else if (decoding.Video < decoded) ResetPendingPresentation();
+            }
+            pendingDecodePrevious = decoding.Video;
+        }
+        else ResetPendingPresentation();
+        if (pendingPresentationStart is { } presentationStart)
+        {
+            healthyStart = decayStart = null;
+            if (now >= graceUntil && now - presentationStart >= Math.Max(30, Applied + 6)) return Retry(now);
+        }
+        var clockProgress = false;
+        if (double.IsFinite(sample.Position) && sample.Position >= 0)
+        {
+            if (lastClock is { } clock && sample.Position < clock - 1)
+            {
+                ResetTelemetry(now);
+                clockAnchor = lastClock = sample.Position;
+                return default;
+            }
+            clockAnchor ??= sample.Position;
+            if (sample.Position - clockAnchor >= .25) { clockProgress = true; clockAnchor = sample.Position; }
+            lastClock = sample.Position;
+        }
+        else clockAnchor = lastClock = null;
+
+        var armed = video.Armed || audio.Armed;
+        var progress = !counterReset && (outputProgress || !armed && clockProgress);
+        var frozenSince = video.Armed && now - video.LastAdvance >= 8 ? video.LastAdvance
+            : audio.Armed && now - audio.LastAdvance >= 8 ? audio.LastAdvance : (double?)null;
+        if (!armed && pendingPresentationStart is null && clockAnchor is not null && !progress)
+        {
+            // Clock observations share the same cumulative threshold as output health.
+            clockLastAdvance ??= now;
+            if (now - clockLastAdvance >= 8) frozenSince = clockLastAdvance;
+        }
+        else if (progress) clockLastAdvance = now;
+        if (now >= graceUntil && frozenSince is { } frozen)
+        {
+            var networkStarved = inputProven && inputLastAdvance is { } input && now - input >= 3;
+            return Retry(now, networkStarved ? now - frozen : null);
+        }
+        if (now - lastProgress > 3) healthyStart = decayStart = null;
+        if (progress)
+        {
+            attemptPlayed = true;
+            lastProgress = now;
+            if (!counterReset && pendingPresentationStart is null && now >= graceUntil)
+            {
+                healthyStart ??= now;
+                decayStart ??= now;
+                if (now - healthyStart >= 120) Attempts = 0;
+                if (now - decayStart >= 60)
+                {
+                    Target = Math.Max(1, Target * .85); risk *= .8; decayStart = now;
+                }
+            }
+        }
+        if (!attemptPlayed && pendingPresentationStart is null
+            && now - attemptStart >= Math.Max(8, Applied + 6)) return Retry(now);
+        return default;
     }
-    internal static bool IsLinearTs(Uri uri)
+
+    private void ResetPendingPresentation()
     {
-        var path = uri.AbsolutePath.ToLowerInvariant();
-        if (ArchivePaths.Any(path.Contains)) return false;
-        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var numeric = parts.Length > 0 && long.TryParse(parts[^1].Split('.')[0], out _);
-        return parts.Length >= 2 && numeric && !path.EndsWith(".m3u8", StringComparison.Ordinal)
-            || parts.Length >= 4 && path.EndsWith(".ts", StringComparison.Ordinal) && long.TryParse(parts[^2], out _)
-            || TsPaths.Any(path.Contains);
+        pendingDecodePrevious = null;
+        pendingDecodeIncrements = 0;
+        pendingPresentationStart = null;
+    }
+
+    private double? clockLastAdvance;
+
+    private sealed class OutputWatch
+    {
+        private long? previous;
+        private int increments;
+        private bool unavailable;
+        public bool Armed => increments >= 2;
+        public double LastAdvance { get; private set; }
+        public void Reset() { previous = null; increments = 0; LastAdvance = 0; unavailable = false; }
+        public bool Observe(long value, double now, out bool reset)
+        {
+            reset = false;
+            if (value < 0)
+            {
+                // Missing output statistics are a transition, not a new
+                // discontinuity on every poll of the healthy other stream.
+                reset = !unavailable;
+                Reset(); unavailable = true;
+                return false;
+            }
+            unavailable = false;
+            if (previous is { } old && value < old)
+            {
+                Reset(); previous = value; reset = true; return false;
+            }
+            var positive = previous is { } former && value > former;
+            previous = value;
+            if (positive) { increments++; LastAdvance = now; }
+            return positive;
+        }
     }
 }

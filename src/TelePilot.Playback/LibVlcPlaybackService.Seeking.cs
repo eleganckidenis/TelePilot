@@ -91,6 +91,7 @@ public sealed partial class LibVlcPlaybackService
 
                 var target = ClampSeekTime(currentTime, _mediaPlayer.Length, offset);
                 _mediaPlayer.Time = target;
+                _recovery?.ResetObservation(MonotonicNow);
                 _lastSeekTarget = target;
                 _lastSeekTimestamp = Stopwatch.GetTimestamp();
                 _lastSeekSessionGeneration = generation;

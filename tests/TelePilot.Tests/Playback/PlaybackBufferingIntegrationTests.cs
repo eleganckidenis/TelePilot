@@ -9,10 +9,11 @@ using TelePilot.Playback;
 
 namespace TelePilot.Tests.Playback;
 
+[Collection(nameof(NativePlaybackTestGroup))]
 public sealed class PlaybackBufferingIntegrationTests
 {
     [Fact]
-    public async Task RealLibVlcReadsSyntheticTsRollsOverAndStopCancelsTheNextRefresh()
+    public async Task RealLibVlcEndedReleasesSyntheticTsAndNeverReconnects()
     {
         if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("TELEPILOT_RUN_PLAYBACK_INTEGRATION") != "1")
         {
@@ -86,9 +87,11 @@ public sealed class PlaybackBufferingIntegrationTests
                     using var media = service.MediaPlayer.Media;
                     return media is not null && media.Statistics.DecodedAudio > 0;
                 }, timeout.Token);
-                await WaitForAsync(() => Volatile.Read(ref requests) >= 2, timeout.Token);
-                await WaitForAsync(() => Volatile.Read(ref refreshes) >= 2, timeout.Token);
-                await service.StopAsync(timeout.Token);
+                await WaitForAsync(() => service.Current.IsTerminal, timeout.Token);
+                Assert.Equal(PlaybackState.Idle, service.Current.State);
+                Assert.Null(service.Current.ChannelId);
+                using (var endedMedia = service.MediaPlayer.Media) Assert.Null(endedMedia);
+                Assert.Equal(0, Volatile.Read(ref refreshes));
                 var stoppedRequests = Volatile.Read(ref requests);
                 await Task.Delay(1000, timeout.Token);
                 Assert.Equal(PlaybackState.Idle, service.Current.State);
@@ -100,6 +103,74 @@ public sealed class PlaybackBufferingIntegrationTests
             }
         }
         finally { File.Delete(fixture); }
+    }
+
+    [Fact]
+    public async Task RealLibVlcSixFailedOpensReleaseInputAndLeaveNoPendingReconnect()
+    {
+        if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("TELEPILOT_RUN_PLAYBACK_INTEGRATION") != "1")
+        {
+            Assert.Skip("Test requires Windows and TELEPILOT_RUN_PLAYBACK_INTEGRATION=1; uses a local synthetic HTTP failure only.");
+            return;
+        }
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(55));
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var endpoint = (IPEndPoint)listener.LocalEndpoint;
+        var requests = 0;
+        var server = Task.Run(async () =>
+        {
+            try
+            {
+                while (!timeout.IsCancellationRequested)
+                {
+                    using var client = await listener.AcceptTcpClientAsync(timeout.Token);
+                    try
+                    {
+                        await using var stream = client.GetStream();
+                        using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+                        while (!string.IsNullOrEmpty(await reader.ReadLineAsync(timeout.Token))) { }
+                        Interlocked.Increment(ref requests);
+                        await stream.WriteAsync("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"u8.ToArray(), timeout.Token);
+                    }
+                    catch (IOException) { }
+                }
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested) { }
+            catch (SocketException) when (timeout.IsCancellationRequested) { }
+        }, timeout.Token);
+        await using var service = new LibVlcPlaybackService(NullLogger<LibVlcPlaybackService>.Instance);
+        var retries = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
+        service.StateChanged += (_, args) =>
+        {
+            var message = args.Snapshot.StatusMessage;
+            if (message is not null && (message.StartsWith("Ponowne łączenie, próba ", StringComparison.Ordinal)
+                || message.StartsWith("Reconnecting, attempt ", StringComparison.Ordinal))) retries.TryAdd(message, 0);
+        };
+        try
+        {
+            await service.PrepareAsync(timeout.Token);
+            Assert.True(service.MediaPlayer.SetAudioOutput("dummy"));
+            var channel = new Channel(ChannelId.New(), PlaylistSourceId.New(), "Synthetic failed stream",
+                $"http://127.0.0.1:{endpoint.Port}/live/test/test/123.ts");
+            Assert.True((await service.PlayAsync(channel, new(), timeout.Token)).IsSuccess);
+            await WaitForAsync(() => service.Current.IsTerminal, timeout.Token);
+            Assert.Equal(6, retries.Count);
+            Assert.Equal(PlaybackState.Error, service.Current.State);
+            Assert.Equal("stream-lost", service.Current.Error?.TechnicalCode);
+            Assert.Null(service.Current.ChannelId);
+            using (var media = service.MediaPlayer.Media) Assert.Null(media);
+            var completedRequests = Volatile.Read(ref requests);
+            Assert.True(completedRequests >= 7); // Initial input plus six ordinary retries.
+            await Task.Delay(1000, timeout.Token);
+            Assert.Equal(completedRequests, Volatile.Read(ref requests));
+            Assert.True(service.Current.IsTerminal);
+        }
+        finally
+        {
+            await timeout.CancelAsync(); listener.Stop(); await server;
+        }
     }
 
     private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellationToken)

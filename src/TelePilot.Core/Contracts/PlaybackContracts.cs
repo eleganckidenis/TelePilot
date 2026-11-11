@@ -9,6 +9,8 @@ public interface IPlaybackService : IAsyncDisposable
 
     PlaybackSnapshot Current { get; }
 
+    void SetVideoSurfaceVisible(bool visible) { }
+
     event EventHandler<PlaybackStateChangedEventArgs>? StateChanged;
 
     event EventHandler<MediaTracksChangedEventArgs>? TracksChanged;

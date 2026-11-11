@@ -9,15 +9,40 @@ namespace TelePilot.Tests.App;
 
 public sealed class AppPreferencesServiceTests
 {
+    private static readonly System.Text.Json.JsonSerializerOptions JsonOptions = new()
+    { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
     [Fact]
     public async Task BufferSettingsRoundTripPreservesOldPreferencesAndExplicitChoice()
     {
         var old = System.Text.Json.JsonSerializer.Deserialize<AppPreferences>("{}")!;
         Assert.Equal(new TelePilot.Core.Models.PlaybackBufferSettings(), old.Buffering);
         var store = new MemoryStore(old); var service = new AppPreferencesService(store);
-        await service.SaveAsync(new AppPreferences { Buffering = new(9, 40, 6) });
+        await service.SaveAsync(new AppPreferences { Buffering = new(6) });
         await service.LoadAsync();
-        Assert.Equal(new TelePilot.Core.Models.PlaybackBufferSettings(9, 40, 6), service.Current.Buffering);
+        Assert.Equal(new TelePilot.Core.Models.PlaybackBufferSettings(6), service.Current.Buffering);
+    }
+
+    [Fact]
+    public async Task LegacyBufferTimesOfAnyTypeAreIgnoredWithoutLosingOtherPreferences()
+    {
+        var source = Guid.NewGuid(); var channel = Guid.NewGuid();
+        var json = $$"""
+            {"language":"en","buffering":{"seconds":"invalid","maximumSeconds":{"old":true},"variantMaxMbps":6},
+             "externalEpgUrl":"https://example.test/guide.xml",
+             "favorites":[{"playlistSourceId":"{{source}}","channelId":"{{channel}}","channelName":"Saved"}]}
+            """;
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<AppPreferences>(json,
+            JsonOptions)!;
+        var store = new MemoryStore(loaded); var service = new AppPreferencesService(store);
+        await service.LoadAsync();
+        Assert.Equal(6, service.Current.Buffering.VariantMaxMbps);
+        Assert.Equal("en", service.Current.Language);
+        Assert.Equal("https://example.test/guide.xml", service.Current.ExternalEpgUrl);
+        Assert.Equal(channel, Assert.Single(service.Current.Favorites).ChannelId);
+        await service.SaveAsync(service.Current);
+        var saved = System.Text.Json.JsonSerializer.Serialize(service.Current);
+        Assert.DoesNotContain("MaximumSeconds", saved, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Seconds\"", saved, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -48,6 +48,15 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        PropertyChanged += (_, args) =>
+        {
+            if (args.Property == WindowStateProperty || args.Property == IsVisibleProperty)
+                UpdatePlaybackSurfaceVisibility();
+        };
+        PlayerView.PropertyChanged += (_, args) =>
+        {
+            if (args.Property == IsVisibleProperty) UpdatePlaybackSurfaceVisibility();
+        };
         ConfigureMainFocusCycleEdges();
         SearchBox.NextTabTarget = GroupSelector;
         GroupSelector.PreviousTabTarget = SearchBox;
@@ -1258,6 +1267,9 @@ public sealed partial class MainWindow : Window
         await viewModel.SetVolumeAsync(requestedVolume);
     }
 
+    private void UpdatePlaybackSurfaceVisibility() => CurrentViewModel?.UpdateVideoSurfaceVisibility(
+        IsVisible && WindowState != WindowState.Minimized && VideoView.IsEffectivelyVisible);
+
     private void AttachMediaPlayerToVideoView()
     {
         if (mediaPlayer is null || isMediaPlayerAttached)
@@ -1270,6 +1282,7 @@ public sealed partial class MainWindow : Window
         // a później zachowujemy ten sam uchwyt także po ukryciu odtwarzacza.
         // Odpięcie aktywnego Hwnd może zakleszczyć wyjście Direct3D LibVLC.
         VideoView.MediaPlayer = mediaPlayer;
+        UpdatePlaybackSurfaceVisibility();
         isMediaPlayerAttached = true;
     }
 

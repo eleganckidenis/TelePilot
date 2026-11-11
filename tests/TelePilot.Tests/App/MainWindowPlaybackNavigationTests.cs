@@ -1257,6 +1257,271 @@ public sealed class MainWindowPlaybackNavigationTests
         Assert.Equal(0, playerViewActivationCount);
     }
 
+    [AvaloniaTheory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task TerminalStreamReturnsToSelectedChannelAndPreservesFinalStatus(bool failed, bool archive)
+    {
+        var sourceId = PlaylistSourceId.New();
+        var source = new PlaylistSource(sourceId, "Test playlist", PlaylistSourceKind.File, "test.m3u");
+        var channel = new Channel(ChannelId.New(), sourceId, "Selected channel", "https://example.test/1");
+        var playback = new ControllablePlaybackService();
+        var coordinator = new FocusCoordinator();
+        var requests = new List<FocusRequest>();
+        coordinator.FocusRequested += (_, request) => requests.Add(request);
+        var status = new RecordingAccessibleStatusService();
+        var recording = new ControllableRecordingCoordinator();
+        using var model = new MainWindowViewModel(
+            new FixedPlaylistService(PlaylistLoadResult.Success(
+                new PlaylistParseResult(new PlaylistHeader(), [channel], [], "UTF-8", 0))),
+            new FixedPlaylistSourceStore(source), playback, new EmptyEpgSourceManager(),
+            new NoOpWindowService(), status, coordinator, recordingCoordinator: recording);
+        await model.InitializeAsync();
+        playback.CompletePlay();
+        await model.PlaySelectedCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(model.IsPlayerViewVisible);
+        var selected = model.SelectedChannel;
+        if (archive) model.SelectedSectionIndex = 2;
+        recording.Publish(RecordingState.Recording);
+        Dispatcher.UIThread.RunJobs();
+        var message = failed ? "Could not restore the stream. Select a channel to try again." : "The stream ended. Channel list.";
+        playback.Publish(PlaybackSnapshot.Initial with
+        {
+            IsTerminal = true,
+            State = failed ? PlaybackState.Error : PlaybackState.Idle,
+            StatusMessage = message,
+            Error = failed ? new PlaybackError(channel.Name, message, "stream-lost") : null,
+        });
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(model.IsPlayerViewVisible);
+        Assert.True(model.IsChannelListViewVisible);
+        Assert.Same(selected, model.SelectedChannel);
+        Assert.Equal(FocusTarget.ChannelList, requests.Last().Target);
+        Assert.Equal(selected!.Id, requests.Last().ItemId);
+        Assert.Equal(message, failed ? status.AlertMessage : status.StatusMessage);
+        Assert.Equal(0, playback.StopCallCount);
+        Assert.Equal(0, recording.StopCallCount);
+        Assert.True(model.IsRecording);
+        Assert.False(model.IsArchiveSection);
+    }
+
+    [AvaloniaFact]
+    public async Task StaleTerminalSnapshotCannotHideOrAnnounceOverNewPlayback()
+    {
+        var sourceId = PlaylistSourceId.New();
+        var source = new PlaylistSource(sourceId, "Test playlist", PlaylistSourceKind.File, "test.m3u");
+        var channel = new Channel(ChannelId.New(), sourceId, "Selected channel", "https://example.test/1");
+        var playback = new ControllablePlaybackService();
+        var status = new RecordingAccessibleStatusService();
+        using var model = new MainWindowViewModel(
+            new FixedPlaylistService(PlaylistLoadResult.Success(
+                new PlaylistParseResult(new PlaylistHeader(), [channel], [], "UTF-8", 0))),
+            new FixedPlaylistSourceStore(source), playback, new EmptyEpgSourceManager(),
+            new NoOpWindowService(), status, new FocusCoordinator());
+        await model.InitializeAsync(); playback.CompletePlay();
+        await model.PlaySelectedCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs();
+        var active = playback.Current;
+        playback.Publish(PlaybackSnapshot.Initial with { IsTerminal = true, StatusMessage = "Old terminal" });
+        playback.Publish(active with { StatusMessage = "New playback" });
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(model.IsPlayerViewVisible);
+        Assert.False(model.IsChannelListViewVisible);
+        Assert.Equal("New playback", status.StatusMessage);
+    }
+
+    [AvaloniaFact]
+    public async Task FinishedArchiveRevealsItsChannelAndRestoresActualListFocusBeforeHidingPlayer()
+    {
+        var sourceId = PlaylistSourceId.New();
+        var source = new PlaylistSource(sourceId, "Test playlist", PlaylistSourceKind.File, "test.m3u");
+        var channelA = new Channel(ChannelId.New(), sourceId, "Channel A", "https://example.test/a", groupTitle: "Group A");
+        var channelB = new Channel(ChannelId.New(), sourceId, "Channel B", "https://example.test/b", groupTitle: "Group B",
+            attributes: new Dictionary<string, string> { ["catchup"] = "default", ["catchup-days"] = "7",
+                ["catchup-source"] = "https://example.test/archive/{utc}/{duration}" });
+        var playback = new ControllablePlaybackService(); playback.CompletePlay();
+        var coordinator = new FocusCoordinator();
+        using var model = new MainWindowViewModel(
+            new FixedPlaylistService(PlaylistLoadResult.Success(
+                new PlaylistParseResult(new PlaylistHeader(), [channelA, channelB], [], "UTF-8", 0))),
+            new FixedPlaylistSourceStore(source), playback, new EmptyEpgSourceManager(),
+            new NoOpWindowService(), new RecordingAccessibleStatusService(), coordinator);
+        var states = new List<bool>();
+        coordinator.FocusRequested += (_, request) =>
+        {
+            if (request.Target == FocusTarget.ChannelList) states.Add(model.IsPlayerViewVisible);
+        };
+        var window = new MainWindow { DataContext = model };
+        var handler = typeof(MainWindow).GetMethod("OnFocusRequested", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .CreateDelegate<EventHandler<FocusRequest>>(window);
+        coordinator.FocusRequested += handler;
+        try
+        {
+            window.Show(); window.Activate(); await model.InitializeAsync();
+            model.SelectedGroup = "Group A"; model.SearchText = "Channel A"; model.SelectedSectionIndex = 2;
+            Assert.Equal(channelA.Id.ToString(), Assert.Single(model.Channels).Id);
+            var playArchive = typeof(MainWindowViewModel).GetMethod("PlayArchiveAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .CreateDelegate<Func<Channel, Programme, CancellationToken, Task>>(model);
+            var now = DateTimeOffset.Now;
+            await playArchive(channelB, new Programme("epg-b", now.AddHours(-2), now.AddHours(-1), [new EpgLocalizedText("Archive B")]), CancellationToken.None);
+            Dispatcher.UIThread.RunJobs();
+            Assert.True(model.IsArchivePlayback);
+            Assert.Equal(channelA.Id.ToString(), model.SelectedChannel!.Id);
+            states.Clear();
+            playback.Publish(PlaybackSnapshot.Initial with { IsTerminal = true, TerminalSequence = 1, StatusMessage = "Archive finished" });
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal([true, true, false], states);
+            Assert.Equal(0, model.SelectedSectionIndex);
+            Assert.Equal(channelB.Id.ToString(), model.SelectedChannel!.Id);
+            Assert.Contains(model.SelectedChannel, model.Channels);
+            Assert.Empty(model.SearchText);
+            Assert.False(model.IsPlayerViewVisible);
+            var list = window.FindControl<ListBox>("ChannelList")!;
+            Assert.Same(list.ContainerFromItem(model.SelectedChannel), window.FocusManager!.GetFocusedElement());
+        }
+        finally { coordinator.FocusRequested -= handler; window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task FinishedArchiveRestoresItsOriginalPlaylistAfterUserBrowsesAnotherSource()
+    {
+        var sourceA = new PlaylistSource(PlaylistSourceId.New(), "Playlist A", PlaylistSourceKind.File, "a.m3u");
+        var sourceB = new PlaylistSource(PlaylistSourceId.New(), "Playlist B", PlaylistSourceKind.File, "b.m3u");
+        var channelA = new Channel(ChannelId.New(), sourceA.Id, "Channel A", "https://example.test/a");
+        var channelB = new Channel(ChannelId.New(), sourceB.Id, "Channel B", "https://example.test/b",
+            attributes: new Dictionary<string, string> { ["catchup"] = "default", ["catchup-days"] = "7",
+                ["catchup-source"] = "https://example.test/archive/{utc}/{duration}" });
+        var playback = new ControllablePlaybackService(); playback.CompletePlay();
+        var status = new RecordingAccessibleStatusService();
+        using var model = new MainWindowViewModel(
+            new SourcePlaylistService(new Dictionary<PlaylistSourceId, Channel> { [sourceA.Id] = channelA, [sourceB.Id] = channelB }),
+            new FixedPlaylistSourceStore(sourceA, sourceB), playback, new EmptyEpgSourceManager(), new NoOpWindowService(), status, new FocusCoordinator());
+        await model.InitializeAsync();
+        model.SelectedSource = model.Sources.Single(item => item.Source.Id == sourceB.Id);
+        await model.ActivateSourceCommand.ExecuteAsync(null);
+        model.SelectedSectionIndex = 2;
+        var playArchive = typeof(MainWindowViewModel).GetMethod("PlayArchiveAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .CreateDelegate<Func<Channel, Programme, CancellationToken, Task>>(model);
+        var now = DateTimeOffset.Now;
+        await playArchive(channelB, new Programme("epg-b", now.AddHours(-2), now.AddHours(-1), [new EpgLocalizedText("Archive B")]), CancellationToken.None);
+        model.SelectedSource = model.Sources.Single(item => item.Source.Id == sourceA.Id);
+        await model.ActivateSourceCommand.ExecuteAsync(null);
+        Assert.Equal(channelA.Id.ToString(), model.SelectedChannel!.Id);
+        playback.Publish(PlaybackSnapshot.Initial with { IsTerminal = true, TerminalSequence = 2, StatusMessage = "Archive finished" });
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(sourceB.Id, model.SelectedSource!.Source.Id);
+        Assert.Equal(channelB.Id.ToString(), model.SelectedChannel!.Id);
+        Assert.False(model.IsPlayerViewVisible);
+        Assert.Equal("Archive finished", status.StatusMessage);
+    }
+
+    [AvaloniaFact]
+    public async Task GuidePlayCancelsTerminalPlaylistRestoreBeforeItCanOverwriteChannelsOrStatus()
+    {
+        var sourceA = new PlaylistSource(PlaylistSourceId.New(), "Playlist A", PlaylistSourceKind.File, "a.m3u");
+        var sourceB = new PlaylistSource(PlaylistSourceId.New(), "Playlist B", PlaylistSourceKind.File, "b.m3u");
+        var channelA = new Channel(ChannelId.New(), sourceA.Id, "Channel A", "https://example.test/a");
+        var channelB = new Channel(ChannelId.New(), sourceB.Id, "Channel B", "https://example.test/b",
+            attributes: new Dictionary<string, string> { ["catchup"] = "default", ["catchup-days"] = "7",
+                ["catchup-source"] = "https://example.test/archive/{utc}/{duration}" });
+        var playlists = new SourcePlaylistService(new Dictionary<PlaylistSourceId, Channel> { [sourceA.Id] = channelA, [sourceB.Id] = channelB });
+        var playback = new ControllablePlaybackService(); playback.CompletePlay();
+        var status = new RecordingAccessibleStatusService();
+        using var model = new MainWindowViewModel(playlists, new FixedPlaylistSourceStore(sourceA, sourceB), playback,
+            new EmptyEpgSourceManager(), new NoOpWindowService(), status, new FocusCoordinator());
+        await model.InitializeAsync();
+        model.SelectedSource = model.Sources.Single(item => item.Source.Id == sourceB.Id);
+        await model.ActivateSourceCommand.ExecuteAsync(null);
+        model.SelectedSectionIndex = 2;
+        var playArchive = typeof(MainWindowViewModel).GetMethod("PlayArchiveAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .CreateDelegate<Func<Channel, Programme, CancellationToken, Task>>(model);
+        var now = DateTimeOffset.Now;
+        await playArchive(channelB, new Programme("epg-b", now.AddHours(-2), now.AddHours(-1), [new EpgLocalizedText("Archive B")]), CancellationToken.None);
+        model.SelectedSource = model.Sources.Single(item => item.Source.Id == sourceA.Id);
+        await model.ActivateSourceCommand.ExecuteAsync(null);
+        playlists.HeldSource = sourceB.Id;
+        playback.Publish(PlaybackSnapshot.Initial with { IsTerminal = true, TerminalSequence = 3, StatusMessage = "Old archive terminal" });
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(playlists.HeldStarted.Task.IsCompleted);
+        var directPlay = typeof(MainWindowViewModel).GetMethod("PlayChannelByIdAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .CreateDelegate<Func<string, CancellationToken, Task>>(model);
+        await directPlay(channelA.Id.ToString(), CancellationToken.None);
+        Assert.True(playlists.HeldToken.IsCancellationRequested);
+        var loadFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        model.PropertyChanged += (_, args) => { if (args.PropertyName == nameof(model.IsLoading) && !model.IsLoading) loadFinished.TrySetResult(); };
+        playlists.HeldLoad.SetResult(PlaylistLoadResult.Success(new PlaylistParseResult(new PlaylistHeader(), [channelB], [], "UTF-8", 0)));
+        await loadFinished.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(channelA.Id.ToString(), Assert.Single(model.Channels).Id);
+        Assert.Equal(channelA.Id, playback.Current.ChannelId);
+        Assert.True(model.IsPlayerViewVisible);
+        Assert.DoesNotContain("Old archive terminal", status.StatusMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("Playlist loading canceled", status.StatusMessage, StringComparison.Ordinal);
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TerminalEventAndItsVolumeCopiesCannotCancelNewPlayWaitingForPrepare(bool consumeFirst)
+    {
+        var sourceId = PlaylistSourceId.New();
+        var source = new PlaylistSource(sourceId, "Test playlist", PlaylistSourceKind.File, "test.m3u");
+        var channel = new Channel(ChannelId.New(), sourceId, "Channel", "https://example.test/1");
+        var playback = new ControllablePlaybackService(); playback.CompletePlay();
+        using var model = new MainWindowViewModel(
+            new FixedPlaylistService(PlaylistLoadResult.Success(new PlaylistParseResult(new PlaylistHeader(), [channel], [], "UTF-8", 0))),
+            new FixedPlaylistSourceStore(source), playback, new EmptyEpgSourceManager(), new NoOpWindowService(),
+            new RecordingAccessibleStatusService(), new FocusCoordinator());
+        await model.InitializeAsync(); await model.PlaySelectedCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs();
+        playback.Publish(PlaybackSnapshot.Initial with { IsTerminal = true, TerminalSequence = 10, StatusMessage = "Previous terminal" });
+        if (consumeFirst) Dispatcher.UIThread.RunJobs();
+        var preparation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        playback.Preparation = preparation;
+        var play = model.PlaySelectedCommand.ExecuteAsync(null);
+        Assert.False(play.IsCompleted);
+        playback.PublishVolume(42); // Copying a terminal snapshot is not another terminal transition.
+        Dispatcher.UIThread.RunJobs();
+        preparation.SetResult();
+        await play; Dispatcher.UIThread.RunJobs();
+        Assert.Equal(PlaybackState.Playing, playback.Current.State);
+        Assert.True(model.IsPlayerViewVisible);
+        Assert.False(model.IsChannelListViewVisible);
+    }
+
+    [AvaloniaFact]
+    public async Task TerminalSnapshotCopiesKeepVolumeAndMuteResponsiveWithoutRepeatingNavigation()
+    {
+        var sourceId = PlaylistSourceId.New();
+        var source = new PlaylistSource(sourceId, "Test playlist", PlaylistSourceKind.File, "test.m3u");
+        var channel = new Channel(ChannelId.New(), sourceId, "Channel", "https://example.test/1");
+        var playback = new ControllablePlaybackService(); playback.CompletePlay();
+        var coordinator = new FocusCoordinator();
+        var navigation = new List<FocusRequest>();
+        coordinator.FocusRequested += (_, request) => navigation.Add(request);
+        using var model = new MainWindowViewModel(
+            new FixedPlaylistService(PlaylistLoadResult.Success(new PlaylistParseResult(new PlaylistHeader(), [channel], [], "UTF-8", 0))),
+            new FixedPlaylistSourceStore(source), playback, new EmptyEpgSourceManager(), new NoOpWindowService(),
+            new RecordingAccessibleStatusService(), coordinator);
+        await model.InitializeAsync(); await model.PlaySelectedCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs();
+        playback.Publish(PlaybackSnapshot.Initial with { IsTerminal = true, TerminalSequence = 11, Volume = 50, StatusMessage = "Finished" });
+        Dispatcher.UIThread.RunJobs();
+        navigation.Clear();
+        await model.VolumeUpCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs();
+        await model.VolumeUpCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs();
+        await model.VolumeDownCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs();
+        Assert.Equal([55, 60, 55], playback.SetVolumeCalls);
+        Assert.Equal(55, model.Volume);
+        await model.ToggleMuteCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs();
+        Assert.True(model.IsMuted);
+        await model.ToggleMuteCommand.ExecuteAsync(null); Dispatcher.UIThread.RunJobs();
+        Assert.False(model.IsMuted);
+        Assert.False(playback.Current.IsMuted);
+        Assert.Empty(navigation);
+        Assert.False(model.IsPlayerViewVisible);
+    }
+
     [AvaloniaFact]
     public void UnknownNativeVolume_PreservesTheLastAccessibleVolume()
     {
@@ -1302,8 +1567,20 @@ public sealed class MainWindowPlaybackNavigationTests
 
     private sealed class SourcePlaylistService(IReadOnlyDictionary<PlaylistSourceId, Channel> channels) : IPlaylistService
     {
-        public Task<PlaylistLoadResult> LoadAsync(PlaylistSource source, CancellationToken cancellationToken = default) =>
-            Task.FromResult(PlaylistLoadResult.Success(new PlaylistParseResult(new PlaylistHeader(), [channels[source.Id]], [], "UTF-8", 0)));
+        public PlaylistSourceId? HeldSource { get; set; }
+        public TaskCompletionSource HeldStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<PlaylistLoadResult> HeldLoad { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public CancellationToken HeldToken { get; private set; }
+        public Task<PlaylistLoadResult> LoadAsync(PlaylistSource source, CancellationToken cancellationToken = default)
+        {
+            if (source.Id == HeldSource)
+            {
+                HeldToken = cancellationToken;
+                HeldStarted.TrySetResult();
+                return HeldLoad.Task;
+            }
+            return Task.FromResult(PlaylistLoadResult.Success(new PlaylistParseResult(new PlaylistHeader(), [channels[source.Id]], [], "UTF-8", 0)));
+        }
     }
 
     private sealed class FixedPlaylistSourceStore(params PlaylistSource[] sources) : IPlaylistSourceStore
@@ -1335,6 +1612,9 @@ public sealed class MainWindowPlaybackNavigationTests
     {
         private readonly TaskCompletionSource<PlaybackCommandResult> playCompletion =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource? Preparation { get; set; }
+        public Task PrepareAsync(CancellationToken cancellationToken = default) => Preparation?.Task ?? Task.CompletedTask;
 
         public PlaybackSnapshot Current { get; private set; } = PlaybackSnapshot.Initial;
 
@@ -1373,6 +1653,12 @@ public sealed class MainWindowPlaybackNavigationTests
 
         public void CompletePlay() => playCompletion.TrySetResult(PlaybackCommandResult.Success());
 
+        public void Publish(PlaybackSnapshot snapshot)
+        {
+            Current = snapshot;
+            StateChanged?.Invoke(this, new PlaybackStateChangedEventArgs(snapshot));
+        }
+
         public void PublishVolume(int volume)
         {
             Current = Current with { Volume = volume };
@@ -1397,8 +1683,11 @@ public sealed class MainWindowPlaybackNavigationTests
             return Task.CompletedTask;
         }
 
-        public Task SetMutedAsync(bool isMuted, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
+        public Task SetMutedAsync(bool isMuted, CancellationToken cancellationToken = default)
+        {
+            Publish(Current with { IsMuted = isMuted });
+            return Task.CompletedTask;
+        }
 
         public Task<IReadOnlyList<MediaTrack>> GetTracksAsync(
             MediaTrackKind kind,

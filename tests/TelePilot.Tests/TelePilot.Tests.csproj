@@ -16,6 +16,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="../../testdata/adaptive-buffer-traces.json" Link="testdata/adaptive-buffer-traces.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

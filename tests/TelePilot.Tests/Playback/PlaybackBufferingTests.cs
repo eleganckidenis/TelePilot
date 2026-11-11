@@ -9,155 +9,289 @@ namespace TelePilot.Tests.Playback;
 public sealed class PlaybackBufferingTests
 {
     private static readonly Uri Hls = new("https://example.invalid/live/channel.m3u8");
-    private static PlaybackRecoveryPolicy Policy(bool live = true, bool dispatcharr = false, double seconds = 25) =>
-        new(new PlaybackOptions(IsLive: live, Buffering: new(seconds)), Hls, dispatcharr, 0);
+    private static PlaybackRecoveryPolicy Policy(bool live = true) =>
+        new(new PlaybackOptions(IsLive: live), Hls, false, 0);
+    private static RecoverySample Playing(double tick, bool input = true) => new(3, tick,
+        Progress: new((long)tick, (long)tick, (long)tick, (long)tick, input ? (long)tick * 100 : null));
 
     [Fact]
-    public void DefaultsSavedChoicesBoundsAndAllCacheOptions()
+    public void AutomaticCacheIsActuallyAppliedAndLegacyTimeValuesAreIgnored()
     {
         var defaults = new PlaybackBufferSettings();
-        Assert.Equal(25, defaults.Seconds); Assert.Equal(30, defaults.MaximumSeconds); Assert.Equal(0, defaults.VariantMaxMbps);
-        Assert.Equal(new PlaybackBufferSettings(7, 30, .25), new PlaybackBufferSettings(7, 18, .1).Normalize());
-        Assert.Equal(new PlaybackBufferSettings(300, 300, 500), new PlaybackBufferSettings(400, 400, 900).Normalize());
-        Assert.Equal(defaults, new PlaybackBufferSettings(double.NaN, double.PositiveInfinity, double.NaN).Normalize());
+        Assert.Equal(0, defaults.VariantMaxMbps);
+        Assert.Equal(new(.25), new PlaybackBufferSettings(.1).Normalize());
+        Assert.Equal(new(500), new PlaybackBufferSettings(900).Normalize());
+        Assert.Equal(defaults, new PlaybackBufferSettings(double.NaN).Normalize());
         Assert.Equal(defaults, JsonSerializer.Deserialize<PlaybackBufferSettings>("{}"));
-        var saved = new PlaybackBufferSettings(9, 40, 6);
-        Assert.Equal(saved, JsonSerializer.Deserialize<PlaybackBufferSettings>(JsonSerializer.Serialize(saved)));
+        Assert.Equal(new(6), JsonSerializer.Deserialize<PlaybackBufferSettings>("{\"Seconds\":\"bad\",\"MaximumSeconds\":[],\"VariantMaxMbps\":6}"));
+        var policy = new PlaybackRecoveryPolicy(new(NetworkCachingMilliseconds: 300_000), Hls, false, 0);
+        Assert.Equal(2, policy.Target); Assert.Equal(2, policy.Applied);
         foreach (var name in new[] { "network", "live", "file", "disc" })
         {
-            Assert.Contains($":{name}-caching=500", defaults.MediaOptions(25, true, true));
-            Assert.Contains($":{name}-caching=26000", defaults.MediaOptions(26, true, false));
-            Assert.Contains($":{name}-caching=25000", defaults.MediaOptions(25, false, true));
+            Assert.Contains($":{name}-caching=2000", PlaybackBufferSettings.MediaOptions(policy.Applied, true, true));
+            Assert.Contains($":{name}-caching=2000", PlaybackBufferSettings.MediaOptions(policy.Applied, false, false));
         }
-        Assert.Contains(":clock-jitter=1500", defaults.MediaOptions(25, true, true));
-        Assert.Contains(":drop-late-frames=0", defaults.MediaOptions(25, false, false));
-        Assert.DoesNotContain(defaults.MediaOptions(25, true, true), option => option.Contains("rate=", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void SixBackedOffRetriesIncreaseClampAndResetOnlyAfterStability()
+    public void SixRetriesShareOneBudgetAndOnlyObservedStabilityResetsIt()
     {
         var policy = Policy();
-        policy.Evaluate(new(3), 1);
         double[] delays = [.4, 2, 4, 8, 8, 8];
         for (var attempt = 1; attempt <= 6; attempt++)
         {
-            var now = attempt * 10;
+            var now = attempt * 2d;
             Assert.Equal(new(RecoveryKind.Retry, delays[attempt - 1]), policy.Evaluate(new(7), now));
-            Assert.Equal(Math.Min(25 + attempt, 30), policy.Target);
             Assert.Equal(default, policy.Evaluate(new(7), now + .1));
-            policy.BeginAttempt(now + 1);
-            policy.Evaluate(new(3), now + 2);
-            Assert.Equal(attempt, policy.Attempts);
+            policy.BeginAttempt(now + .2);
         }
-        Assert.Equal(RecoveryKind.Lost, policy.Evaluate(new(7), 75).Kind);
-        Assert.Equal(25, Policy().Target);
-        var stable = Policy(); stable.Evaluate(new(3), 1); stable.Evaluate(new(7), 2); stable.BeginAttempt(3);
-        Assert.Equal(new(RecoveryKind.Retry, .4), stable.Evaluate(new(7), 122));
-        Assert.Equal(1, stable.Attempts);
+        Assert.Equal(RecoveryKind.Lost, policy.Evaluate(new(7), 15).Kind);
+        Assert.False(policy.Pending);
+        Assert.Equal(default, policy.Evaluate(new(7), 16));
+        Assert.Equal(2, policy.Target); // Errors alone are not network starvation.
     }
 
     [Fact]
-    public void SilentOpeningAndGlobalDeadlineAreBoundedEvenDuringBackoff()
+    public void FalsePlayingAndRepeatedRebaselinesCannotEvadeNoProgressDeadline()
     {
         var policy = Policy();
-        Assert.Equal(default, policy.Evaluate(new(1), 24.9));
-        Assert.Equal(new(RecoveryKind.Retry, .4), policy.Evaluate(new(1), 25));
-        Assert.Equal(25, policy.Target);
-        Assert.Equal(RecoveryKind.Lost, policy.Evaluate(new(1), 30).Kind);
-    }
-
-    [Fact]
-    public void PausedInitialSuccessIsRecognizedAndPausedErrorsStillRecover()
-    {
-        var policy = Policy(live: false);
-        Assert.Equal(default, policy.Evaluate(new(3), 1, paused: true));
-        Assert.Equal(default, policy.Evaluate(new(4), 100, paused: true));
-        Assert.Equal(new(RecoveryKind.Retry, .4), policy.Evaluate(new(7), 101, paused: true));
-        policy.BeginAttempt(102);
-        // Restoring pause does not suppress a silent replacement stream's startup timeout.
-        Assert.Equal(new(RecoveryKind.Retry, 2), policy.Evaluate(new(1), 127, paused: true));
-    }
-
-    [Fact]
-    public void FailedRetryOpenClearsPendingAndUsesNextBudgetEntry()
-    {
-        var policy = Policy(); policy.Evaluate(new(3), 1);
-        Assert.Equal(new(RecoveryKind.Retry, .4), policy.Evaluate(new(7), 3));
-        policy.BeginAttempt(3.4); // adapter calls this before native Play, including rejection
-        Assert.False(policy.Pending);
-        Assert.Equal(new(RecoveryKind.Retry, 2), policy.Evaluate(new(7), 5));
-    }
-
-    [Fact]
-    public void DispatcharrGrowthOnlySuppressedForLiveAndPlaylistHintIsInherited()
-    {
-        foreach (var live in new[] { true, false })
+        for (var now = 1; now < 90; now++)
         {
-            var policy = Policy(live, true); policy.Evaluate(new(3), 1); policy.Evaluate(new(7), 4);
-            Assert.Equal(live ? 25 : 26, policy.Target);
+            policy.ResetObservation(now);
+            policy.BeginAttempt(now);
+            Assert.Equal(default, policy.Evaluate(new(3, 0), now));
         }
-        var parsed = new M3uPlaylistParser().Parse(Encoding.UTF8.GetBytes("#EXTM3U catchup-timezone=\"UTC\"\n#EXTINF:-1,One\nhttps://example.invalid/one\n#EXTINF:-1,Two\nhttps://example.invalid/two"), new PlaylistParseContext(PlaylistSourceId.New()));
-        Assert.Equal(2, parsed.Channels.Count);
-        Assert.All(parsed.Channels, channel => Assert.Equal("1", channel.Attributes["_dispatcharr"]));
+        Assert.Equal(RecoveryKind.Lost, policy.Evaluate(new(3, 0), 90).Kind);
     }
 
     [Fact]
-    public void LongBufferingAndFourCompletedEventsGrowTheRecoveryCache()
+    public void InitialPrefillDoesNotGrowCacheAndAppliedCacheOwnsDeadline()
     {
-        var policy = Policy(); policy.Evaluate(new(3), 1); policy.Evaluate(new(2), 2);
-        Assert.Equal(default, policy.Evaluate(new(2), 11.9));
-        Assert.Equal(new(RecoveryKind.Retry, .4), policy.Evaluate(new(2), 12));
-        var choppy = Policy(); choppy.Evaluate(new(3), 1);
-        for (var n = 0; n < 4; n++)
+        var policy = Policy();
+        policy.BeginAttempt(0, 20);
+        for (var tick = 1; tick <= 25; tick++) Assert.Equal(default, policy.Evaluate(new(2), tick));
+        Assert.Equal(new(RecoveryKind.Retry, .4), policy.Evaluate(new(2), 26));
+        Assert.Equal(2, policy.Target);
+    }
+
+    [Fact]
+    public void ThreeMeaningfulBufferEventsLearnAndRecoverWithoutHealthyReopens()
+    {
+        var policy = Policy();
+        for (var tick = 1; tick <= 4; tick++) policy.Evaluate(Playing(tick), tick);
+        for (var episode = 0; episode < 3; episode++)
         {
-            var start = 2 + n * 4; choppy.Evaluate(new(2), start);
-            Assert.Equal(n == 3 ? new(RecoveryKind.Retry, .4) : default, choppy.Evaluate(new(3), start + 1.25));
+            var start = 5 + episode * 3;
+            policy.Evaluate(new(2), start);
+            var action = policy.Evaluate(Playing(start + 1), start + 1);
+            Assert.Equal(episode == 2 ? RecoveryKind.Retry : RecoveryKind.None, action.Kind);
         }
-        var blips = Policy(); blips.Evaluate(new(3), 1);
-        for (var n = 0; n < 5; n++)
+        Assert.True(policy.Target > policy.Applied);
+        Assert.Equal(1, policy.Attempts);
+    }
+
+    [Fact]
+    public void RendererFreezeDoesNotUseDecoderOrClockAsHealthAndOnlyStarvationGrows()
+    {
+        foreach (var starved in new[] { false, true })
         {
-            var start = 2 + n * 4; blips.Evaluate(new(2), start);
-            Assert.Equal(default, blips.Evaluate(new(3), start + 1));
+            var policy = Policy();
+            for (var tick = 0; tick <= 12; tick++)
+            {
+                var displayed = Math.Min(tick, 4);
+                var bytes = starved ? Math.Min(tick, 4) * 100 : tick * 100;
+                var action = policy.Evaluate(new(3, tick, Progress: new(tick, displayed, tick, tick, bytes)), tick);
+                Assert.Equal(tick == 12 ? RecoveryKind.Retry : RecoveryKind.None, action.Kind);
+            }
+            Assert.Equal(starved ? 7.4 : 2, policy.Target, 6);
         }
+    }
+
+    [Fact]
+    public void RadioCoverArtAndDisabledAudioCannotCreateFalseFreeze()
+    {
+        var policy = Policy();
+        for (var tick = 0; tick <= 25; tick++)
+            Assert.Equal(default, policy.Evaluate(new(3, tick, Progress: new(tick, 1, tick, 0), AudioOnly: true, AudioEnabled: false), tick));
+    }
+
+    [Fact]
+    public void FrequentClockFallbackAdvancesCumulativelyAndStablePlaybackDecaysWithoutReopen()
+    {
+        var policy = Policy();
+        for (var tick = 0; tick <= 700; tick++)
+            Assert.Equal(default, policy.Evaluate(new(3, tick / 10d), tick / 10d));
+        Assert.Equal(1.7, policy.Target, 6); Assert.Equal(2, policy.Applied); Assert.Equal(0, policy.Attempts);
+    }
+
+    [Fact]
+    public void BadTimesAndCounterResetsNeverCreateProgressOrRecovery()
+    {
+        var policy = Policy();
+        for (var tick = 0; tick <= 4; tick++) policy.Evaluate(Playing(tick), tick);
+        foreach (var invalid in new[] { 4d, 3, double.NaN, double.PositiveInfinity })
+            Assert.Equal(default, policy.Evaluate(new(7), invalid));
+        Assert.Equal(default, policy.Evaluate(new(3, 0, Progress: new(0, 0, 0, 0, 0)), 5));
+        Assert.Equal(0, policy.Attempts);
+        Assert.Equal(default, policy.Evaluate(Playing(11), 11)); // Gap grants observation grace.
     }
 
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void FrozenClockRecoversForLiveAndArchive(bool live)
+    public void EndedIsTerminalOnceEvenDuringPendingRetryOrPause(bool live)
     {
-        var policy = Policy(live, seconds: 1); policy.Evaluate(new(3, 0), 1);
-        policy.Evaluate(new(3, 0), 13); policy.Evaluate(new(3, 0), 13.5);
-        Assert.Equal(new(RecoveryKind.Retry, .4), policy.Evaluate(new(3, 0), 23.5));
+        var policy = Policy(live);
+        policy.Evaluate(new(7), 1);
+        Assert.True(policy.Pending);
+        Assert.Equal(RecoveryKind.Finished, policy.Evaluate(new(6), 2, paused: true).Kind);
+        Assert.False(policy.Pending);
+        Assert.True(policy.GaveUp);
+        Assert.Equal(default, policy.Evaluate(new(7), 3));
+    }
+
+    [Theory]
+    [InlineData(123, 1)]
+    [InlineData(124, 0)]
+    public void BudgetResetRequiresFull120SecondsAfterObservationGrace(int last, int expectedAttempts)
+    {
+        var policy = Policy(); policy.Evaluate(new(7), 0); policy.BeginAttempt(1);
+        for (var tick = 1; tick <= last; tick++) Assert.Equal(default, policy.Evaluate(Playing(tick), tick));
+        Assert.Equal(expectedAttempts, policy.Attempts);
     }
 
     [Fact]
-    public void AudioAndNetworkCannotMaskFrozenVideoButAudioOnlyIgnoresCoverArt()
+    public void LongStarvationLearnsOnceAndNewAttemptUsesDesiredCacheExactly()
     {
-        foreach (var audioOnly in new[] { false, true })
+        var policy = Policy();
+        for (var tick = 0; tick <= 4; tick++) policy.Evaluate(Playing(tick), tick);
+        for (var tick = 5; tick <= 12; tick++) Assert.Equal(default, policy.Evaluate(new(2), tick));
+        Assert.Equal(RecoveryKind.Retry, policy.Evaluate(new(2), 13).Kind);
+        Assert.Equal(7.4, policy.Target, 6);
+        Assert.Equal(default, policy.Evaluate(new(2), 14));
+        Assert.Equal(7.4, policy.Target, 6);
+        policy.BeginAttempt(14, policy.Target);
+        Assert.Equal(7.4, policy.Applied, 6);
+        Assert.Contains(":network-caching=7400", PlaybackBufferSettings.MediaOptions(policy.Applied, true, true));
+    }
+
+    [Fact]
+    public void PauseSuspendsBlackholeClockAndObservationResetPreservesBudgetAndDesired()
+    {
+        var policy = Policy(); policy.Evaluate(new(7), 0); policy.BeginAttempt(1);
+        policy.Evaluate(new(4), 2);
+        Assert.Equal(default, policy.Evaluate(new(4), 1000));
+        Assert.Equal(1, policy.Attempts);
+        Assert.Equal(default, policy.Evaluate(new(3, 0), 1001));
+        policy.ResetObservation(1002);
+        Assert.Equal(1, policy.Attempts); Assert.Equal(2, policy.Target);
+        Assert.Equal(default, policy.Evaluate(new(2), 1003));
+    }
+
+    [Fact]
+    public void PollingGapDuringBufferingDoesNotCountUnobservedStarvation()
+    {
+        var policy = Policy();
+        for (var tick = 0; tick <= 4; tick++) policy.Evaluate(Playing(tick), tick);
+        policy.Evaluate(new(2), 5);
+        Assert.Equal(default, policy.Evaluate(new(2), 20));
+        Assert.Equal(2, policy.Target);
+        Assert.Equal(0, policy.Attempts);
+    }
+
+    [Fact]
+    public void BufferingExitRebaselinesRendererBeforeFirstNewOutputFrame()
+    {
+        var policy = Policy(); policy.BeginAttempt(0, 30);
+        for (var tick = 0; tick <= 4; tick++) policy.Evaluate(Playing(tick), tick);
+        for (var tick = 5; tick <= 20; tick++) Assert.Equal(default, policy.Evaluate(new(2), tick));
+        Assert.Equal(default, policy.Evaluate(new(3, 4, Progress: new(4, 4, 4, 4, 400)), 21));
+        Assert.Equal(0, policy.Attempts);
+        Assert.Equal(30, policy.Target);
+    }
+
+    [Theory]
+    [InlineData(1, false, true)]
+    [InlineData(null, false, false)]
+    [InlineData(0, false, false)]
+    [InlineData(1, true, false)]
+    public void PositivelyKnownVisibleVideoThatNeverPresentsUsesBoundedOrdinaryRetry(int? videoCount, bool hidden, bool shouldRetry)
+    {
+        var policy = Policy();
+        for (var tick = 0; tick <= 32; tick++)
         {
-            var policy = Policy(seconds: 1);
-            for (var tick = 0; tick <= 13; tick++)
-            {
-                var video = Math.Min(tick, 3);
-                var action = policy.Evaluate(new(3, tick, Progress: new(video, video, tick, tick), AudioOnly: audioOnly), tick);
-                Assert.Equal(!audioOnly && tick == 13 ? new(RecoveryKind.Retry, .4) : default, action);
-            }
+            var action = policy.Evaluate(new(3, tick, Progress: new(tick, 0, tick, tick, tick * 100),
+                VideoEnabled: !hidden, KnownVideoTrackCount: videoCount), tick);
+            Assert.Equal(shouldRetry && tick == 32 ? RecoveryKind.Retry : RecoveryKind.None, action.Kind);
+        }
+        Assert.Equal(2, policy.Target);
+    }
+
+    [Fact]
+    public void NeverPresentedGuardAllowsLargeAppliedCacheAndOneCoverFrameDisarmsIt()
+    {
+        var policy = Policy(); policy.BeginAttempt(0, 30);
+        for (var tick = 0; tick <= 37; tick++)
+        {
+            var action = policy.Evaluate(new(3, tick, Progress: new(tick, tick >= 35 ? 1 : 0, tick, tick),
+                KnownVideoTrackCount: 1), tick);
+            Assert.Equal(default, action);
         }
     }
 
     [Fact]
-    public void TsRolloverIsQuickButFailedInitialOpenIsBackedOffAndArchivesFinish()
+    public void KnownFirstPresentationAllowanceReplacesUnarmedClockAndStartupTimeouts()
     {
-        var ts = new Uri("https://example.invalid/live/u/p/123.ts");
-        var policy = new PlaybackRecoveryPolicy(new(), ts, false, 0);
-        Assert.Equal(new(RecoveryKind.Retry, .4), policy.Evaluate(new(7), 1));
-        policy.BeginAttempt(2); policy.Evaluate(new(3), 3);
-        Assert.Equal(new(RecoveryKind.Retry, .2, true), policy.Evaluate(new(6), 4));
-        Assert.Equal(1, policy.Attempts);
-        Assert.False(PlaybackRecoveryPolicy.IsLinearTs(new("https://example.invalid/timeshift/u/p/123.ts")));
-        Assert.Equal(RecoveryKind.Finished, Policy(live: false).Evaluate(new(6, 95, 100), 1).Kind);
+        var policy = Policy();
+        for (var tick = 0; tick <= 32; tick++)
+        {
+            var action = policy.Evaluate(new(3, 0, Progress: new(tick, 0, 0, 0),
+                AudioEnabled: false, KnownVideoTrackCount: 1), tick);
+            Assert.Equal(tick == 32 ? RecoveryKind.Retry : RecoveryKind.None, action.Kind);
+        }
+        Assert.Equal(2, policy.Target);
+    }
+
+    [Fact]
+    public void FirstFrameNearConservativeDeadlineRebaselinesTheOrdinaryWatchdogs()
+    {
+        var policy = Policy();
+        for (var tick = 0; tick <= 40; tick++)
+        {
+            var frames = Math.Max(0, tick - 28);
+            var action = policy.Evaluate(new(3, 0, Progress: new(tick, frames, 0, 0),
+                AudioEnabled: false, KnownVideoTrackCount: 1), tick);
+            Assert.Equal(default, action);
+        }
+        Assert.Equal(0, policy.Attempts);
+    }
+
+    [Fact]
+    public void FirstRenderedFrameIsProgressBeforeWatchdogArms()
+    {
+        var policy = Policy();
+        policy.Evaluate(new(3, 0, Progress: new(0, 0, 0, 0)), 0);
+        policy.Evaluate(new(3, 0, Progress: new(1, 1, 0, 0)), 1);
+        policy.Evaluate(new(2, 0), 2);
+        Assert.Equal(default, policy.Evaluate(new(3, 0, Progress: new(2, 1, 0, 0)), 3));
+        Assert.Equal(4, policy.Target);
+        Assert.Equal(0, policy.Attempts);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void PersistentlyUnavailableOutputCounterCannotMaskOtherHealthyOutput(bool missingAudio)
+    {
+        var policy = Policy(); policy.Evaluate(new(7), 0); policy.BeginAttempt(1);
+        for (var tick = 1; tick <= 131; tick++)
+        {
+            var action = policy.Evaluate(new(3, -1, Progress: new(tick, missingAudio ? tick : -1,
+                tick, missingAudio ? -1 : tick, tick * 100)), tick);
+            Assert.Equal(default, action);
+        }
+        Assert.False(policy.GaveUp);
+        Assert.Equal(0, policy.Attempts);
     }
 
     [Fact]

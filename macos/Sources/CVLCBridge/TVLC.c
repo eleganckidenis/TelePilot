@@ -64,6 +64,11 @@ int64_t tvlc_length(TVLC *v){
     int64_t (*f)(void *)=FN(int64_t (*)(void *),"libvlc_media_player_get_length");
     return f?f(v->player):-1;
 }
+int tvlc_video_track_count(TVLC *v){
+    if(!v)return -1;
+    int (*f)(void *)=FN(int (*)(void *),"libvlc_video_get_track_count");
+    return f?f(v->player):-1;
+}
 int tvlc_audio_only(TVLC *v){
     if(!v)return 0;
     int (*f)(void *)=FN(int (*)(void *),"libvlc_video_get_track_count");

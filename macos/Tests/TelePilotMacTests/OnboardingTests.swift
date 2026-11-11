@@ -49,6 +49,8 @@ struct OnboardingTests {
     @MainActor
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TELEPILOT_RUN_APPKIT_INTEGRATION"] == "1"))
     func managerOpensForFirstRunAndImportsSwitchesRemovesAndReturnsFocus() async throws {
+        await NativePlaybackTestGate.shared.acquire()
+        defer { Task { await NativePlaybackTestGate.shared.release() } }
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -154,16 +156,88 @@ struct OnboardingTests {
             #expect(controller.cycleFocus(in: mainWindow, backward: false))
             let focused = mainWindow.firstResponder as? NSButton
             #expect(focused?.title == "Stop")
+            let attemptBeforeMinimize = controller.playbackAttempt
+            let beforeMinimize = await player.sample()
+            mainWindow.miniaturize(nil)
+            let hiddenDeadline = ProcessInfo.processInfo.systemUptime + 8.25
+            while ProcessInfo.processInfo.systemUptime < hiddenDeadline {
+                await controller.poll(); try await Task.sleep(for: .milliseconds(100))
+            }
+            let afterMinimize = await player.sample()
+            #expect(controller.playing?.name == "Third")
+            #expect(controller.playbackAttempt == attemptBeforeMinimize)
+            #expect(controller.recovery?.attempts == 0)
+            #expect((afterMinimize.progress?.playedAudio ?? 0) > (beforeMinimize.progress?.playedAudio ?? 0))
+            mainWindow.deminiaturize(nil); mainWindow.makeKeyAndOrderFront(nil)
+            await controller.poll()
             controller.stopPlayback()
             await controller.playbackTask?.value
+            if let address = environment["TELEPILOT_TEST_HTTP_BASE"], let base = URL(string: address) {
+                let channel = try #require(controller.rows.last)
+                controller.play(channel, url: base.appendingPathComponent("finite.ts"))
+                await controller.playbackTask?.value
+                let deadline = ProcessInfo.processInfo.systemUptime + 12
+                while controller.playing != nil && ProcessInfo.processInfo.systemUptime < deadline {
+                    await controller.poll(); try await Task.sleep(for: .milliseconds(100))
+                }
+                #expect(controller.playing == nil)
+                #expect(controller.status.stringValue == "The stream has ended.")
+                #expect(controller.selectedChannel?.id == channel.id)
+                #expect(controller.window?.firstResponder === controller.table)
+                #expect(controller.recoveryTask == nil)
+                #expect(await player.state() == 5)
+            }
             await player.shutdown()
         }
+
+        // Terminal transitions release playback, cancel stale retries, preserve the
+        // channel selection and recording state, and return keyboard focus to the list.
+        for action in [PlaybackRecovery.Action.finished, .lost] {
+            let channel = try #require(controller.rows.last)
+            controller.playbackGeneration += 1
+            let generation = controller.playbackGeneration
+            controller.playing = channel; controller.playingURL = channel.streamURL
+            let savedProgramme = Programme(id: "archive-selection", channelID: channel.id, start: Date(), title: "Selected programme")
+            if action == .lost {
+                controller.section = 2; controller.tabs.selectedSegment = 2
+                controller.archiveProgramme = savedProgramme
+                controller.archiveBrowser.programmes = [savedProgramme]
+                controller.archiveBrowser.programmesTable.reloadData()
+                controller.archiveBrowser.programmesTable.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+                controller.search.stringValue = "no channel matches this filter"; controller.applyFilter()
+            }
+            controller.listShown = false; controller.playbackReady = true
+            controller.paused = true; controller.pendingPause = true
+            controller.recordingActive = true
+            let recordingURL = root.appendingPathComponent("independent-recording.ts")
+            controller.recordingURL = recordingURL
+            controller.recovery = PlaybackRecovery(live: true, url: channel.streamURL, now: 0)
+            controller.recoveryTask = Task { try? await Task.sleep(for: .seconds(60)) }
+            controller.updateVisibility()
+            await controller.handleRecovery(action, sample: .init(state: action == .finished ? 6 : 7), generation: generation)
+            #expect(controller.playing == nil); #expect(controller.playingURL == nil)
+            #expect(controller.recovery == nil); #expect(controller.recoveryTask == nil)
+            #expect(!controller.playbackReady); #expect(!controller.paused); #expect(!controller.pendingPause)
+            #expect(controller.listShown); #expect(controller.playerPanel.isHidden)
+            #expect(controller.selectedChannel?.id == channel.id)
+            #expect(controller.section == 0)
+            if action == .lost { #expect(controller.archiveBrowser.selectedProgramme?.id == savedProgramme.id) }
+            #expect(controller.window?.firstResponder === controller.table)
+            #expect(controller.recordingActive); #expect(controller.recordingURL == recordingURL)
+            #expect(controller.status.stringValue == (action == .finished ? "The stream has ended." : "Could not recover the stream. Select a channel to try again."))
+            await controller.handleRecovery(.lost, sample: .init(state: 7), generation: generation)
+            #expect(controller.playbackGeneration == generation + 1)
+        }
+        controller.recordingActive = false
 
         // Exercise the real Settings popup and Save action, then load from the
         // profile just as the next process does before building its windows.
         controller.settings()
         let settings = try #require(controller.settingsWindow)
         #expect(settings.language.titleOfSelectedItem == "English")
+        let settingsFields = controller.focusableViews(try #require(settings.window?.contentView)).compactMap { $0 as? NSTextField }
+        #expect(!settingsFields.contains { $0.accessibilityLabel()?.contains("buffer in seconds") == true })
+        #expect(settingsFields.contains { $0 === settings.variantCap })
         settings.language.selectItem(withTitle: "Polski")
         #expect(NSApp.sendAction(settings.language.action!, to: settings.language.target, from: settings.language))
         controller.settings()

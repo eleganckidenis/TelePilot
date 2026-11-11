@@ -70,7 +70,7 @@ def main():
     mac_sources_zip = f"{stem}-macos-third-party-sources.zip"
     names = [*windows_installers, mac_installer, source_zip, mac_sources_zip]
     vlc_sources_zip = None
-    shared_vlc = version in ("2.0.2", "2.0.3")
+    shared_vlc = version in ("2.0.2", "2.0.3", "2.1.0")
     if shared_vlc:
         require(args.shared_vlc_sources is not None or args.shared_vlc_release_json is not None,
                 "Provide the shared VLC archive or its public release metadata")

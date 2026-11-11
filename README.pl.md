@@ -20,6 +20,8 @@ Instalator Windows nie jest podpisany cyfrowo. Aplikacja na Maca ma podpis ad-ho
 
 TelePilot sprawdza aktualizacje przy uruchomieniu i weryfikuje pobrany instalator. Na Macu kliknij **OK** w komunikacie o pobraniu, aby otworzyć obraz instalacyjny i zamknąć TelePilota.
 
+Buforowanie sieciowe dopasowuje się automatycznie do warunków odtwarzania. Gdy strumień się zakończy lub sześć prób ponownego połączenia nie powiedzie się, TelePilot wraca do listy kanałów.
+
 TelePilot nie dostarcza kanałów, playlist ani abonamentu IPTV.
 
 [Historia zmian](CHANGELOG.md) · [Zgłoś błąd](https://github.com/eleganckidenis/TelePilot/issues) · [Licencja](LICENSE) · [Wesprzyj rozwój](https://revolut.me/michao077)

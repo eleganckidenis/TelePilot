@@ -71,6 +71,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private string? lastSelectedChannelId;
     private string? playbackChannelItemId;
     private PlaybackSnapshot? lastReceivedPlaybackSnapshot;
+    private long? lastReceivedTerminalSequence;
+    private CancellationTokenSource? terminalReturnCancellation;
     private bool disposed;
 
     public MainWindowViewModel(
@@ -1067,6 +1069,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         disposed = true;
+        terminalReturnCancellation?.Cancel();
+        terminalReturnCancellation?.Dispose();
+        terminalReturnCancellation = null;
         playlistLoadCancellation?.Cancel();
         playlistLoadCancellation?.Dispose();
         playlistLoadCancellation = null;
@@ -1309,11 +1314,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             : LoadSourceAsync(SelectedSource.Source, refreshLocalFile: true);
     }
 
-    private async Task LoadSourceAsync(PlaylistSource source, bool refreshLocalFile = false)
+    private async Task LoadSourceAsync(PlaylistSource source, bool refreshLocalFile = false, CancellationToken cancellationToken = default)
     {
         playlistLoadCancellation?.Cancel();
         playlistLoadCancellation?.Dispose();
-        var cancellation = new CancellationTokenSource();
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         playlistLoadCancellation = cancellation;
         var token = cancellation.Token;
 
@@ -1375,7 +1380,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            if (ReferenceEquals(playlistLoadCancellation, cancellation) && !disposed)
+            if (ReferenceEquals(playlistLoadCancellation, cancellation) && !disposed
+                && !cancellationToken.IsCancellationRequested)
             {
                 accessibleStatus.ReportStatus(T("Anulowano wczytywanie playlisty.", "Playlist loading canceled."));
             }
@@ -1659,6 +1665,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         bool preserveLayout = false,
         CancellationToken cancellationToken = default)
     {
+        terminalReturnCancellation?.Cancel();
         if (!preserveLayout) Interlocked.Increment(ref archiveSeekSessionGeneration);
         if (archiveProgramme is null)
         {
@@ -1818,6 +1825,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task StopAsync()
     {
+        terminalReturnCancellation?.Cancel();
         Interlocked.Increment(ref archiveSeekSessionGeneration);
         Archive.CancelPendingPlayback();
         var stoppedActivationGeneration = Interlocked.Increment(ref playerViewActivationGeneration);
@@ -1851,27 +1859,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            // LibVLC can move native Win32 focus while Stop is completing.
-            // Recover it while the player is still marked visible, because the
-            // focus coordinator only accepts a same-process video HWND in that
-            // state. Otherwise Avalonia can retain logical list focus while
-            // NVDA remains attached to the stale rendering window.
-            focusCoordinator.Request(IsArchiveSection ? FocusTarget.Archive : FocusTarget.ChannelList, lastSelectedChannelId);
-            await Dispatcher.UIThread.InvokeAsync(static () => { }, DispatcherPriority.Background);
-            if (!IsCurrentPlayerActivation(stoppedActivationGeneration))
-            {
-                return;
-            }
-
-            IsPlayerViewVisible = false;
-            // Verify the platform focus after hiding the native surface without
-            // manufacturing a second logical UIA transition when the selected
-            // channel already owns focus. A real recovery is still performed
-            // if the native focus moved while the HWND was being hidden.
-            focusCoordinator.Request(
-                IsArchiveSection ? FocusTarget.Archive : FocusTarget.ChannelList,
-                lastSelectedChannelId,
-                preserveExistingFocus: true);
+            if (!await HidePlayerAfterStopAsync(stoppedActivationGeneration)) return;
             string selectedChannelAnnouncement = IsArchiveSection ? T("Odtwarzanie zatrzymane. Archiwum telewizyjne.", "Playback stopped. TV archive.") : SelectedChannel is { } selected
                 ? T($"Odtwarzanie zatrzymane. Zaznaczony kanał: {selected.AccessibleName}.", $"Playback stopped. Selected channel: {selected.AccessibleName}.")
                 : T("Odtwarzanie zatrzymane. Lista kanałów.", "Playback stopped. Channel list.");
@@ -1883,6 +1871,78 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             {
                 await ReportFailureAsync(T("Nie udało się zatrzymać odtwarzania", "Could not stop playback"), exception.Message);
             }
+        }
+    }
+
+    private async Task<bool> HidePlayerAfterStopAsync(int activationGeneration)
+    {
+        if (!IsCurrentPlayerActivation(activationGeneration)) return false;
+        // Recover a same-process VLC HWND while the native surface is still
+        // marked visible, then verify focus after hiding it.
+        focusCoordinator.Request(IsArchiveSection ? FocusTarget.Archive : FocusTarget.ChannelList, lastSelectedChannelId);
+        await Dispatcher.UIThread.InvokeAsync(static () => { }, DispatcherPriority.Background);
+        if (!IsCurrentPlayerActivation(activationGeneration)) return false;
+        IsPlayerViewVisible = false;
+        focusCoordinator.Request(IsArchiveSection ? FocusTarget.Archive : FocusTarget.ChannelList,
+            lastSelectedChannelId, preserveExistingFocus: true);
+        return true;
+    }
+
+    private void SelectTerminalArchiveChannel(Channel channel)
+    {
+        var item = channelItemsById.GetValueOrDefault(channel.Id.ToString());
+        if (item is null)
+        {
+            lastSelectedChannelId = SelectedChannel?.Id ?? lastSelectedChannelId;
+            return;
+        }
+        if (!Channels.Contains(item))
+        {
+            SearchText = string.Empty;
+            SelectedGroup = AllGroupsLabel;
+            ApplyChannelFilter();
+        }
+        SelectedChannel = item;
+    }
+
+    private async Task ReturnAfterTerminalAsync(PlaybackSnapshot snapshot, Channel? archiveSource, int activationGeneration)
+    {
+        terminalReturnCancellation?.Cancel();
+        terminalReturnCancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        terminalReturnCancellation = cancellation;
+        try
+        {
+            if (IsArchiveSection) SelectedSectionIndex = 0;
+            var sourceToRestore = archiveSource is null ? null
+                : Sources.FirstOrDefault(item => item.Source.Id == archiveSource.PlaylistSourceId
+                    && loadedSourceId != item.Source.Id);
+            if (archiveSource is not null && sourceToRestore is null) SelectTerminalArchiveChannel(archiveSource);
+            if (cancellation.IsCancellationRequested || !IsCurrentPlayerActivation(activationGeneration)) return;
+            ReturnToChannelList();
+            await Dispatcher.UIThread.InvokeAsync(static () => { }, DispatcherPriority.Background);
+            if (!await HidePlayerAfterStopAsync(activationGeneration)) return;
+            // Release native focus promptly even when restoring a different
+            // playlist needs asynchronous I/O. A newer Play cancels this load.
+            if (sourceToRestore is not null)
+            {
+                SelectedSource = sourceToRestore;
+                await LoadSourceAsync(sourceToRestore.Source, cancellationToken: cancellation.Token);
+                if (cancellation.IsCancellationRequested || !IsCurrentPlayerActivation(activationGeneration)
+                    || loadedSourceId != sourceToRestore.Source.Id) return;
+                SelectTerminalArchiveChannel(archiveSource!);
+                focusCoordinator.Request(FocusTarget.ChannelList, lastSelectedChannelId);
+            }
+            if (!string.IsNullOrWhiteSpace(snapshot.StatusMessage))
+            {
+                if (snapshot.State == PlaybackState.Error) accessibleStatus.ReportError(snapshot.StatusMessage);
+                else accessibleStatus.ReportStatus(snapshot.StatusMessage);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(terminalReturnCancellation, cancellation)) terminalReturnCancellation = null;
+            cancellation.Dispose();
         }
     }
 
@@ -2225,6 +2285,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task PlayChannelByIdAsync(string channelId, CancellationToken cancellationToken)
     {
+        terminalReturnCancellation?.Cancel();
         Interlocked.Increment(ref archiveSeekSessionGeneration);
         Archive.CancelPendingPlayback();
         if (!channelsById.TryGetValue(channelId, out var channel))
@@ -2323,13 +2384,19 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private void OnPlaybackStateChanged(object? sender, PlaybackStateChangedEventArgs e)
     {
         bool announceStatus;
+        int? terminalActivation = null;
         lock (playbackSnapshotGate)
         {
             announceStatus = ShouldAnnouncePlaybackStatus(lastReceivedPlaybackSnapshot, e.Snapshot);
             lastReceivedPlaybackSnapshot = e.Snapshot;
+            if (e.Snapshot.IsTerminal && lastReceivedTerminalSequence != e.Snapshot.TerminalSequence)
+            {
+                lastReceivedTerminalSequence = e.Snapshot.TerminalSequence;
+                terminalActivation = Volatile.Read(ref playerViewActivationGeneration);
+            }
         }
 
-        Dispatcher.UIThread.Post(() => ApplyPlaybackSnapshot(e.Snapshot, announceStatus));
+        Dispatcher.UIThread.Post(() => ApplyPlaybackSnapshot(e.Snapshot, announceStatus, terminalActivation));
     }
 
     private void OnRecordingProgressChanged(object? sender, RecordingProgress progress)
@@ -2350,8 +2417,26 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         });
     }
 
-    private void ApplyPlaybackSnapshot(PlaybackSnapshot snapshot, bool announceStatus)
+    public void UpdateVideoSurfaceVisibility(bool visible) => playbackService.SetVideoSurfaceVisible(visible);
+
+    private void ApplyPlaybackSnapshot(PlaybackSnapshot snapshot, bool announceStatus, int? terminalActivation = null)
     {
+        if (snapshot.IsTerminal)
+        {
+            var current = playbackService.Current;
+            if (!current.IsTerminal || snapshot.TerminalSequence != current.TerminalSequence) return;
+            if (terminalActivation is null)
+            {
+                // Volume/mute copies keep the terminal identity. Apply their
+                // current values without repeating navigation or announcements.
+                if (current.Volume is >= 0 and <= 100) Volume = current.Volume;
+                IsMuted = current.IsMuted;
+                return;
+            }
+            if (!IsCurrentPlayerActivation(terminalActivation.Value)) return;
+            snapshot = current;
+        }
+        var endedArchiveSource = snapshot.IsTerminal ? archivePlaybackSource : null;
         if (snapshot.ChannelId is null && archivePlaybackProgramme is not null)
         {
             archivePlaybackProgramme = null;
@@ -2405,7 +2490,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         (SeekBackwardCommand as AsyncRelayCommand)?.NotifyCanExecuteChanged();
         (SeekForwardCommand as AsyncRelayCommand)?.NotifyCanExecuteChanged();
 
-        if (announceStatus && !string.IsNullOrWhiteSpace(snapshot.StatusMessage))
+        if (!snapshot.IsTerminal && announceStatus && !string.IsNullOrWhiteSpace(snapshot.StatusMessage))
         {
             if (snapshot.State == PlaybackState.Error)
             {
@@ -2415,6 +2500,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             {
                 accessibleStatus.ReportStatus(snapshot.StatusMessage);
             }
+        }
+
+        if (snapshot.IsTerminal && IsPlayerViewVisible)
+        {
+            var returnActivation = Interlocked.Increment(ref playerViewActivationGeneration);
+            _ = ReturnAfterTerminalAsync(snapshot, endedArchiveSource, returnActivation);
         }
 
         if (IsPlayerViewVisible

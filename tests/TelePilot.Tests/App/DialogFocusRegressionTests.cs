@@ -293,22 +293,16 @@ public sealed class DialogFocusRegressionTests
 
             Assert.Equal(KeyboardNavigationMode.Cycle, KeyboardNavigation.GetTabNavigation(root));
             Assert.Same(lastControl, firstControl.PreviousTabTarget);
-            AccessibleTextBox buffer = Assert.IsType<AccessibleTextBox>(window.FindControl<AccessibleTextBox>("BufferSecondsBox"));
-            AccessibleTextBox maximum = Assert.IsType<AccessibleTextBox>(window.FindControl<AccessibleTextBox>("BufferMaximumBox"));
             AccessibleTextBox cap = Assert.IsType<AccessibleTextBox>(window.FindControl<AccessibleTextBox>("VariantCapBox"));
             Assert.Same(sort, firstControl.NextTabTarget);
             Assert.Same(firstControl, sort.PreviousTabTarget);
-            Assert.Same(buffer, sort.NextTabTarget);
-            Assert.Same(sort, buffer.PreviousTabTarget);
-            Assert.Same(maximum, buffer.NextTabTarget);
-            Assert.Same(buffer, maximum.PreviousTabTarget);
-            Assert.Same(cap, maximum.NextTabTarget);
-            Assert.Same(maximum, cap.PreviousTabTarget);
+            Assert.Null(window.FindControl<AccessibleTextBox>("BufferSecondsBox"));
+            Assert.Null(window.FindControl<AccessibleTextBox>("BufferMaximumBox"));
+            Assert.Same(cap, sort.NextTabTarget);
+            Assert.Same(sort, cap.PreviousTabTarget);
             Assert.Same(epgUrl, cap.NextTabTarget);
             Assert.Same(cap, epgUrl.PreviousTabTarget);
-            Assert.Contains("sekundach", AutomationProperties.GetName(buffer), StringComparison.Ordinal);
-            Assert.True(buffer.FocusEditor());
-            PressTab(window); Assert.True(maximum.IsKeyboardFocusWithin);
+            Assert.True(sort.FocusSelector());
             PressTab(window); Assert.True(cap.IsKeyboardFocusWithin);
             PressTab(window); Assert.True(epgUrl.IsKeyboardFocusWithin);
             PressTab(window, moveBackward: true); Assert.True(cap.IsKeyboardFocusWithin);

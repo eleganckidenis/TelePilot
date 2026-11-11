@@ -44,7 +44,7 @@ extension MainController {
     @objc func archiveSection() { selectSection(2) }
     @objc func retry() { if let playing { if let p = archiveProgramme { playArchive(playing,programme:p) } else { play(playing) } } }
     @objc func about() {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.0.3"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.0"
         alert("TelePilot — macOS", l("Natywna aplikacja AppKit. Wersja \(version).\nNa podstawie TelePilot dla Windows, GPL-3.0-or-later.\nNie zawiera playlist IPTV.", "Native AppKit app. Version \(version).\nBased on TelePilot for Windows, GPL-3.0-or-later.\nIPTV playlists are supplied by the user."),window:window) }
     @objc func shortcuts() { alert(l("Skróty klawiszowe", "Keyboard Shortcuts"), l("⌘⇧L — Menedżer playlist\n⌘O — playlista z pliku; ⌘U — z URL\nEnter na liście — odtwarzanie\n⌘S — stop; ⌘L — lista / odtwarzacz\n⌘M — wyciszenie; ⌘↑ / ⌘↓ — głośność\n⌘T — dźwięk; ⌘⇧T — napisy\n⌘E — EPG; F5 — odświeżanie\n⌘1 / 2 / 3 lub Control+Tab — zakładki\nF11 lub ⌘Control+F — pełny ekran\nPage Up/Down na odtwarzaczu — kanały\nHome/End na odtwarzaczu — głośność\n⌘← / ⌘→ w archiwum — przewiń o 30 sekund\nEscape — wyjście z pełnego ekranu\n⌘, — ustawienia; ⌘Q — zakończenie\nSkróty Ctrl+litera także działają.", "⌘⇧L — Playlist Manager\n⌘O — add from file; ⌘U — add from URL\nEnter on the list — play\n⌘S — stop; ⌘L — channel list / player\n⌘M — mute; ⌘↑ / ⌘↓ — volume\n⌘T — audio; ⌘⇧T — subtitles\n⌘E — TV guide; F5 — refresh\n⌘1 / 2 / 3 or Control+Tab — tabs\nF11 or ⌘Control+F — full screen\nPage Up/Down in the player — change channels\nHome/End in the player — volume\n⌘← / ⌘→ during catch-up — seek by 30 seconds\nEscape — exit full screen\n⌘, — settings; ⌘Q — quit\nControl + letter shortcuts also work."),window:window) }
     @objc func openRecordings() { let u = URL(fileURLWithPath:preferences.recordingsDirectory); do { try FileManager.default.createDirectory(at:u,withIntermediateDirectories:true);NSWorkspace.shared.open(u) } catch { alert(l("Nie otwarto folderu", "Could Not Open Folder"),l("Sprawdź ścieżkę folderu nagrań.", "Check the path to the recordings folder."),window:window) } }
@@ -133,12 +133,19 @@ extension MainController {
         if f.isEmpty && event.keyCode == 115 {changeVolume(5);return nil}
         if f.isEmpty && event.keyCode == 119 {changeVolume(-5);return nil}
         if (f == .command || f == .control), (event.keyCode == 123 || event.keyCode == 124), let playing, let p = archiveProgramme {
+            let generation = playbackGeneration, attempt = playbackAttempt
             Task { let delta:TimeInterval = event.keyCode == 123 ? -30:30
                 let elapsed = await player.timeSeconds()
+                guard generation == playbackGeneration, attempt == playbackAttempt else { return }
                 guard elapsed >= 0 else { setStatus(l("Silnik nie udostępnia pozycji odtwarzania.", "The player cannot report the playback position.")); return }
                 let target = max(0, archiveOffset + elapsed + delta)
                 guard let end = p.end, target < end.timeIntervalSince(p.start) else {setStatus(l("Koniec audycji.", "End of programme."));return}
-                if target >= archiveOffset, await player.seek(seconds: target - archiveOffset) {setStatus(l("Pozycja audycji: \(Int(target)) sekund.", "Programme position: \(Int(target)) seconds."))}
+                if target >= archiveOffset {
+                    let accepted = await player.seek(seconds: target - archiveOffset, generation: generation, attempt: attempt)
+                    guard generation == playbackGeneration, attempt == playbackAttempt else { return }
+                    if accepted { recovery?.resetObservation(now: ProcessInfo.processInfo.systemUptime); setStatus(l("Pozycja audycji: \(Int(target)) sekund.", "Programme position: \(Int(target)) seconds.")) }
+                    else { playArchive(playing, programme: p, offset: target, preservePause: paused) }
+                }
                 else {playArchive(playing,programme:p,offset:target,preservePause:paused)}
             };return nil
         }

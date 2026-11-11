@@ -7,6 +7,21 @@ namespace TelePilot.Playback;
 
 public sealed partial class LibVlcPlaybackService
 {
+    private bool _videoSurfaceVisible = true;
+
+    public void SetVideoSurfaceVisible(bool visible)
+    {
+        if (_disposed) return;
+        _commandQueue.Writer.TryWrite(() =>
+        {
+            if (_videoSurfaceVisible != visible)
+            {
+                _videoSurfaceVisible = visible;
+            }
+            return Task.CompletedTask;
+        });
+    }
+
     private void QueueHealthCheck()
     {
         if (_disposed || Interlocked.Exchange(ref _healthQueued, 1) != 0) return;
@@ -26,12 +41,13 @@ public sealed partial class LibVlcPlaybackService
         if (media is not null)
         {
             var stats = media.Statistics;
-            progress = new(stats.DecodedVideo, stats.DisplayedPictures, stats.DecodedAudio, stats.PlayedAudioBuffers);
+            progress = new(stats.DecodedVideo, stats.DisplayedPictures, stats.DecodedAudio, stats.PlayedAudioBuffers, stats.ReadBytes);
         }
         var radio = _channel.Attributes.TryGetValue("radio", out var radioHint) &&
             radioHint.Trim().ToLowerInvariant() is "true" or "1" or "yes";
+        var videoTracks = _mediaPlayer.VideoTrackCount;
         EvaluateRecovery(new RecoverySample((int)_mediaPlayer.State, _mediaPlayer.Time / 1000d, _mediaPlayer.Length / 1000d,
-            progress, radio || _mediaPlayer.VideoTrackCount == 0));
+            progress, radio || videoTracks == 0, _mediaPlayer.AudioTrack != -1, _videoSurfaceVisible && videoTracks > 0, videoTracks >= 0 ? videoTracks : null));
         RestoreSelectedTracks();
     }
 
@@ -43,13 +59,11 @@ public sealed partial class LibVlcPlaybackService
         {
             case RecoveryKind.None: break;
             case RecoveryKind.Finished:
-                _recovery = null;
-                UpdateCurrent(Current with { State = PlaybackState.Idle, CanPause = false, StatusMessage = T("Strumień został zakończony.", "The stream ended.") });
+                FinishPlayback(null);
                 break;
             case RecoveryKind.Lost:
-                _mediaPlayer.Stop();
-                var error = new PlaybackError(_channel.Name, T("Nie udało się odzyskać transmisji. Użyj Stop i uruchom kanał ponownie.", "Could not restore the stream. Stop and play the channel again."), "stream-lost");
-                UpdateCurrent(Current with { State = PlaybackState.Error, CanPause = false, Error = error, StatusMessage = error.Message });
+                FinishPlayback(new PlaybackError(_channel.Name,
+                    T("Nie udało się odzyskać transmisji. Wybierz kanał, aby spróbować ponownie.", "Could not restore the stream. Select a channel to try again."), "stream-lost"));
                 break;
             case RecoveryKind.Retry:
                 _restoringPause = _restoringPause || Current.State == PlaybackState.Paused;
@@ -60,6 +74,33 @@ public sealed partial class LibVlcPlaybackService
                 _ = RecoverAsync(action, _retryGeneration, Volatile.Read(ref _requestGeneration), _retryCancellation.Token);
                 break;
         }
+    }
+
+    private void FinishPlayback(PlaybackError? error)
+    {
+        ResetRetryCancellation();
+        _recovery = null;
+        _channel = null;
+        _recoverySourceUri = null;
+        _restoringPause = false;
+        _resumePosition = _archiveResumeOffset = 0;
+        _tracksToRestore.Clear();
+        _rememberedTracks.Clear();
+        Interlocked.Increment(ref _playbackSessionGeneration);
+        var volume = ReadKnownVolume();
+        var muted = _mediaPlayer.Mute;
+        _mediaPlayer.Stop();
+        _mediaPlayer.Media = null;
+        UpdateCurrent(PlaybackSnapshot.Initial with
+        {
+            State = error is null ? PlaybackState.Idle : PlaybackState.Error,
+            Volume = volume,
+            IsMuted = muted,
+            Error = error,
+            IsTerminal = true,
+            TerminalSequence = Volatile.Read(ref _playbackSessionGeneration),
+            StatusMessage = error?.Message ?? T("Strumień został zakończony. Lista kanałów.", "The stream ended. Channel list."),
+        });
     }
 
     private async Task RecoverAsync(RecoveryAction action, long generation, long requestGeneration, CancellationToken cancellationToken)
@@ -94,7 +135,21 @@ public sealed partial class LibVlcPlaybackService
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (System.Threading.Channels.ChannelClosedException) when (_disposed) { }
-        catch (Exception exception) { LogCommandWorkerFailure(_logger, exception); }
+        catch (Exception exception)
+        {
+            LogCommandWorkerFailure(_logger, exception);
+            try
+            {
+                await EnqueueAsync(() =>
+                {
+                    if (!IsCurrentRecovery(generation, requestGeneration)) return;
+                    _recovery!.BeginAttempt(MonotonicNow, _recovery.Applied);
+                    EvaluateRecovery(new RecoverySample(7));
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+            catch (System.Threading.Channels.ChannelClosedException) when (_disposed) { }
+        }
     }
 
     private bool IsCurrentRecovery(long generation, long requestGeneration) =>
@@ -120,7 +175,11 @@ public sealed partial class LibVlcPlaybackService
             var match = FindRememberedTrack(tracks, wanted.Id, wanted.Name);
             if (match is null) continue;
             var ok = kind == MediaTrackKind.Audio ? _mediaPlayer.SetAudioTrack(match.EngineId) : _mediaPlayer.SetSpu(match.EngineId);
-            if (ok) _tracksToRestore.Remove(kind);
+            if (ok)
+            {
+                _tracksToRestore.Remove(kind);
+                _recovery?.ResetObservation(MonotonicNow);
+            }
         }
     }
 }

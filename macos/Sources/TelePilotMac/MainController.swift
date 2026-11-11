@@ -21,6 +21,7 @@ import TelePilotRecording
     var archiveProgramme: Programme?
     var archiveOffset: TimeInterval = 0
     var playbackGeneration = 0
+    var playbackAttempt = 0
     var playbackTask: Task<Void, Never>?
     var loadingTask: Task<Void, Never>?
     var playlistTaskCancellable = false
@@ -35,6 +36,8 @@ import TelePilotRecording
     var playbackReady = false
     var wantedAudioTrack: Int32?
     var wantedSubtitleTrack: Int32?
+    var wantedAudioTrackName: String?
+    var wantedSubtitleTrackName: String?
     var trackRestoreTicks = 0
     var lastState: Int32 = -1
     var paused = false
@@ -277,7 +280,7 @@ import TelePilotRecording
     func play(_ channel: Channel, url: URL? = nil, programme: Programme? = nil, offset: TimeInterval = 0, preservePause: Bool = false) {
         playbackGeneration += 1; let generation = playbackGeneration
         recoveryTask?.cancel(); recoveryTask = nil; playbackReady = false
-        wantedAudioTrack = nil; wantedSubtitleTrack = nil; trackRestoreTicks = 0
+        wantedAudioTrack = nil; wantedSubtitleTrack = nil; wantedAudioTrackName = nil; wantedSubtitleTrackName = nil; trackRestoreTicks = 0
         playbackTask?.cancel(); playing = channel; playingURL = url ?? channel.streamURL; archiveProgramme = programme; archiveOffset = offset
         listShown = false; paused = false; pendingPause = preservePause; lastState = -1
         recovery = PlaybackRecovery(settings: preferences.buffering ?? .init(), live: programme == nil,
@@ -289,21 +292,47 @@ import TelePilotRecording
         startPlaybackAttempt(url ?? channel.streamURL, generation: generation, quickStart: programme == nil)
     }
     @objc func stopPlayback() {
+        finishPlayback(status: l("Zatrzymano odtwarzanie.", "Playback stopped."))
+    }
+    // Invalidate every in-flight open/retry before releasing only the playback input.
+    // Recording uses a separate Recorder and must continue across this transition.
+    func finishPlayback(status message: String, returnToChannels: Bool = false) {
+        let selectedID = playing?.id
+        let sourceID = playing?.sourceID
         playbackGeneration += 1; let generation = playbackGeneration
         recoveryTask?.cancel(); recoveryTask = nil; recovery = nil; playbackReady = false
-        playbackTask?.cancel(); playbackTask = Task { [weak self] in
-            guard let self, generation == playbackGeneration, !Task.isCancelled else { return }; await player.stop(generation: generation)
+        playbackTask?.cancel()
+        playbackTask = Task { [weak self] in
+            guard let self, generation == playbackGeneration else { return }
+            await player.stop(generation: generation)
             guard generation == playbackGeneration else { return }
-            playing = nil; archiveProgramme = nil; paused = false; pendingPause = false; listShown = true
-            updateVisibility(); table.reloadData(); window?.makeFirstResponder(section == 2 ? archiveBrowser.programmesTable : table)
-            setStatus(l("Zatrzymano odtwarzanie.", "Playback stopped."))
+            playing = nil; playingURL = nil; archiveProgramme = nil; archiveOffset = 0
+            paused = false; pendingPause = false; listShown = true; lastState = -1
+            wantedAudioTrack = nil; wantedSubtitleTrack = nil; wantedAudioTrackName = nil; wantedSubtitleTrackName = nil; trackRestoreTicks = 0
+            nowPlaying.stringValue = "TelePilot"; programmeLabel.stringValue = ""
+            if returnToChannels, section == 2 {
+                section = 0; tabs.selectedSegment = 0; search.stringValue = ""; groupPopup.selectItem(at: 0); applyFilter()
+            }
+            if returnToChannels, let selectedID, !rows.contains(where: { $0.id == selectedID }) {
+                if let sourceID, sources.contains(where: { $0.id == sourceID }) { preferences.selectedPlaylistID = sourceID }
+                section = 0; tabs.selectedSegment = 0; search.stringValue = ""; updateGroups(); groupPopup.selectItem(at: 0); applyFilter()
+            }
+            search.setAccessibilityLabel(section == 1 ? l("Szukaj ulubionych", "Search Favorites") : l("Szukaj kanałów", "Search Channels"))
+            search.placeholderString = section == 1 ? l("Szukaj ulubionych", "Search Favorites") : l("Szukaj kanałów", "Search Channels")
+            updateVisibility(); table.reloadData()
+            if let selectedID, let row = rows.firstIndex(where: { $0.id == selectedID }) {
+                table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                table.scrollRowToVisible(row)
+            }
+            window?.makeFirstResponder(section == 2 ? archiveBrowser.programmesTable : table)
+            setStatus(message)
         }
     }
     @objc func togglePause() {
-        let generation = playbackGeneration
-        Task { let accepted = await player.pause(!paused)
-            guard generation == playbackGeneration else { return }
-            if accepted { paused.toggle(); setStatus(paused ? l("Wstrzymano odtwarzanie.", "Playback paused.") : l("Wznowiono odtwarzanie.", "Playback resumed.")) } else { setStatus(l("Ta transmisja nie obsługuje pauzy.", "This stream does not support pausing.")) } }
+        let generation = playbackGeneration, attempt = playbackAttempt
+        Task { let accepted = await player.pause(!paused, generation: generation, attempt: attempt)
+            guard generation == playbackGeneration, attempt == playbackAttempt else { return }
+            if accepted { paused.toggle(); recovery?.resetObservation(now: ProcessInfo.processInfo.systemUptime); setStatus(paused ? l("Wstrzymano odtwarzanie.", "Playback paused.") : l("Wznowiono odtwarzanie.", "Playback resumed.")) } else { setStatus(l("Ta transmisja nie obsługuje pauzy.", "This stream does not support pausing.")) } }
     }
     @objc func toggleMute() { preferences.muted.toggle(); savePreferences(); Task { await player.mute(preferences.muted) }; setStatus(preferences.muted ? l("Dźwięk wyciszony.", "Audio muted.") : l("Dźwięk włączony.", "Audio unmuted.")) }
     @objc func volumeChanged() { preferences.volume = volume.integerValue; Task { await player.volume(preferences.volume) }; savePreferences() }
@@ -318,19 +347,26 @@ import TelePilotRecording
     @objc func audioTracks() { showTracks(subtitles: false) }
     @objc func subtitleTracks() { showTracks(subtitles: true) }
     func showTracks(subtitles: Bool) {
+        let generation = playbackGeneration, attempt = playbackAttempt
         Task {
             let tracks = await player.tracks(subtitles: subtitles)
+            guard generation == playbackGeneration, attempt == playbackAttempt else { return }
             guard !tracks.isEmpty else { alert(l("Brak ścieżek", "No Tracks Available"), l("Transmisja nie udostępnia obecnie tych ścieżek.", "These tracks are currently unavailable in the stream."), window: window); return }
             let p = popup(subtitles ? l("Napisy", "Subtitles") : l("Ścieżka dźwiękowa", "Audio Track"), items: tracks.map { "\($0.name) (\($0.id))" }, target: nil, action: nil)
             p.selectItem(at: tracks.firstIndex(where: \.selected) ?? 0)
             if form(subtitles ? l("Napisy", "Subtitles") : l("Ścieżka dźwiękowa", "Audio Track"), views: [p], confirm: l("Wybierz", "Select")) {
-                let ok = await player.selectTrack(tracks[p.indexOfSelectedItem].id, subtitles: subtitles)
+                guard generation == playbackGeneration, attempt == playbackAttempt else { return }
+                let selected = tracks[p.indexOfSelectedItem]
+                let ok = await player.selectTrack(selected.id, subtitles: subtitles, generation: generation, attempt: attempt)
+                guard generation == playbackGeneration, attempt == playbackAttempt else { return }
                 if ok {
-                    if subtitles { wantedSubtitleTrack = tracks[p.indexOfSelectedItem].id }
-                    else { wantedAudioTrack = tracks[p.indexOfSelectedItem].id }
+                    recovery?.resetObservation(now: ProcessInfo.processInfo.systemUptime)
+                    if subtitles { wantedSubtitleTrack = selected.id; wantedSubtitleTrackName = selected.name }
+                    else { wantedAudioTrack = selected.id; wantedAudioTrackName = selected.name }
                 }
                 setStatus(ok ? l("Zmieniono ścieżkę.", "Track changed.") : l("Silnik nie przyjął zmiany ścieżki.", "The player could not switch tracks."))
             }
+            guard generation == playbackGeneration, attempt == playbackAttempt else { return }
             window?.makeFirstResponder(pauseButton)
         }
     }
@@ -338,8 +374,10 @@ import TelePilotRecording
         if Date().timeIntervalSince(lastGuideTick) >= 60 { lastGuideTick = Date(); table.reloadData(); archiveBrowser.reloadProgrammes() }
         if let channel = playing, playbackReady {
             let generation = playbackGeneration
+            let attempt = playbackAttempt
             var sample = await player.sample()
-            guard generation == playbackGeneration else { return }
+            guard generation == playbackGeneration, attempt == playbackAttempt else { return }
+            sample.videoEnabled = (sample.knownVideoTrackCount ?? 0) > 0 && !listShown && !playerPanel.isHidden && window?.isMiniaturized == false && window?.isVisible == true
             if ["true", "1", "yes"].contains(channel.attributes["radio"]?.lowercased() ?? "") { sample.audioOnly = true }
             let state = sample.state
             if state != lastState {
@@ -347,8 +385,8 @@ import TelePilotRecording
                 if state == 3 {
                     if pendingPause {
                         pendingPause = false
-                        let accepted = await player.pause(true)
-                        guard generation == playbackGeneration else { return }
+                        let accepted = await player.pause(true, generation: generation, attempt: attempt)
+                        guard generation == playbackGeneration, attempt == playbackAttempt else { return }
                         paused = accepted
                         setStatus(accepted ? l("Wstrzymano odtwarzanie.", "Playback paused.") : l("Ta transmisja nie obsługuje pauzy.", "This stream does not support pausing."))
                     } else { setStatus(l("Odtwarzanie: \(channel.name).", "Playing: \(channel.name).")) }
@@ -358,14 +396,20 @@ import TelePilotRecording
             }
             let action = recovery?.evaluate(sample, now: ProcessInfo.processInfo.systemUptime, paused: paused || pendingPause) ?? .none
             await handleRecovery(action, sample: sample, generation: generation)
-            guard generation == playbackGeneration else { return }
+            guard generation == playbackGeneration, attempt == playbackAttempt else { return }
             if state == 3, trackRestoreTicks > 0 {
                 trackRestoreTicks -= 1
-                for (subtitles, wanted) in [(false, wantedAudioTrack), (true, wantedSubtitleTrack)] {
+                for (subtitles, wanted, name) in [(false, wantedAudioTrack, wantedAudioTrackName), (true, wantedSubtitleTrack, wantedSubtitleTrackName)] {
                     if let wanted {
                         let tracks = await player.tracks(subtitles: subtitles)
-                        guard generation == playbackGeneration else { return }
-                        if tracks.contains(where: { $0.id == wanted && !$0.selected }) { _ = await player.selectTrack(wanted, subtitles: subtitles) }
+                        guard generation == playbackGeneration, attempt == playbackAttempt else { return }
+                        if let match = RememberedTrack.match(tracks, id: wanted, name: name) {
+                            if !match.selected {
+                                let restored = await player.selectTrack(match.id, subtitles: subtitles, generation: generation, attempt: attempt)
+                                guard generation == playbackGeneration, attempt == playbackAttempt else { return }
+                                if restored { recovery?.resetObservation(now: ProcessInfo.processInfo.systemUptime) }
+                            }
+                        }
                     }
                 }
             }

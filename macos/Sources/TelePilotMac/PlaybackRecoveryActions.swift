@@ -6,8 +6,10 @@ import TelePilotCore
     func startPlaybackAttempt(_ url: URL, generation: Int, quickStart: Bool) {
         guard let policy = recovery else { return }
         playbackReady = false
+        playbackAttempt += 1; let attempt = playbackAttempt
+        let applied = policy.target
         let address = UInt(bitPattern: Unmanaged.passUnretained(video).toOpaque())
-        var options = policy.settings.options(target: policy.target, live: policy.live, quickStart: quickStart)
+        var options = policy.settings.options(target: applied, live: policy.live, quickStart: quickStart)
         options += [":http-user-agent=\(PlaybackHTTP.userAgent)", ":http-header=Accept: \(PlaybackHTTP.accept)"]
         // LibVLC does not read macOS's manual HTTP proxy settings itself.
         if let proxy = CFNetworkCopySystemProxySettings()?.takeRetainedValue() as? [String: Any] {
@@ -22,15 +24,15 @@ import TelePilotCore
         playbackTask = Task { [weak self] in
             guard let self else { return }
             let resolved = await HLSVariant.resolve(url, cap: policy.settings.variantMaxMbps)
-            guard generation == playbackGeneration, !Task.isCancelled else { return }
-            recovery?.beginAttempt(now: ProcessInfo.processInfo.systemUptime)
+            guard generation == playbackGeneration, attempt == playbackAttempt, !Task.isCancelled else { return }
+            recovery?.beginAttempt(now: ProcessInfo.processInfo.systemUptime, applied: applied)
             do {
-                try await player.play(resolved, viewAddress: address, generation: generation, options: mediaOptions)
-                guard generation == playbackGeneration, !Task.isCancelled else { return }
+                try await player.play(resolved, viewAddress: address, generation: generation, attempt: attempt, options: mediaOptions)
+                guard generation == playbackGeneration, attempt == playbackAttempt, !Task.isCancelled else { return }
                 playbackReady = true; lastState = -1
                 await player.volume(preferences.volume); await player.mute(preferences.muted)
             } catch {
-                guard generation == playbackGeneration, !Task.isCancelled else { return }
+                guard generation == playbackGeneration, attempt == playbackAttempt, !Task.isCancelled else { return }
                 // The same bounded recovery handles a failed open and a later dropout.
                 playbackReady = true
                 let sample = PlaybackSample(state: 7)
@@ -45,12 +47,11 @@ import TelePilotCore
         switch action {
         case .none: break
         case .finished:
-            recovery = nil; setStatus(l("Transmisja została zakończona.", "The stream has ended."))
+            finishPlayback(status: l("Transmisja została zakończona.", "The stream has ended."), returnToChannels: true)
+            await playbackTask?.value
         case .lost:
-            recoveryTask?.cancel(); recoveryTask = nil; playbackReady = false
-            await player.stop(generation: generation)
-            guard generation == playbackGeneration else { return }
-            setStatus(l("Nie udało się odzyskać transmisji. Użyj Ponów lub wybierz inny kanał.", "Could not recover the stream. Reconnect or choose another channel."))
+            finishPlayback(status: l("Nie udało się odzyskać transmisji. Wybierz kanał, aby spróbować ponownie.", "Could not recover the stream. Select a channel to try again."), returnToChannels: true)
+            await playbackTask?.value
         case let .retry(delay, quickStart):
             guard let channel = playing, let original = playingURL else { return }
             let attempts = recovery?.attempts ?? 0

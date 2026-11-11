@@ -45,8 +45,6 @@ enum SettingsSecret {
     let language = popup(l("Język aplikacji", "App language"), items: Language.allCases.map(\.title), target: nil, action: nil)
     private var saveButton: NSButton!
     let ffmpegStatus = label("")
-    let bufferSeconds = namedField(l("Docelowy bufor sieciowy w sekundach", "Target network buffer in seconds"))
-    let bufferMaximum = namedField(l("Maksymalny bufor sieciowy w sekundach", "Maximum network buffer in seconds"))
     let variantCap = namedField(l("Limit jakości HLS w megabitach na sekundę, zero bez limitu", "HLS bitrate limit in megabits per second, zero for unlimited"))
     init(appController:MainController) {
         self.appController = appController
@@ -55,7 +53,6 @@ enum SettingsSecret {
         super.init(window:w);w.delegate = self;w.center()
         let p = appController.preferences
         let buffering = p.buffering ?? PlaybackBufferSettings()
-        bufferSeconds.stringValue = String(buffering.seconds); bufferMaximum.stringValue = String(buffering.maximumSeconds)
         variantCap.stringValue = String(buffering.variantMaxMbps)
         folder.stringValue = p.recordingsDirectory;ffmpeg.stringValue = p.ffmpegPath;epg.stringValue = p.externalEPG ?? ""
         template.stringValue = p.filenameTemplate;bitrate.stringValue = String(p.bitrate);sort.selectItem(at:p.sortOrder)
@@ -66,8 +63,7 @@ enum SettingsSecret {
             label(l("Język aplikacji (po ponownym uruchomieniu)", "App language (after restart)")), language,
             label(l("Lista kanałów", "Channel List")),sort,
             label(l("Buforowanie sieciowe", "Network Buffering")),
-            label(l("Start TV: 0,5 s. Przy zacięciach bufor rośnie o 1 s do maksimum. Zmiany od następnego odtworzenia.", "Live TV starts with 0.5 s. The buffer grows by 1 s after stalls, up to the maximum. Changes apply on the next playback.")),
-            stack([label(l("Bufor (s)", "Buffer (s)")),bufferSeconds,label(l("Maksimum (s)", "Maximum (s)")),bufferMaximum]),
+            label(l("Czas buforowania jest dobierany automatycznie do transmisji i połączenia.", "Buffer duration adapts automatically to the stream and connection.")),
             stack([label(l("Limit HLS (Mb/s, 0: bez limitu)", "HLS limit (Mb/s, 0 for unlimited)")),variantCap]),
             label(l("Zewnętrzny adres EPG XMLTV / gzip (pusty: EPG playlisty)", "External XMLTV / gzip guide URL (leave blank to use the playlist guide)")),epg,
             label(l("Nagrywanie", "Recording")),stack([folder,button(l("Wybierz folder…", "Choose Folder…"),self,#selector(chooseFolder))]),
@@ -78,7 +74,7 @@ enum SettingsSecret {
         ])
         body.orientation = .vertical; body.alignment = .leading; body.spacing = 10
         bitrate.widthAnchor.constraint(equalToConstant: 80).isActive = true
-        for field in [bufferSeconds, bufferMaximum, variantCap] { field.widthAnchor.constraint(equalToConstant: 80).isActive = true }
+        variantCap.widthAnchor.constraint(equalToConstant: 80).isActive = true
         ffmpeg.placeholderString = l("Automatyczne wykrywanie FFmpeg", "Detect FFmpeg automatically")
         let scroll = NSScrollView();scroll.hasVerticalScroller = true;scroll.documentView = body
         body.translatesAutoresizingMaskIntoConstraints = false
@@ -116,10 +112,9 @@ enum SettingsSecret {
     @objc func cancel(){close();appController?.restoreActiveFocus()}
     @objc func save(){guard let appController, let selectedLanguage else{return}
         func number(_ field: NSTextField) -> Double? { Double(field.stringValue.replacingOccurrences(of: ",", with: ".")) }
-        guard let buffer = number(bufferSeconds), buffer.isFinite, buffer > 0, let maximum = number(bufferMaximum), maximum.isFinite,
-              maximum >= buffer, maximum <= 300, let cap = number(variantCap), cap.isFinite, cap >= 0, cap <= 500 else {
-            alert(l("Nieprawidłowe buforowanie", "Invalid Buffer Settings"), l("Podaj dodatni bufor i maksimum do 300 sekund, nie mniejsze od bufora. Limit HLS: 0–500 Mb/s.", "Enter a positive buffer and a maximum between the buffer size and 300 seconds. HLS limit: 0–500 Mb/s."), window: window)
-            window?.makeFirstResponder(bufferSeconds); return
+        guard let cap = number(variantCap), cap.isFinite, cap >= 0, cap <= 500 else {
+            alert(l("Nieprawidłowy limit HLS", "Invalid HLS Limit"), l("Podaj limit HLS od 0 do 500 Mb/s. Zero oznacza brak limitu.", "Enter an HLS limit from 0 to 500 Mb/s. Zero means unlimited."), window: window)
+            window?.makeFirstResponder(variantCap); return
         }
         let address = epg.stringValue.trimmingCharacters(in:.whitespacesAndNewlines)
         if !address.isEmpty {guard let u = URL(string:address),["http","https"].contains(u.scheme?.lowercased() ?? ""),u.host != nil else {alert(l("Nieprawidłowe EPG", "Invalid TV Guide URL"),l("Podaj pełny adres HTTP lub HTTPS.", "Enter a full HTTP or HTTPS URL."),window:window);window?.makeFirstResponder(epg);return}}
@@ -127,7 +122,7 @@ enum SettingsSecret {
         var draft = appController.preferences
         let restart = selectedLanguage != (draft.language ?? .system)
         draft.language = selectedLanguage
-        draft.buffering = PlaybackBufferSettings(seconds: buffer, maximumSeconds: maximum, variantMaxMbps: cap)
+        draft.buffering = PlaybackBufferSettings(variantMaxMbps: cap)
         draft.externalEPG = address.isEmpty ? nil : address
         draft.recordingsDirectory = folder.stringValue
         draft.ffmpegPath = ffmpeg.stringValue
