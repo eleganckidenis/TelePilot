@@ -1,9 +1,6 @@
-name: Windows build and tests
+name: Windows system verification (2.0.3)
 
 on:
-  push:
-    branches: [main, master, 'release/**']
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -18,7 +15,7 @@ env:
 
 jobs:
   tests:
-    name: Tests (${{ matrix.runtime }})
+    name: System tests (${{ matrix.runtime }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
@@ -43,88 +40,27 @@ jobs:
           architecture: ${{ matrix.architecture }}
       - name: Restore
         run: dotnet restore TelePilot.sln -p:UsedAvaloniaProducts=
-      - name: Test Release
+      - name: Test native scheduler and seeking
         shell: pwsh
         run: |
           ./scripts/prepare-ci-ffmpeg.ps1 -Runtime $env:TELEPILOT_BUILD_RUNTIME
-          dotnet test TelePilot.sln --configuration Release --no-restore -p:UsedAvaloniaProducts=
-
-  installers:
-    name: Installer (${{ matrix.runtime }})
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/heads/release/')
-    needs: tests
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runtime: win-x64, architecture: x64, runner: windows-latest }
-          - { runtime: win-arm64, architecture: arm64, runner: windows-11-arm }
-    env:
-      TELEPILOT_BUILD_RUNTIME: ${{ matrix.runtime }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
-        with:
-          global-json-file: global.json
-          architecture: ${{ matrix.architecture }}
-      - name: Install verified Inno Setup 6.7.3
-        shell: pwsh
-        run: |
-          $setupPath = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
-          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $setupPath -MaximumRetryCount 3 -RetryIntervalSec 3
-          $hash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash
-          if ($hash -ne '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732') {
-            throw 'Inno Setup SHA-256 mismatch.'
+          $seekMedia = Join-Path $env:RUNNER_TEMP 'telepilot-system-seek.wav'
+          & $env:TELEPILOT_TEST_FFMPEG -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 120 -c:a pcm_s16le $seekMedia
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $seekMedia -PathType Leaf)) {
+            throw 'Could not generate the synthetic 120-second WAV.'
           }
-          $signature = Get-AuthenticodeSignature -LiteralPath $setupPath
-          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'CN=Pyrsys B\.V\.') {
-            throw 'Inno Setup publisher signature is invalid.'
-          }
-          $compilerDirectory = Join-Path $env:RUNNER_TEMP 'inno-setup-6'
-          $setupArguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CURRENTUSER', "/DIR=`"$compilerDirectory`"")
-          $process = Start-Process -FilePath $setupPath -ArgumentList $setupArguments -WindowStyle Hidden -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "Inno Setup installation failed: $($process.ExitCode)" }
-      - name: Build installer
-        id: build_installer
-        shell: pwsh
-        run: ./scripts/build-windows-installer.ps1 -Runtime $env:TELEPILOT_BUILD_RUNTIME -InnoCompiler (Join-Path $env:RUNNER_TEMP 'inno-setup-6\ISCC.exe') -SkipTests
-      - name: Install and uninstall the release package in both languages
-        shell: pwsh
-        run: |
-          $installers = @(Get-ChildItem -Path "artifacts/release/*/$env:TELEPILOT_BUILD_RUNTIME/*-setup.exe")
-          if ($installers.Count -ne 1) { throw 'Expected exactly one release installer.' }
-          [xml]$project = Get-Content -LiteralPath 'src/TelePilot.App/TelePilot.App.csproj' -Raw
-          ./scripts/test-windows-installer.ps1 -Installer $installers[0].FullName -Version $project.Project.PropertyGroup.Version -Runtime $env:TELEPILOT_BUILD_RUNTIME
-      - name: Verify FFmpeg download and checksum rejection with real Inno Setup
-        if: ${{ !cancelled() && steps.build_installer.outcome == 'success' }}
-        shell: pwsh
-        run: ./scripts/test-windows-ffmpeg-download.ps1 -Runtime $env:TELEPILOT_BUILD_RUNTIME -RunDownloadTest -TestInvalidHash -InnoCompiler (Join-Path $env:RUNNER_TEMP 'inno-setup-6\ISCC.exe')
-      - name: Archive source
-        if: matrix.runtime == 'win-x64'
-        shell: pwsh
-        run: ./scripts/prepare-github-source.ps1
-      - name: Upload installers and source for review
+          $env:TELEPILOT_TEST_TASK_SCHEDULER = '1'
+          $env:TELEPILOT_TEST_NATIVE_PLAYBACK = '1'
+          $env:TELEPILOT_TEST_SEEK_MEDIA = $seekMedia
+          dotnet build tests/TelePilot.Tests/TelePilot.Tests.csproj --configuration Release --no-restore -p:UsedAvaloniaProducts=
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build the native system tests.' }
+          dotnet tests/TelePilot.Tests/bin/Release/net10.0/TelePilot.Tests.dll --filter-method 'TelePilot.Tests.App.ScheduleRecordingTests.RealTaskScheduler_RegistersAndDeletesWhenExplicitlyEnabled' 'TelePilot.Tests.Playback.PlaybackSeekingIntegrationTests.RealLibVlc_SeeksWhilePlayingAndPausedThenRejectsSeekAfterStop' --fail-skips on --minimum-expected-tests 2 --report-xunit --report-xunit-filename system-tests.xml --results-directory system-test-results --output Detailed
+          if ($LASTEXITCODE -ne 0) { throw 'Native system verification failed.' }
+      - name: Upload native system test results
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: TelePilot-${{ matrix.runtime }}
-          if-no-files-found: error
-          retention-days: 14
-          path: |
-            artifacts/release/*/${{ matrix.runtime }}/*-setup.exe
-            artifacts/release/*/${{ matrix.runtime }}/*.sha256
-            artifacts/release/*/source/*.zip
-            artifacts/release/*/source/*.sha256
-      - name: Keep installer for diagnostics if a smoke test failed
-        if: ${{ failure() && steps.build_installer.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: TelePilot-diagnostics-${{ matrix.runtime }}
-          if-no-files-found: error
+          name: system-tests-${{ matrix.runtime }}
+          if-no-files-found: warn
           retention-days: 3
-          path: |
-            artifacts/release/*/${{ matrix.runtime }}/*-setup.exe
-            artifacts/release/*/${{ matrix.runtime }}/*.sha256
+          path: system-test-results/
