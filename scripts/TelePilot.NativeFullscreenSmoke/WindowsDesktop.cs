@@ -16,13 +16,21 @@ internal static class WindowsDesktop
 
     public static void EnablePerMonitorDpi() => _ = SetProcessDpiAwarenessContext(-4);
 
-    public static bool IsForeground(nint window) => GetForegroundWindow() == window;
+    public static bool IsActiveOnUiThread(nint window) => GetActiveWindow() == window;
+
+    public static bool HasKeyboardFocus(nint window) => GetFocus() == window;
+
+    public static string DescribeWindows(nint window) =>
+        $"Windows HWNDs: test=0x{window:X}, foreground=0x{GetForegroundWindow():X}, " +
+        $"thread active=0x{GetActiveWindow():X}, thread focus=0x{GetFocus():X}.";
 
     public static void Press(nint window, byte key, byte modifier = 0)
     {
-        if (!IsForeground(window) || GetFocus() != window)
+        // The hosted desktop can leave the global foreground HWND unset while
+        // the test UI thread still owns activation and keyboard focus.
+        if (!IsActiveOnUiThread(window) || !HasKeyboardFocus(window))
         {
-            throw new InvalidOperationException("Native keyboard focus left the synthetic playback window or moved to a child HWND.");
+            throw new InvalidOperationException($"Native keyboard focus left the synthetic playback window or moved to a child HWND. {DescribeWindows(window)}");
         }
 
         byte[]? previousState = null;
@@ -66,9 +74,9 @@ internal static class WindowsDesktop
 
     public static string? CheckGradient(nint window, PixelRect video, double contentAspect, bool fullscreen)
     {
-        if (!IsForeground(window) || video.Width < 32 || video.Height < 32)
+        if (video.Width < 32 || video.Height < 32)
         {
-            return "The video area is unavailable or the window is in the background.";
+            return $"The video area is too small to sample: {video}.";
         }
 
         if (fullscreen)
@@ -90,7 +98,7 @@ internal static class WindowsDesktop
         var screen = GetDC(0);
         if (screen == 0)
         {
-            return "Could not capture the Windows desktop.";
+            return "GetDC(NULL) failed to open the Windows desktop for sampling.";
         }
 
         try
@@ -112,7 +120,12 @@ internal static class WindowsDesktop
                 {
                     var px = video.Left + (int)Math.Round((0.5 + ((x - 0.5) * fittedX)) * video.Width);
                     var py = video.Top + (int)Math.Round((0.5 + ((y - 0.5) * fittedY)) * video.Height);
-                    var (red, green, blue) = ReadPixel(screen, px, py);
+                    if (ReadPixel(screen, px, py) is not { } color)
+                    {
+                        return $"GetPixel returned CLR_INVALID at desktop coordinate ({px}, {py}) in {video}.";
+                    }
+
+                    var (red, green, blue) = color;
                     var expectedRed = 48 + (160 * (0.5 + ((x - 0.5) * retainedX)));
                     var expectedGreen = 48 + (160 * (0.5 + ((y - 0.5) * retainedY)));
                     if (Math.Abs(red - expectedRed) > colorTolerance || Math.Abs(green - expectedGreen) > colorTolerance ||
@@ -145,14 +158,13 @@ internal static class WindowsDesktop
 
     private static bool IsBlack(nint screen, int x, int y)
     {
-        var (red, green, blue) = ReadPixel(screen, x, y);
-        return red < 24 && green < 24 && blue < 24;
+        return ReadPixel(screen, x, y) is { Red: < 24, Green: < 24, Blue: < 24 };
     }
 
-    private static (int Red, int Green, int Blue) ReadPixel(nint screen, int x, int y)
+    private static (int Red, int Green, int Blue)? ReadPixel(nint screen, int x, int y)
     {
         var pixel = GetPixel(screen, x, y);
-        return ((int)(pixel & 255), (int)((pixel >> 8) & 255), (int)((pixel >> 16) & 255));
+        return pixel == uint.MaxValue ? null : ((int)(pixel & 255), (int)((pixel >> 8) & 255), (int)((pixel >> 16) & 255));
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -181,6 +193,9 @@ internal static class WindowsDesktop
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern nint GetActiveWindow();
 
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern nint GetFocus();

@@ -115,6 +115,7 @@ internal static class Program
             Title = "TelePilot native fullscreen smoke",
             Width = 800,
             Height = 540,
+            Topmost = true,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
         };
         windowService.SetOwner(window);
@@ -134,11 +135,14 @@ internal static class Program
             await WaitAsync(() => model.Channels.Count == 2, "two synthetic channels", token,
                 () => $"Loaded {model.Channels.Count} channels from {model.Sources.Count} sources.");
             window.Activate();
-            await WaitAsync(() => WindowsDesktop.IsForeground(handle), "synthetic window foreground", token,
-                () => $"Window reports IsActive={window.IsActive} and IsVisible={window.IsVisible}.");
+            await WaitAsync(() => window.IsActive && window.IsVisible && WindowsDesktop.IsActiveOnUiThread(handle),
+                "synthetic window activation", token,
+                () => $"Avalonia active={window.IsActive}, visible={window.IsVisible}. {WindowsDesktop.DescribeWindows(handle)}");
+            Console.WriteLine(WindowsDesktop.DescribeWindows(handle));
             var initialState = window.WindowState;
             focus.Request(FocusTarget.ChannelList, model.Channels[0].Id);
-            await WaitAsync(() => list.IsKeyboardFocusWithin && model.SelectedChannel == model.Channels[0], "first channel focus", token);
+            await WaitAsync(() => list.IsKeyboardFocusWithin && model.SelectedChannel == model.Channels[0] &&
+                WindowsDesktop.HasKeyboardFocus(handle), "first channel focus", token, () => WindowsDesktop.DescribeWindows(handle));
             WindowsDesktop.Press(handle, WindowsDesktop.Enter);
             await WaitAsync(() => playback.Current.State == PlaybackState.Playing && playback.MediaPlayer.VoutCount > 0 &&
                 player.IsKeyboardFocusWithin, "first playback and player focus", token, () => $"Playback state={playback.Current.State}.");
@@ -200,8 +204,9 @@ internal static class Program
                 Console.WriteLine($"Triggering Ctrl+S in {window.WindowState}.");
                 WindowsDesktop.Press(handle, WindowsDesktop.S, WindowsDesktop.Control);
                 await WaitAsync(() => playback.Current.State == PlaybackState.Idle && !model.IsPlayerViewVisible &&
-                    window.WindowState == initialState && list.IsKeyboardFocusWithin && menu.IsEffectivelyVisible,
-                    "Ctrl+S stops playback and restores channel list focus", token);
+                    window.WindowState == initialState && list.IsKeyboardFocusWithin && menu.IsEffectivelyVisible &&
+                    WindowsDesktop.HasKeyboardFocus(handle), "Ctrl+S stops playback and restores channel list focus", token,
+                    () => WindowsDesktop.DescribeWindows(handle));
             }
         }
         finally
@@ -223,7 +228,7 @@ internal static class Program
             viewport = new(start.X, start.Y, end.X, end.Y);
             error = WindowsDesktop.CheckGradient(handle, viewport, aspectRatio, fullscreen);
             return error is null;
-        }, stage, token, () => error);
+        }, stage, token, () => $"{error} {WindowsDesktop.DescribeWindows(handle)}");
         Console.WriteLine($"{stage} ({viewport.Width}x{viewport.Height}): desktop pixels match the expected " +
             (fullscreen ? "center crop at monitor edges." : "aspect fit."));
     }
