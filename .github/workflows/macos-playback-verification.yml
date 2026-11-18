@@ -15,6 +15,40 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+      - name: Check OpenGL pixel formats
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/cgl.c" <<'EOF'
+          #include <OpenGL/OpenGL.h>
+          #include <stdio.h>
+          int main(void) {
+              CGLPixelFormatAttribute formats[][12] = {
+                  { kCGLPFAAllowOfflineRenderers, kCGLPFADoubleBuffer, kCGLPFAAccelerated, kCGLPFANoRecovery,
+                    kCGLPFAColorSize, 24, kCGLPFAAlphaSize, 8, kCGLPFADepthSize, 24, kCGLPFASupportsAutomaticGraphicsSwitching, 0 },
+                  { kCGLPFADoubleBuffer, kCGLPFAAccelerated, kCGLPFANoRecovery,
+                    kCGLPFAColorSize, 24, kCGLPFAAlphaSize, 8, kCGLPFADepthSize, 24,
+                    kCGLPFAWindow, kCGLPFAAllowOfflineRenderers, 0 },
+                  { kCGLPFADoubleBuffer, kCGLPFAColorSize, 24, 0 }
+              };
+              const char *names[] = { "VLC CAOpenGL", "VLC NSOpenGL", "unrestricted OpenGL" };
+              for (int i = 0; i < 3; i++) {
+                  CGLPixelFormatObj format = NULL;
+                  CGLContextObj context = NULL;
+                  GLint count = 0;
+                  CGLError result = CGLChoosePixelFormat(formats[i], &format, &count);
+                  printf("%s: %d format(s), error %d\n", names[i], count, result);
+                  if (result == kCGLNoError && format != NULL) {
+                      result = CGLCreateContext(format, NULL, &context);
+                      printf("%s: context error %d\n", names[i], result);
+                      if (context != NULL) CGLDestroyContext(context);
+                      CGLDestroyPixelFormat(format);
+                  }
+              }
+              return 0;
+          }
+          EOF
+          clang -Wno-deprecated-declarations -framework OpenGL "$RUNNER_TEMP/cgl.c" -o "$RUNNER_TEMP/cgl"
+          "$RUNNER_TEMP/cgl"
       - name: Test the release code with pinned runtime libraries
         shell: bash
         run: |
@@ -39,4 +73,6 @@ jobs:
           ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=25' \
             -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 15 \
             -c:v mpeg2video -g 12 -b:v 480k -c:a mp2 -b:a 128k -f mpegts "$TELEPILOT_TEST_TS_FILE"
-          python3 ./macos/scripts/test-network-buffer.py --no-parallel
+          python3 ./macos/scripts/test-network-buffer.py --no-parallel 2>&1 | tee "$stage/swift-tests.log"
+          grep -Eq 'Test run with [1-9][0-9]* tests? passed after' "$stage/swift-tests.log"
+          grep -Fq 'Test managerOpensForFirstRunAndImportsSwitchesRemovesAndReturnsFocus() passed after' "$stage/swift-tests.log"
