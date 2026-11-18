@@ -24,6 +24,10 @@ if [[ ${TELEPILOT_APPKIT_TEST_HOST:-0} == 1 ]]; then
   <key>CFBundleName</key><string>TelePilot AppKit Test Host</string>
   <key>CFBundleExecutable</key><string>TelePilotAppKitTestHost</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>LSUIElement</key><false/>
 </dict></plist>
 PLIST
   xcrun swiftc -parse-as-library -F "$platform/Library/Frameworks" -L "$platform/usr/lib" \
