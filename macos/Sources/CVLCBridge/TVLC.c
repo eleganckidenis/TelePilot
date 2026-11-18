@@ -1,5 +1,7 @@
+#define GL_SILENCE_DEPRECATION
 #include "TVLC.h"
 #include <CoreFoundation/CFData.h>
+#include <OpenGL/OpenGL.h>
 #include <dlfcn.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -19,16 +21,47 @@ struct TVLC {
     pthread_mutex_t frame_mutex;
     SoftwareOutput *software_output;
     uint64_t frame_sequence;
+    uint64_t output_revision, aspect_revision;
+    double display_aspect, aspect_refresh_at;
 };
 
 struct SoftwareOutput {
     TVLC *owner;
     void *write_pixels, *displayed_pixels;
     unsigned width, height, pitch;
-    uint64_t sequence;
+    uint64_t sequence, revision;
 };
 
 #define FN(t, n) ((t)dlsym(v->library, n))
+
+static int supports_pixel_format(const CGLPixelFormatAttribute *attributes) {
+    CGLPixelFormatObj format = NULL;
+    CGLContextObj context = NULL;
+    GLint count = 0;
+    CGLError result = CGLChoosePixelFormat(attributes, &format, &count);
+    if (result == kCGLNoError && format && count > 0) {
+        result = CGLCreateContext(format, NULL, &context);
+    }
+    int supported = result == kCGLNoError && context != NULL;
+    if (context) CGLReleaseContext(context);
+    if (format) CGLReleasePixelFormat(format);
+    return supported;
+}
+
+int tvlc_supports_accelerated_video(void) {
+    // Match both native video outputs in the pinned VLC 3.0.24.
+    const CGLPixelFormatAttribute layer[] = {
+        kCGLPFAAllowOfflineRenderers, kCGLPFADoubleBuffer, kCGLPFAAccelerated, kCGLPFANoRecovery,
+        kCGLPFAColorSize, 24, kCGLPFAAlphaSize, 8, kCGLPFADepthSize, 24,
+        kCGLPFASupportsAutomaticGraphicsSwitching, 0
+    };
+    const CGLPixelFormatAttribute view[] = {
+        kCGLPFADoubleBuffer, kCGLPFAAccelerated, kCGLPFANoRecovery,
+        kCGLPFAColorSize, 24, kCGLPFAAlphaSize, 8, kCGLPFADepthSize, 24,
+        kCGLPFAWindow, kCGLPFAAllowOfflineRenderers, 0
+    };
+    return supports_pixel_format(layer) || supports_pixel_format(view);
+}
 
 static unsigned setup_software_video(void **opaque, char *chroma, unsigned *width,
                                      unsigned *height, unsigned *pitch, unsigned *lines) {
@@ -72,6 +105,7 @@ static unsigned setup_software_video(void **opaque, char *chroma, unsigned *widt
     *opaque = output;
     TVLC *v = output->owner;
     pthread_mutex_lock(&v->frame_mutex);
+    output->revision = ++v->output_revision;
     v->software_output = output;
     pthread_mutex_unlock(&v->frame_mutex);
     return 1;
@@ -112,7 +146,72 @@ static void cleanup_software_video(void *opaque) {
     free(output);
 }
 
-CGImageRef tvlc_copy_software_frame(TVLC *v, uint64_t *sequence) {
+// The public LibVLC 3.0.24 media-track ABI, used only by the software output.
+typedef struct VideoTrackInfo {
+    unsigned height, width, sar_num, sar_den, frame_rate_num, frame_rate_den;
+    int orientation, projection;
+    float viewpoint[4];
+} VideoTrackInfo;
+
+typedef struct MediaTrackInfo {
+    uint32_t codec, original_codec;
+    int id, type, profile, level;
+    union { void *audio; VideoTrackInfo *video; void *subtitle; };
+    unsigned bitrate;
+    char *language, *description;
+} MediaTrackInfo;
+
+static double read_video_aspect(TVLC *v) {
+    void *(*get_media)(void *) = FN(void *(*)(void *), "libvlc_media_player_get_media");
+    unsigned (*get_tracks)(void *, MediaTrackInfo ***) =
+        FN(unsigned (*)(void *, MediaTrackInfo ***), "libvlc_media_tracks_get");
+    void (*release_tracks)(MediaTrackInfo **, unsigned) =
+        FN(void (*)(MediaTrackInfo **, unsigned), "libvlc_media_tracks_release");
+    int (*get_video_track)(void *) = FN(int (*)(void *), "libvlc_video_get_track");
+    if (!get_media || !get_tracks || !release_tracks) return 0;
+
+    int selected_id = get_video_track ? get_video_track(v->player) : -1;
+    void *media = get_media(v->player);
+    if (!media) return 0;
+    MediaTrackInfo **tracks = NULL;
+    unsigned count = get_tracks(media, &tracks);
+    FN(void (*)(void *), "libvlc_media_release")(media);
+
+    const VideoTrackInfo *video = NULL, *only_video = NULL;
+    unsigned video_count = 0;
+    for (unsigned i = 0; i < count; ++i) {
+        const MediaTrackInfo *track = tracks[i];
+        if (!track || track->type != 1 || !track->video) continue;
+        ++video_count;
+        only_video = track->video;
+        if (selected_id >= 0 && track->id == selected_id) video = track->video;
+    }
+    if (!video && video_count == 1) video = only_video;
+    double aspect = 0;
+    if (video && video->width && video->height) {
+        aspect = (double)video->width / video->height;
+        if (video->sar_num && video->sar_den) aspect *= (double)video->sar_num / video->sar_den;
+        // vmem applies the source orientation before delivering the pixels.
+        if (video->orientation >= 4 && video->orientation <= 7) aspect = 1.0 / aspect;
+    }
+    if (tracks) release_tracks(tracks, count);
+    return aspect;
+}
+
+static double software_video_aspect(TVLC *v, uint64_t revision, double pixel_aspect) {
+    struct timespec clock;
+    clock_gettime(CLOCK_MONOTONIC, &clock);
+    double now = (double)clock.tv_sec + (double)clock.tv_nsec / 1e9;
+    // Late stream metadata and track changes can update the ratio after the first frame.
+    if (v->aspect_revision != revision || now >= v->aspect_refresh_at) {
+        v->display_aspect = read_video_aspect(v);
+        v->aspect_revision = revision;
+        v->aspect_refresh_at = now + 1;
+    }
+    return v->display_aspect > 0 ? v->display_aspect : pixel_aspect;
+}
+
+CGImageRef tvlc_copy_software_frame(TVLC *v, uint64_t *sequence, double *display_aspect) {
     if (!v || !sequence) return NULL;
     pthread_mutex_lock(&v->frame_mutex);
     SoftwareOutput *output = v->software_output;
@@ -121,6 +220,7 @@ CGImageRef tvlc_copy_software_frame(TVLC *v, uint64_t *sequence) {
         return NULL;
     }
     uint64_t latest = output->sequence;
+    uint64_t revision = output->revision;
     unsigned width = output->width, height = output->height, pitch = output->pitch;
     CFDataRef data = CFDataCreate(NULL, output->displayed_pixels, (CFIndex)((size_t)pitch * height));
     pthread_mutex_unlock(&v->frame_mutex);
@@ -135,7 +235,11 @@ CGImageRef tvlc_copy_software_frame(TVLC *v, uint64_t *sequence) {
         kCGRenderingIntentDefault) : NULL;
     if (color_space) CGColorSpaceRelease(color_space);
     CGDataProviderRelease(provider);
-    if (image) *sequence = latest;
+    if (image) {
+        *sequence = latest;
+        // LibVLC calls can wait on its decoder. Never call them with frame_mutex held.
+        if (display_aspect) *display_aspect = software_video_aspect(v, revision, (double)width / height);
+    }
     return image;
 }
 

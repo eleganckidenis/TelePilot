@@ -364,7 +364,7 @@ struct OnboardingTests {
         let window = try #require(controller.window)
         let button = try #require(controller.playerControls.compactMap { $0 as? NSButton }.first { $0.title == "Full Screen" })
         let video = controller.video
-        let renderer = video.subviews.first
+        let renderer: NSView? = if video.requiresSoftwareOutput { nil } else { try #require(video.subviews.first) }
         let attempt = controller.playbackAttempt
         defer {
             if window.styleMask.contains(.fullScreen) { controller.fullscreen() }
@@ -426,25 +426,33 @@ struct OnboardingTests {
             + "surface=\(video.frame), visible surface=\(video.visibleRect), renderers=\(renderers)"
         try #require(sample.state == 3 && displayedFrames > afterDisplayedFrames,
                      "Expected \(phase) to display new video frames. \(diagnostics)")
-        if !video.subviews.contains(where: { $0.window === window && !$0.visibleRect.isEmpty }) {
+        if video.requiresSoftwareOutput {
             try await waitForRenderedSoftwareVideo(video, phase: phase)
+        } else {
+            try #require(video.subviews.contains { $0.window === window && !$0.visibleRect.isEmpty },
+                         "Expected \(phase) to use an embedded, visible renderer. \(diagnostics)")
         }
     }
 
     @MainActor
     private func waitForRenderedSoftwareVideo(_ video: VideoSurface, phase: String) async throws {
         let deadline = ContinuousClock.now + .seconds(2)
+        let expectedAspect = ProcessInfo.processInfo.environment["TELEPILOT_TEST_EXPECTED_DISPLAY_ASPECT"].flatMap(Double.init)
         var first: (sequence: UInt64, samples: [Int])?
         while ContinuousClock.now < deadline {
             let sequence = video.softwareFrameSequence
             if video.softwareFrame != nil, sequence != first?.sequence,
                let samples = renderedColorSamples(video), Set(samples).count > 5 {
-                if let first, first.samples != samples { return }
+                if let first, first.samples != samples,
+                   expectedAspect.map({ abs(video.softwareDisplayAspect - $0) < 0.02 }) ?? true {
+                    print("Verified changing software video pixels: \(phase), aspect \(video.softwareDisplayAspect).")
+                    return
+                }
                 if first == nil { first = (sequence, samples) }
             }
             try await Task.sleep(for: .milliseconds(40))
         }
-        Issue.record("Expected \(phase) to draw changing video pixels inside the AppKit view.")
+        Issue.record("Expected \(phase) to draw changing video pixels inside the AppKit view. Display aspect: \(video.softwareDisplayAspect).")
     }
 
     @MainActor
