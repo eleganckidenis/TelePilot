@@ -14,8 +14,8 @@ $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
     throw 'This probe requires a fresh disposable GitHub-hosted Windows runner.'
 }
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
-Add-Type -TypeDefinition @'
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, Accessibility
+Add-Type -ReferencedAssemblies ([Accessibility.IAccessible].Assembly.Location) -TypeDefinition @'
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -33,6 +33,34 @@ public static class NativeUpdaterWindows {
     [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr window);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("oleacc.dll")]
+    private static extern int AccessibleObjectFromWindow(IntPtr window, uint objectId, ref Guid iid,
+        [MarshalAs(UnmanagedType.Interface)] out Accessibility.IAccessible accessible);
+
+    public sealed class AccessibleEdit {
+        public string Name { get; set; }
+        public int Role { get; set; }
+        public bool ReadOnly { get; set; }
+        public string Value { get; set; }
+    }
+
+    public static AccessibleEdit ReadMsaaEdit(IntPtr editor) {
+        var iid = typeof(Accessibility.IAccessible).GUID;
+        Accessibility.IAccessible accessible;
+        if (AccessibleObjectFromWindow(editor, unchecked((uint)-4), ref iid, out accessible) != 0 || accessible == null)
+            return null; // OBJID_CLIENT
+        try {
+            const int self = 0; // CHILDID_SELF
+            var role = Convert.ToInt32(accessible.get_accRole(self));
+            var readOnly = (Convert.ToInt32(accessible.get_accState(self)) & 0x40) != 0; // STATE_SYSTEM_READONLY
+            return new AccessibleEdit {
+                Name = accessible.get_accName(self), Role = role, ReadOnly = readOnly,
+                Value = role == 42 && readOnly ? accessible.get_accValue(self) : null, // ROLE_SYSTEM_TEXT
+            };
+        }
+        catch (COMException) { return null; }
+        finally { Marshal.ReleaseComObject(accessible); }
+    }
 
     public static IntPtr Owner(IntPtr window) { return GetWindow(window, 4); } // GW_OWNER
     public static uint ProcessId(IntPtr window) {
@@ -111,27 +139,71 @@ function Invoke-Control($Control) {
     }
     $invoke.Invoke()
 }
-function Read-ReleaseNotes([IntPtr]$WindowHandle, [int]$ProcessId, $Inspection) {
-    # The hosted Win32 EDIT may not be reachable through the Avalonia provider's
-    # descendant tree. Query that child HWND's own UIA provider directly.
-    foreach ($editor in [NativeUpdaterWindows]::VisibleEditors($WindowHandle, $ProcessId)) {
-        $notes = Get-WindowElement $editor
-        if ($null -eq $notes) { continue }
-        $properties = $notes.Current
-        $textPattern = $null
-        $hasTextPattern = $notes.TryGetCurrentPattern([Windows.Automation.TextPattern]::Pattern, [ref]$textPattern)
-        $entry = [ordered]@{
-            handle=$editor.ToInt64(); name=$properties.Name; controlType=$properties.ControlType.ProgrammaticName
-            offscreen=$properties.IsOffscreen; textPattern=$hasTextPattern; length=0
+function Get-RawSubtree($Root) {
+    if ($null -eq $Root) { return }
+    $walker = [Windows.Automation.TreeWalker]::RawViewWalker
+    $pending = [Collections.Generic.Queue[Windows.Automation.AutomationElement]]::new()
+    $pending.Enqueue($Root)
+    for ($visited = 0; $visited -lt 24 -and $pending.Count -gt 0; $visited++) {
+        $element = $pending.Dequeue()
+        $element
+        for ($child = $walker.GetFirstChild($element); $null -ne $child; $child = $walker.GetNextSibling($child)) {
+            $pending.Enqueue($child)
         }
+    }
+}
+function Test-ReleaseNotesText([string]$Notes, $Entry) {
+    $Entry.length = $Notes.Length
+    $Entry.isPlaceholder = $Notes.Trim() -ceq 'Release notes for this version are unavailable.'
+    -not $Entry.isPlaceholder -and -not [string]::IsNullOrWhiteSpace($Notes)
+}
+function Read-ReleaseNotes($Window, [IntPtr]$WindowHandle, [int]$ProcessId, $Inspection) {
+    # The Avalonia peer, an interop pane and the actual EDIT can be distinct nodes.
+    $namedNotes = Find-Control $Window 'update-release-notes'
+    $editors = [NativeUpdaterWindows]::VisibleEditors($WindowHandle, $ProcessId)
+    $roots = @($namedNotes) + @($editors | ForEach-Object { Get-WindowElement $_ })
+    $valueResult = $null
+    foreach ($root in $roots) {
+        $underNamedNotes = $null -ne $namedNotes -and $null -ne $root -and
+            [Windows.Automation.Automation]::Compare($root, $namedNotes) -and $namedNotes.Current.Name -ceq 'Release notes'
+        foreach ($notes in (Get-RawSubtree $root)) {
+            $properties = $notes.Current
+            if ($properties.ProcessId -ne $ProcessId) { continue }
+            $text = $null
+            $value = $null
+            $entry = [ordered]@{
+                handle=$properties.NativeWindowHandle; id=$properties.AutomationId; name=$properties.Name
+                controlType=$properties.ControlType.ProgrammaticName; offscreen=$properties.IsOffscreen
+                textPattern=$notes.TryGetCurrentPattern([Windows.Automation.TextPattern]::Pattern, [ref]$text)
+                valuePattern=$notes.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern, [ref]$value)
+            }
+            $Inspection.Add($entry)
+            $nativeHandle = [IntPtr]$properties.NativeWindowHandle
+            $isNotes = $properties.Name -ceq 'Release notes' -or
+                ($underNamedNotes -and ($properties.ControlType -eq [Windows.Automation.ControlType]::Edit -or
+                    $editors -contains $nativeHandle))
+            if (-not $isNotes -or $properties.IsOffscreen) { continue }
+            if ($entry.textPattern) {
+                $notesText = $text.DocumentRange.GetText(-1)
+                if (Test-ReleaseNotesText $notesText $entry) { return @{ Text=$notesText; Provider='UIA TextPattern' } }
+            }
+            if ($entry.valuePattern -and $value.Current.IsReadOnly) {
+                $notesText = $value.Current.Value
+                if (Test-ReleaseNotesText $notesText $entry) { $valueResult = @{ Text=$notesText; Provider='UIA ValuePattern' } }
+            }
+        }
+    }
+    if ($null -ne $valueResult) { return $valueResult }
+
+    # Read the native edit through MSAA when UIA supplies only a wrapper pane.
+    foreach ($editor in $editors) {
+        $notes = [NativeUpdaterWindows]::ReadMsaaEdit($editor)
+        if ($null -eq $notes) { continue }
+        $entry = [ordered]@{ handle=$editor.ToInt64(); msaaName=$notes.Name; role=$notes.Role; readOnly=$notes.ReadOnly }
         $Inspection.Add($entry)
-        if ($properties.ControlType -ne [Windows.Automation.ControlType]::Edit -or
-            $properties.Name -cne 'Release notes' -or $properties.IsOffscreen -or -not $hasTextPattern) { continue }
-        $notesText = $textPattern.DocumentRange.GetText(-1)
-        if (-not [string]::IsNullOrWhiteSpace($notesText)) {
-            $entry.length = $notesText.Length
-            $entry.isPlaceholder = $notesText.Trim() -ceq 'Release notes for this version are unavailable.'
-            if (-not $entry.isPlaceholder) { return $notesText }
+        if ($notes.Role -eq 42 -and $notes.ReadOnly -and $notes.Name -ceq 'Release notes' -and
+            (Test-ReleaseNotesText $notes.Value $entry)) {
+            return @{ Text=$notes.Value; Provider='MSAA accValue' }
         }
     }
 }
@@ -179,18 +251,21 @@ try {
                     $controlSamples[$key] = @($controls | ForEach-Object { $_.Current.AutomationId } |
                         Where-Object { $_ } | Select-Object -First 12)
                 }
-                $liveTab = Find-Control $window 'tab-live'
-                if ($null -ne $liveTab) {
+                # Avalonia exposes owned windows in the main UIA subtree as well.
+                # Match the top-level element's own ID before querying descendants.
+                if ($properties.AutomationId -ceq 'main-window') {
                     $main = $window
                     $mainHandle = $handle
-                    $sample.liveTabName = $liveTab.Current.Name
+                    $liveTab = Find-Control $window 'tab-live'
+                    if ($null -ne $liveTab) { $sample.liveTabName = $liveTab.Current.Name }
+                    continue
                 }
-                $progressMessage = Find-Control $window 'update-progress-text'
+                $progressMessage = if ($properties.AutomationId -ceq 'update-progress-window') { Find-Control $window 'update-progress-text' }
                 if ($null -ne $progressMessage) {
                     $sample.message = $progressMessage.Current.Name
                     if ($null -eq $offer -and $sample.message -ceq "Version $ExpectedVersion is available. Download the update?") {
                         $editorInspection = [Collections.Generic.List[object]]::new()
-                        $notesText = Read-ReleaseNotes $handle $app.Id $editorInspection
+                        $notes = Read-ReleaseNotes $window $handle $app.Id $editorInspection
                         $download = Find-Control $window 'update-download'
                         $later = Find-Control $window 'update-later'
                         $downloadInvoke = $null
@@ -203,10 +278,10 @@ try {
                             downloadInvoke=($null -ne $download -and $download.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$downloadInvoke))
                             laterInvoke=($null -ne $later -and $later.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$laterInvoke))
                         }
-                        if ($null -ne $notesText -and -not $properties.IsOffscreen -and
+                        if ($null -ne $notes -and -not $properties.IsOffscreen -and
                             $lastOfferInspection.downloadName -ceq 'Download' -and $lastOfferInspection.laterName -ceq 'Later' -and
                             $lastOfferInspection.downloadInvoke -and $lastOfferInspection.laterInvoke) {
-                            $offer = @{ Message=$sample.message; Download=$download; NotesLength=$notesText.Length; Consented=$false }
+                            $offer = @{ Message=$sample.message; Download=$download; NotesLength=$notes.Text.Length; NotesProvider=$notes.Provider; Consented=$false }
                         }
                     }
                     $bar = Find-Control $window 'update-progress-bar'
@@ -216,7 +291,7 @@ try {
                         if (-not $progressMessages.Contains($sample.message)) { $progressMessages.Add($sample.message) }
                     }
                 }
-                $message = Find-Control $window 'confirmation-dialog-content'
+                $message = if ($properties.AutomationId -ceq 'confirmation-dialog') { Find-Control $window 'confirmation-dialog-content' }
                 if ($null -ne $message) {
                     $sample.message = $message.Current.Name
                     if (-not $properties.IsOffscreen -and $sample.message -ceq "Version $ExpectedVersion has been downloaded. Open the installer?") {
@@ -274,7 +349,7 @@ try {
         testExecutableVersion=$qaVersion; runtime=$Runtime; processId=$app.Id
         latestPublicVersion=$ExpectedVersion; referenceInstaller=$name; referenceSha256=$hash
         downloadedBytes=(Get-Item -LiteralPath (Join-Path $updates $name)).Length
-        offerMessage=$offer.Message; releaseNotesLength=$offer.NotesLength; cacheEmptyBeforeConsent=$true
+        offerMessage=$offer.Message; releaseNotesLength=$offer.NotesLength; releaseNotesProvider=$offer.NotesProvider; cacheEmptyBeforeConsent=$true
         progressObserved=$progressSeen; nonmodalOwnerVerified=$nonmodalVerified; progressMessages=$progressMessages.ToArray()
         sourceCommit=$env:GITHUB_SHA
         actualStartupNotice=$notice.Message; noticeTitle=$notice.Window.Current.Name
