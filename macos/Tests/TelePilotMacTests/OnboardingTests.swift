@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import Foundation
 import TelePilotCore
 import TelePilotRecording
@@ -51,7 +52,10 @@ struct OnboardingTests {
     func managerOpensForFirstRunAndImportsSwitchesRemovesAndReturnsFocus() async throws {
         await NativePlaybackTestGate.shared.acquire()
         defer { Task { await NativePlaybackTestGate.shared.release() } }
-        _ = NSApplication.shared
+        let app = NSApplication.shared
+        let policy = app.activationPolicy()
+        try #require(app.setActivationPolicy(.regular))
+        defer { if policy != .regular { _ = app.setActivationPolicy(policy) } }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -133,6 +137,14 @@ struct OnboardingTests {
         #expect(controller.window?.firstResponder === fieldEditor)
 
         if stream != nil {
+            let mainWindow = try #require(controller.window)
+            mainWindow.makeKeyAndOrderFront(nil)
+            app.activate(ignoringOtherApps: true)
+            let activationDeadline = ContinuousClock.now + .seconds(3)
+            while (!app.isActive || !mainWindow.isKeyWindow), ContinuousClock.now < activationDeadline {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            try #require(app.isActive && mainWindow.isKeyWindow, "The native playback test requires an active AppKit window.")
             let enter = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                                      windowNumber: 0, context: nil, characters: "\r",
                                                      charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
@@ -141,8 +153,8 @@ struct OnboardingTests {
             #expect(controller.playing?.name == "Second")
             // Cold LibVLC plugin discovery is separate from opening the stream.
             await controller.playbackTask?.value
-            try await waitForPlaying(player, channel: "Second")
-            try await exerciseNativeFullscreen(controller, player: player)
+            try await waitForPlaying(controller, phase: "Second before full screen")
+            try await exerciseNativeFullscreen(controller)
 
             controller.stopPlayback()
             await controller.playbackTask?.value
@@ -151,8 +163,7 @@ struct OnboardingTests {
             controller.table.keyDown(with: enter)
             #expect(controller.playing?.name == "Third")
             await controller.playbackTask?.value
-            try await waitForPlaying(player, channel: "Third")
-            let mainWindow = try #require(controller.window)
+            try await waitForPlaying(controller, phase: "Third after Stop")
             #expect(mainWindow.firstResponder === controller.pauseButton)
             #expect(controller.cycleFocus(in: mainWindow, backward: false))
             let focused = mainWindow.firstResponder as? NSButton
@@ -326,20 +337,14 @@ struct OnboardingTests {
     }
 
     @MainActor
-    private func exerciseNativeFullscreen(_ controller: MainController, player: Player) async throws {
+    private func exerciseNativeFullscreen(_ controller: MainController) async throws {
         let window = try #require(controller.window)
         let button = try #require(controller.playerControls.compactMap { $0 as? NSButton }.first { $0.title == "Full Screen" })
         let video = controller.video
         let renderer = try #require(video.subviews.first)
         let attempt = controller.playbackAttempt
-        let policy = NSApp.activationPolicy()
-        if policy != .regular {
-            try #require(NSApp.setActivationPolicy(.regular))
-            NSApp.activate(ignoringOtherApps: true)
-        }
         defer {
             if window.styleMask.contains(.fullScreen) { controller.fullscreen() }
-            if policy != .regular { _ = NSApp.setActivationPolicy(policy) }
         }
 
         controller.toggleList()
@@ -353,8 +358,8 @@ struct OnboardingTests {
         let videoPoint = NSPoint(x: video.bounds.midX, y: video.bounds.midY)
         #expect(video.hitTest(video.convert(videoPoint, to: video.superview)) == nil)
         #expect(window.firstResponder === controller.pauseButton)
-        let fullscreenFrames = await player.sample().progress?.displayedVideo ?? 0
-        try await waitForPlaying(player, channel: "Second", afterDisplayedFrames: fullscreenFrames)
+        let fullscreenFrames = await controller.player.sample().progress?.displayedVideo ?? 0
+        try await waitForPlaying(controller, phase: "Second in full screen", afterDisplayedFrames: fullscreenFrames)
 
         controller.fullscreen()
         try await waitForFullscreen(window: window, button: button, enabled: false)
@@ -364,8 +369,8 @@ struct OnboardingTests {
         #expect(!video.visibleRect.isEmpty)
         #expect(controller.cycleFocus(in: window, backward: false))
         #expect((window.firstResponder as? NSButton)?.title == "Stop")
-        let windowedFrames = await player.sample().progress?.displayedVideo ?? 0
-        try await waitForPlaying(player, channel: "Second", afterDisplayedFrames: windowedFrames)
+        let windowedFrames = await controller.player.sample().progress?.displayedVideo ?? 0
+        try await waitForPlaying(controller, phase: "Second after full screen", afterDisplayedFrames: windowedFrames)
         #expect(controller.playbackAttempt == attempt)
     }
 
@@ -379,15 +384,26 @@ struct OnboardingTests {
         try #require(window.styleMask.contains(.fullScreen) == enabled && button.title == title)
     }
 
-    private func waitForPlaying(_ player: Player, channel: String, afterDisplayedFrames: Int = 0) async throws {
+    @MainActor
+    private func waitForPlaying(_ controller: MainController, phase: String, afterDisplayedFrames: Int = 0) async throws {
         let deadline = ContinuousClock.now + .seconds(8)
+        let player = controller.player
         var sample = await player.sample()
         while (sample.state != 3 || (sample.progress?.displayedVideo ?? 0) <= afterDisplayedFrames) && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(50))
             sample = await player.sample()
         }
         let displayedFrames = sample.progress?.displayedVideo ?? 0
+        let video = controller.video
+        let window = controller.window
+        let renderers = video.subviews.map { "\(type(of: $0)) frame=\($0.frame) visible=\($0.visibleRect)" }
+        let diagnostics = "state=\(sample.state), decoded frames=\(sample.progress?.decodedVideo ?? 0), displayed frames=\(displayedFrames), "
+            + "app active=\(NSApp.isActive), key=\(window?.isKeyWindow == true), visible=\(window?.isVisible == true), "
+            + "occluded=\(window?.occlusionState.contains(.visible) == false), accelerated display=\(CGDisplayUsesOpenGLAcceleration(CGMainDisplayID())), "
+            + "surface=\(video.frame), visible surface=\(video.visibleRect), renderers=\(renderers)"
         try #require(sample.state == 3 && displayedFrames > afterDisplayedFrames,
-                     "Expected \(channel) to display new video frames; VLC state: \(sample.state), displayed frames: \(displayedFrames)")
+                     "Expected \(phase) to display new video frames. \(diagnostics)")
+        try #require(video.subviews.contains { $0.window === window && !$0.visibleRect.isEmpty },
+                     "Expected \(phase) to use an embedded, visible renderer. \(diagnostics)")
     }
 }
