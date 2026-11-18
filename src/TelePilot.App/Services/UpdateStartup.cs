@@ -4,9 +4,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Avalonia.Automation;
 using Avalonia.Controls;
-using Avalonia.Threading;
 using TelePilot.App.ViewModels;
 using TelePilot.App.Views;
 using static TelePilot.Core.Localization.Localizer;
@@ -63,6 +61,7 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
     private readonly Func<HttpClient> createClient;
     private readonly string directory;
     private readonly Func<TimeSpan, CancellationToken, Task>? retryDelay;
+    private readonly Func<WindowsUpdateInstallation, CancellationToken, Task<bool>>? closeForUpdate;
     private readonly ConcurrentDictionary<Task, byte> networkTasks = new();
     private CancellationTokenSource? cancellation;
     private Task operation = Task.CompletedTask;
@@ -71,18 +70,20 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
     private UpdateProgressWindow? progressWindow;
     private UpdateProgressViewModel? progress;
     private TaskCompletionSource? downloadConsent;
-    private ConfirmationDialog? confirmation;
-    private bool running, manual, stopped, closingProgress, waitingForOwner;
+    private bool running, manual, stopped, closingProgress;
     private int generation;
     private DateTimeOffset nextAllowedCheck;
     internal UpdateStartupSession(Window owner, Version version, Architecture architecture,
         Func<HttpClient>? createClient = null, string? directory = null,
-        Func<TimeSpan, CancellationToken, Task>? retryDelay = null)
+        Func<TimeSpan, CancellationToken, Task>? retryDelay = null,
+        Func<WindowsUpdateInstallation, CancellationToken, Task<bool>>? closeForUpdate = null)
     {
         this.owner = owner; this.version = version; this.architecture = architecture;
         this.createClient = createClient ?? ReleaseUpdate.CreateClient;
         this.directory = directory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TelePilot", "Updates");
         this.retryDelay = retryDelay;
+        this.closeForUpdate = closeForUpdate;
+        if (this.closeForUpdate is null && owner is MainWindow main) this.closeForUpdate = main.CloseForUpdateAsync;
         owner.Closed += OnOwnerClosed;
     }
     internal bool HasWork => running || !networkTasks.IsEmpty;
@@ -94,21 +95,10 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
         this.manual |= manual;
         if (running && cancellation?.IsCancellationRequested != true)
         {
-            if (manual)
-            {
-                if (confirmation is not null) confirmation.Activate();
-                else if (waitingForOwner)
-                {
-                    // Download is already ready: a manual check must restore
-                    // its owner rather than create another busy panel.
-                    if (owner.IsVisible && owner.IsEnabled) owner.Activate();
-                }
-                else ActivateProgress();
-            }
+            if (manual) ActivateProgress();
             return;
         }
         this.manual = manual;
-        waitingForOwner = false;
         downloadConsent = null;
         var id = ++generation;
         cancellation = new CancellationTokenSource();
@@ -131,6 +121,7 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
             Cancel, () => Request(manual: true), OpenDownloadPage, window.Close);
         window.DataContext = model;
         var restoreOwner = false;
+        var ownerFocus = owner.FocusManager?.GetFocusedElement();
         window.Closing += (_, _) => restoreOwner = window.IsActive;
         window.Closed += (_, _) =>
         {
@@ -139,7 +130,11 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
             if (!closingProgress)
             {
                 cancellation?.Cancel();
-                if (restoreOwner && !stopped && OwnerCanActivate) owner.Activate();
+                if (restoreOwner && !stopped && OwnerCanActivate)
+                {
+                    owner.Activate();
+                    ownerFocus?.Focus();
+                }
             }
         };
         progressWindow = window; progress = model;
@@ -155,6 +150,8 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
     private bool OwnerCanActivate => owner.IsVisible && owner.IsEnabled
         && !owner.OwnedWindows.Any(window => window.IsVisible && window.IsDialog);
     private bool OwnerCanPresent => owner.IsActive && OwnerCanActivate;
+    private bool CanCloseForUpdate => OwnerCanActivate
+        && (owner.DataContext is not MainWindowViewModel { IsRecording: true } || owner.IsActive || progressWindow?.IsActive == true);
     private void RevealProgress()
     {
         if (progressWindow is not { } window || window.IsVisible || stopped) return;
@@ -175,20 +172,13 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
     }
     private void ShowProgress(UpdateProgressWindow window)
     {
-        window.ShowActivated = manual;
+        window.ShowActivated = manual || progress?.IsOffering == true;
         window.Show(owner);
-        if (!manual && progress is { IsOffering: true, OfferedVersion: { } offeredVersion }
-            && owner.DataContext is MainWindowViewModel main)
-        {
-            main.AccessibleStatus.AnnounceStatus(T(
-                $"Dostępna jest wersja TelePilot {offeredVersion}. W menu Pomoc wybierz Sprawdź aktualizacje, aby przeczytać historię zmian.",
-                $"TelePilot {offeredVersion} is available. Choose Check for Updates in the Help menu to read the release notes."));
-        }
     }
     private void Cancel()
     {
         cancellation?.Cancel();
-        progress?.Complete(T("Pobieranie aktualizacji anulowane.", "Update download canceled."), retry: true, openPage: true);
+        progress?.Complete(T("Aktualizacja anulowana.", "Update canceled."), retry: true, openPage: true);
     }
     private void CloseProgress()
     {
@@ -276,16 +266,31 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
             var path = await TrackAsync(update.DownloadAsync(asset, token, reported), token);
             token.ThrowIfCancellationRequested();
             if (!Current(id)) return;
-            var updaterWasActive = progressWindow?.IsActive == true;
-            waitingForOwner = true;
-            CloseProgress();
-            if (updaterWasActive && OwnerCanActivate) owner.Activate();
-            while (!OwnerCanPresent)
-                await Task.Delay(TimeSpan.FromMilliseconds(250), token);
-            token.ThrowIfCancellationRequested();
-            if (!Current(id)) return;
-            waitingForOwner = false;
-            await OfferInstallerAsync(asset, path, token);
+            var installation = new WindowsUpdateInstallation(
+                await ReleaseUpdate.OpenVerifiedInstallerAsync(path, asset, token)
+                    ?? throw new InvalidDataException(), T("polish", "english"));
+            var transferred = false;
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                if (!Current(id)) return;
+                if (!CanCloseForUpdate)
+                {
+                    progress?.Busy(T("Pobrano aktualizację. Wróć do głównego okna TelePilot, aby dokończyć instalację.",
+                        "The update has downloaded. Return to the main TelePilot window to finish installing."), 100);
+                    while (!CanCloseForUpdate)
+                        await Task.Delay(TimeSpan.FromMilliseconds(250), token);
+                }
+                token.ThrowIfCancellationRequested();
+                var updaterWasActive = progressWindow?.IsActive == true;
+                CloseProgress();
+                if (updaterWasActive && OwnerCanActivate) owner.Activate();
+                if (closeForUpdate is not null) transferred = await closeForUpdate(installation, token);
+            }
+            finally
+            {
+                if (!transferred) installation.Dispose();
+            }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (OperationCanceledException)
@@ -303,7 +308,7 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
         }
         finally
         {
-            if (id == generation) { running = false; cancellation = null; waitingForOwner = false; downloadConsent = null; }
+            if (id == generation) { running = false; cancellation = null; downloadConsent = null; }
             lifetime.Dispose();
         }
     }
@@ -313,34 +318,6 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
         progress?.Complete(message, retry: true, openPage: true);
         RevealProgress();
         if (manual && (progressWindow?.IsActive == true || OwnerCanPresent)) progressWindow?.FocusAction();
-    }
-    private async Task OfferInstallerAsync(UpdateAsset asset, string path, CancellationToken token)
-    {
-        var focus = owner.FocusManager?.GetFocusedElement();
-        var title = T("Aktualizacja TelePilot", "TelePilot update");
-        var dialog = new ConfirmationDialog
-        {
-            DataContext = new ConfirmationDialogViewModel(title,
-                T($"Pobrano wersję {asset.Version}. Otworzyć instalator?", $"Version {asset.Version} has been downloaded. Open the installer?"),
-                T("Otwórz instalator", "Open installer"), T("Później", "Later")),
-        };
-        confirmation = dialog;
-        if (dialog.FindControl<Button>("ConfirmButton") is { } openInstaller) AutomationProperties.SetHelpText(openInstaller, string.Empty);
-        dialog.Opened += (_, _) => dialog.FindControl<TextBlock>("ConfirmationMessage")?.Focus();
-        using var registration = token.Register(() => Dispatcher.UIThread.Post(() => dialog.Close(false)));
-        try
-        {
-            if (await dialog.ShowDialog<bool>(owner) && !token.IsCancellationRequested)
-            {
-                if (!await ReleaseUpdate.VerifyAsync(path, asset, token)) throw new InvalidDataException();
-                token.ThrowIfCancellationRequested();
-                try { using var process = Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
-                catch (Exception exception) when (exception is Win32Exception or IOException or UnauthorizedAccessException)
-                { Failure(T("Nie można otworzyć instalatora. Spróbuj ponownie lub otwórz oficjalną stronę pobierania.", "The installer could not be opened. Retry or open the official download page.")); }
-            }
-        }
-        finally { if (ReferenceEquals(confirmation, dialog)) confirmation = null; }
-        if (!token.IsCancellationRequested && owner.IsActive) focus?.Focus();
     }
     private void OpenDownloadPage()
     {
@@ -352,7 +329,6 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
     {
         stopped = true;
         cancellation?.Cancel();
-        confirmation?.Close(false);
         CloseProgress();
         owner.Closed -= OnOwnerClosed;
     }
@@ -366,7 +342,6 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
     {
         stopped = true;
         cancellation?.Cancel();
-        confirmation?.Close(false);
         CloseProgress();
         try { await Task.WhenAll(networkTasks.Keys.Append(operation).Append(reveal)).WaitAsync(TimeSpan.FromSeconds(5)); }
         catch (Exception) { /* Quit remains bounded even if a transport ignores cancellation. */ }

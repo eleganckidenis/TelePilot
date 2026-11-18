@@ -204,15 +204,32 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory, Archite
 
     internal static async Task<bool> VerifyAsync(string path, UpdateAsset asset, CancellationToken cancellationToken)
     {
+        using var input = await OpenVerifiedInstallerAsync(path, asset, cancellationToken).ConfigureAwait(false);
+        return input is not null;
+    }
+
+    // The update handoff retains this read handle so the verified binary cannot
+    // be overwritten or renamed between verification and launching Setup.
+    internal static async Task<FileStream?> OpenVerifiedInstallerAsync(string path, UpdateAsset asset, CancellationToken cancellationToken)
+    {
         if (!File.Exists(path)
             || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
         {
-            return false;
+            return null;
         }
 
-        await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, BufferBytes, FileOptions.Asynchronous);
-        return input.Length == asset.Size
-            && await VerifyStreamAsync(input, null, asset, cancellationToken).ConfigureAwait(false);
+        var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, BufferBytes, FileOptions.Asynchronous);
+        var verified = false;
+        try
+        {
+            verified = input.Length == asset.Size
+                && await VerifyStreamAsync(input, null, asset, cancellationToken).ConfigureAwait(false);
+            return verified ? input : null;
+        }
+        finally
+        {
+            if (!verified) await input.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private static UpdateAsset? SelectAsset(Release? release, Version current, string suffix)

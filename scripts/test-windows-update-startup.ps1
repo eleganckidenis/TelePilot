@@ -210,21 +210,16 @@ function Read-ReleaseNotes($Window, [IntPtr]$WindowHandle, [int]$ProcessId, $Ins
 $app = Start-Process -FilePath $Executable -WorkingDirectory (Split-Path -Parent $Executable) -PassThru
 $timer = [Diagnostics.Stopwatch]::StartNew()
 $offer = $null
-$notice = $null
 $main = $null
 $mainHandle = [IntPtr]::Zero
 $observedWindows = [ordered]@{}
 $controlSamples = [ordered]@{}
 $lastOfferInspection = $null
 $lastActivation = $null
-$progressSeen = $false
-$nonmodalVerified = $false
-$progressMessages = [Collections.Generic.List[string]]::new()
 try {
     while ($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
         if ($app.HasExited) { throw "QA TelePilot exited before showing an update: $($app.ExitCode)." }
         $handles = [NativeUpdaterWindows]::TopLevelWindows($app.Id)
-        $progressVisibleThisPass = $false
         $ownedWindowVisible = $false
         foreach ($handle in $handles) {
             $owner = [NativeUpdaterWindows]::Owner($handle)
@@ -263,7 +258,7 @@ try {
                 $progressMessage = if ($properties.AutomationId -ceq 'update-progress-window') { Find-Control $window 'update-progress-text' }
                 if ($null -ne $progressMessage) {
                     $sample.message = $progressMessage.Current.Name
-                    if ($null -eq $offer -and $sample.message -ceq "Version $ExpectedVersion is available. Download the update?") {
+                    if ($null -eq $offer -and $sample.message.StartsWith("Version $ExpectedVersion is available. After downloading, TelePilot will close,")) {
                         $editorInspection = [Collections.Generic.List[object]]::new()
                         $notes = Read-ReleaseNotes $window $handle $app.Id $editorInspection
                         $download = Find-Control $window 'update-download'
@@ -281,51 +276,25 @@ try {
                         if ($null -ne $notes -and -not $properties.IsOffscreen -and
                             $lastOfferInspection.downloadName -ceq 'Download' -and $lastOfferInspection.laterName -ceq 'Later' -and
                             $lastOfferInspection.downloadInvoke -and $lastOfferInspection.laterInvoke) {
-                            $offer = @{ Message=$sample.message; Download=$download; NotesLength=$notes.Text.Length; NotesProvider=$notes.Provider; Consented=$false }
-                        }
-                    }
-                    $bar = Find-Control $window 'update-progress-bar'
-                    if ($null -ne $bar -and -not $bar.Current.IsOffscreen -and -not $properties.IsOffscreen) {
-                        $progressVisibleThisPass = $true
-                        $progressSeen = $true
-                        if (-not $progressMessages.Contains($sample.message)) { $progressMessages.Add($sample.message) }
-                    }
-                }
-                $message = if ($properties.AutomationId -ceq 'confirmation-dialog') { Find-Control $window 'confirmation-dialog-content' }
-                if ($null -ne $message) {
-                    $sample.message = $message.Current.Name
-                    if (-not $properties.IsOffscreen -and $sample.message -ceq "Version $ExpectedVersion has been downloaded. Open the installer?") {
-                        $confirm = Find-Control $window 'confirmation-dialog-confirm'
-                        $cancel = Find-Control $window 'confirmation-dialog-cancel'
-                        $sample.confirmName = if ($null -ne $confirm) { $confirm.Current.Name }
-                        $sample.cancelName = if ($null -ne $cancel) { $cancel.Current.Name }
-                        if ($null -ne $confirm -and $null -ne $cancel) {
-                            $notice = @{ Window=$window; Message=$sample.message; Cancel=$cancel; Confirm=$confirm }
+                            $offer = @{ Message=$sample.message; Later=$later; Handle=$handle; NotesLength=$notes.Text.Length; NotesProvider=$notes.Provider }
                         }
                     }
                 }
             } catch [Windows.Automation.ElementNotAvailableException] { $sample.staleUiaElement = $true }
         }
         try {
-            if ($null -ne $offer -and -not $offer.Consented -and $null -ne $main) {
+            if ($null -ne $offer -and $null -ne $main) {
                 if (-not $main.Current.IsEnabled -or -not [NativeUpdaterWindows]::IsWindowEnabled($mainHandle)) { throw 'The pre-download offer disabled its owner.' }
                 Start-Sleep -Milliseconds 500
                 if (@(Get-ChildItem -LiteralPath $updates -Force).Count -ne 0) {
                     throw 'The updater wrote files before receiving consent.'
                 }
-                Invoke-Control $offer.Download
-                $offer.Consented = $true
-                $nonmodalVerified = $true
+                break
             }
-            if ($progressVisibleThisPass -and $null -eq $notice -and $null -ne $main) {
-                if (-not $main.Current.IsEnabled -or -not [NativeUpdaterWindows]::IsWindowEnabled($mainHandle)) { throw 'The download progress window disabled its owner.' }
-                $nonmodalVerified = $true
-            }
-            if ($null -ne $notice) { break }
             $foreground = [NativeUpdaterWindows]::GetForegroundWindow()
             if ($null -ne $main -and -not $ownedWindowVisible -and $foreground -ne $mainHandle -and
                 $main.Current.IsEnabled -and -not $main.Current.IsOffscreen) {
-                # Startup and the ready-to-install prompt wait for an active owner.
+                # Startup waits for an active owner.
                 # Never take focus away from an owned window that's already open.
                 $lastActivation = [ordered]@{
                     from=$foreground.ToInt64(); previousProcessId=[NativeUpdaterWindows]::ProcessId($foreground)
@@ -335,38 +304,36 @@ try {
         } catch [Windows.Automation.ElementNotAvailableException] { }
         Start-Sleep -Milliseconds 250
     }
-    if ($null -eq $offer -or -not $offer.Consented -or $null -eq $notice) {
-        throw 'Current-source native updater did not complete the offer and consent flow.'
+    if ($null -eq $offer -or $null -eq $main) {
+        throw 'Current-source native updater did not present the startup offer.'
     }
-    if ($notice.Confirm.Current.Name -cne 'Open installer' -or $notice.Cancel.Current.Name -cne 'Later') {
-        throw 'The updater did not expose its expected accessible installer controls.'
+    Invoke-Control $offer.Later
+    $dismissal = [Diagnostics.Stopwatch]::StartNew()
+    while ([NativeUpdaterWindows]::IsWindowVisible($offer.Handle) -and $dismissal.Elapsed.TotalSeconds -lt 5) {
+        Start-Sleep -Milliseconds 100
     }
-    $downloaded = Join-Path $updates $name
-    if ((Get-FileHash -LiteralPath $downloaded -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hash) {
-        throw 'The actual downloaded installer differs from the verified public reference.'
+    if ([NativeUpdaterWindows]::IsWindowVisible($offer.Handle) -or $app.HasExited -or
+        -not [NativeUpdaterWindows]::IsWindowEnabled($mainHandle) -or @(Get-ChildItem -LiteralPath $updates -Force).Count -ne 0) {
+        throw 'Later failed to dismiss the offer, preserve the open main window, or skip the download.'
     }
     $evidence = [ordered]@{
         testExecutableVersion=$qaVersion; runtime=$Runtime; processId=$app.Id
         latestPublicVersion=$ExpectedVersion; referenceInstaller=$name; referenceSha256=$hash
-        downloadedBytes=(Get-Item -LiteralPath (Join-Path $updates $name)).Length
-        offerMessage=$offer.Message; releaseNotesLength=$offer.NotesLength; releaseNotesProvider=$offer.NotesProvider; cacheEmptyBeforeConsent=$true
-        progressObserved=$progressSeen; nonmodalOwnerVerified=$nonmodalVerified; progressMessages=$progressMessages.ToArray()
+        offerMessage=$offer.Message; releaseNotesLength=$offer.NotesLength; releaseNotesProvider=$offer.NotesProvider
+        laterDismissedWithoutDownload=$true; nonmodalOwnerVerified=$true
         sourceCommit=$env:GITHUB_SHA
-        actualStartupNotice=$notice.Message; noticeTitle=$notice.Window.Current.Name
         elapsedSeconds=[Math]::Round($timer.Elapsed.TotalSeconds, 3)
-        scenario='Current release source, TEST-ONLY assembly version 2.0.2, real uncached public update, native Windows UI Automation; this is not the original 2.0.2 binary'
+        scenario='Current-source QA app at version 2.0.2, public GitHub metadata, native Windows UI Automation, and deferral via Later'
     }
     $evidence | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $EvidenceDirectory "new-updater-native-$Runtime.json") -Encoding UTF8
-    Invoke-Control $notice.Cancel
-    Write-Host "PASS: current-source native $Runtime updater offered $ExpectedVersion with release notes and verified the installer after $($evidence.elapsedSeconds)s; progressObserved=$progressSeen, nonmodal=$nonmodalVerified."
+    Write-Host "PASS: current-source native $Runtime updater offered $ExpectedVersion with release notes and deferred the update after $($evidence.elapsedSeconds)s."
 } catch {
     $foreground = [NativeUpdaterWindows]::GetForegroundWindow()
     $diagnostics = [ordered]@{
         failure=$_.Exception.Message; runtime=$Runtime; processId=$app.Id; elapsedSeconds=[Math]::Round($timer.Elapsed.TotalSeconds, 3)
         foregroundHandle=$foreground.ToInt64(); foregroundProcessId=[NativeUpdaterWindows]::ProcessId($foreground)
         mainHandle=$mainHandle.ToInt64(); lastActivation=$lastActivation; windows=@($observedWindows.Values); controlSamples=$controlSamples
-        offerInspection=$lastOfferInspection; consented=($null -ne $offer -and $offer.Consented)
-        progressMessages=$progressMessages.ToArray(); updateCacheEntries=@(Get-ChildItem -LiteralPath $updates -Force).Count
+        offerInspection=$lastOfferInspection; updateCacheEntries=@(Get-ChildItem -LiteralPath $updates -Force).Count
     }
     $diagnostics | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $EvidenceDirectory "new-updater-native-$Runtime-failure.json") -Encoding UTF8
     Write-Host (ConvertTo-Json -InputObject $diagnostics -Depth 7 -Compress)

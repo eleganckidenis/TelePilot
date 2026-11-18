@@ -1,5 +1,17 @@
 # Changelog / Historia zmian
 
+## 2.1.4
+
+### Polski
+
+- Windows: okno z wersją i historią zmian przejmuje fokus po wykryciu aktualizacji przy starcie. Wybierz **Pobierz** albo **Później**.
+- Windows: po pobraniu i sprawdzeniu paczki TelePilot zamyka się, pokazuje postęp instalacji i uruchamia się ponownie. Windows może poprosić o zgodę administratora. Przejście ze starszej wersji korzysta jednorazowo ze zwykłego instalatora.
+
+### English
+
+- Windows: when an update is detected at startup, the window takes focus and displays the version and release notes. Choose **Download** or **Later**.
+- Windows: after downloading and verifying the package, TelePilot closes, shows installation progress, and reopens. Windows may request administrator approval. Upgrading from an older version uses the regular installer once.
+
 ## 2.1.3
 
 ### Polski

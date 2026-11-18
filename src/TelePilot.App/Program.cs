@@ -9,6 +9,7 @@ namespace TelePilot.App;
 internal static class Program
 {
     private static SingleInstanceCoordinator? singleInstanceCoordinator;
+    internal static WindowsUpdateInstallation? PendingUpdate { get; set; }
 
     [STAThread]
     public static void Main(string[] args)
@@ -44,12 +45,19 @@ internal static class Program
         singleInstanceCoordinator = coordinator;
         try
         {
-            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+            try { BuildAvaloniaApp().StartWithClassicDesktopLifetime(args); }
+            finally
+            {
+                singleInstanceCoordinator = null;
+                coordinator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+
+            if (OperatingSystem.IsWindows()) PendingUpdate?.StartAfterShutdown();
         }
         finally
         {
-            singleInstanceCoordinator = null;
-            coordinator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            PendingUpdate?.Dispose();
+            PendingUpdate = null;
         }
     }
 

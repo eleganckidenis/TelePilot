@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -22,6 +23,7 @@ public sealed class UpdateStartupTests
 {
     private static readonly byte[] Payload = "MZ synthetic verified installer"u8.ToArray();
     private const string Name = "TelePilot-2.10.0-win-x64-setup.exe";
+    private static readonly string[] SetupArguments = ["/SILENT", "/SP-", "/NORESTART", "/NOCLOSEAPPLICATIONS", "/LANG=polish", "/TELEPILOTUPDATE=1234"];
     private static HttpResponseMessage Metadata(string tag = "v2.10.0", string? notes = null) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(JsonSerializer.Serialize(new
@@ -51,7 +53,7 @@ public sealed class UpdateStartupTests
     }
 
     [AvaloniaFact]
-    public async Task AutomaticOfferKeepsOwnerInteractiveAndDownloadsTheCheckedAssetOnlyAfterConsent()
+    public async Task AutomaticOfferActivatesAndDownloadsTheCheckedAssetOnlyAfterConsent()
     {
         var body = new HeldBody();
         await using var fixture = new Fixture((request, _) => Task.FromResult(request.RequestUri!.Host == "api.github.com"
@@ -62,9 +64,8 @@ public sealed class UpdateStartupTests
         var model = await WaitForOfferAsync(fixture);
         var window = Assert.IsType<UpdateProgressWindow>(fixture.Session.ProgressWindow);
         await DrainUntilAsync(() => window.IsVisible);
-        Assert.True(window.IsVisible); Assert.False(window.ShowActivated);
+        Assert.True(window.IsVisible); Assert.True(window.ShowActivated);
         Assert.True(fixture.Owner.IsEnabled);
-        Assert.Same(editor, fixture.Owner.FocusManager!.GetFocusedElement());
         Assert.Contains("2.10.0", model.Message, StringComparison.Ordinal);
         Assert.Equal("Polskie zmiany", model.ReleaseNotes);
         Assert.False(model.IsBusy);
@@ -275,71 +276,99 @@ public sealed class UpdateStartupTests
     }
 
     [AvaloniaFact]
-    public async Task FocusedManualProgressTransitionsToExistingReadyConfirmationWithoutClickingMain()
+    public async Task VerifiedDownloadRequestsGracefulShutdownAndUsesVisibleSilentSetup()
     {
         var body = new HeldBody();
-        await using var fixture = new Fixture((request, _) => Task.FromResult(request.RequestUri!.Host == "api.github.com" ? Metadata() : Bytes(body)));
+        ProcessStartInfo? setup = null;
+        await using var fixture = new Fixture((request, _) => Task.FromResult(request.RequestUri!.Host == "api.github.com" ? Metadata() : Bytes(body)),
+            closeForUpdate: (installation, _) =>
+            {
+                setup = installation.CreateStartInfo(1234);
+                Assert.Throws<IOException>(() => File.OpenWrite(setup.FileName));
+                return Task.FromResult(false);
+            });
         fixture.Session.Request(manual: true);
         (await WaitForOfferAsync(fixture)).DownloadCommand.Execute(null);
         await body.Waiting.Task.WaitAsync(TimeSpan.FromSeconds(2));
         fixture.Session.ProgressWindow!.Activate();
         body.Release.TrySetResult();
-        await DrainUntilAsync(() => fixture.Owner.OwnedWindows.OfType<ConfirmationDialog>().Any());
-        var ready = fixture.Owner.OwnedWindows.OfType<ConfirmationDialog>().Single();
-        var data = Assert.IsType<ConfirmationDialogViewModel>(ready.DataContext);
-        Assert.Contains("2.10.0", data.Message, StringComparison.Ordinal);
-        Assert.Equal("Otwórz instalator", data.ConfirmButtonText);
-        ready.Close(false);
-        await fixture.Session.Completion;
+        await fixture.Session.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        var startInfo = Assert.IsType<ProcessStartInfo>(setup);
+        Assert.Equal(Path.Combine(fixture.Directory, Name), startInfo.FileName);
+        Assert.True(startInfo.UseShellExecute);
+        Assert.Equal(SetupArguments, startInfo.ArgumentList);
+        using var writable = File.OpenWrite(startInfo.FileName); // The rejected quit released the verification handle.
+        Assert.Null(fixture.Session.ProgressWindow);
+        Assert.True(fixture.Owner.IsVisible);
+        Assert.Empty(fixture.Owner.OwnedWindows);
     }
 
     private static void SetActive(Window owner, bool active) =>
         typeof(WindowBase).GetProperty(nameof(WindowBase.IsActive))!.SetValue(owner, active);
 
     [AvaloniaFact]
-    public async Task ManualCheckDuringReadyOwnerWaitDoesNotCreateAnotherBusyPanel()
+    public async Task VerifiedDownloadWaitsForAnExistingModalDialogWithoutCreatingAnotherPanel()
     {
         var body = new HeldBody();
-        await using var fixture = new Fixture((request, _) => Task.FromResult(request.RequestUri!.Host == "api.github.com" ? Metadata() : Bytes(body)));
-        SetActive(fixture.Owner, false);
+        var shutdownRequested = false;
+        await using var fixture = new Fixture((request, _) => Task.FromResult(request.RequestUri!.Host == "api.github.com" ? Metadata() : Bytes(body)),
+            closeForUpdate: (_, _) =>
+            {
+                shutdownRequested = true;
+                return Task.FromResult(false);
+            });
         fixture.Session.Request(manual: false);
         (await WaitForOfferAsync(fixture)).DownloadCommand.Execute(null);
         await body.Waiting.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var modal = new Window();
+        var modalResult = modal.ShowDialog(fixture.Owner);
         body.Release.TrySetResult();
-        await DrainUntilAsync(() => fixture.Session.ProgressWindow is null && File.Exists(Path.Combine(fixture.Directory, Name)));
-        fixture.Session.Request(manual: true);
-        Assert.Null(fixture.Session.ProgressWindow);
-        await DrainUntilAsync(() => fixture.Owner.OwnedWindows.OfType<ConfirmationDialog>().Any());
-        fixture.Owner.OwnedWindows.OfType<ConfirmationDialog>().Single().Close(false);
-        await fixture.Session.Completion;
+        await DrainUntilAsync(() => fixture.Session.ProgressWindow?.DataContext is UpdateProgressViewModel model
+            && model.Message.Contains("Wróć", StringComparison.Ordinal));
+        Assert.False(shutdownRequested);
+        modal.Close();
+        await modalResult;
+        await fixture.Session.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(shutdownRequested);
     }
 
     [AvaloniaFact]
-    public async Task SecondFailurePanelInSameOperationCanRevealAfterBackgroundVerificationFailure()
+    public async Task VerifiedDownloadClosesMainWindowAndCommitsTheHandoffEvenWhenItIsInactive()
     {
-        var body = new HeldBody();
-        await using var fixture = new Fixture((request, _) => Task.FromResult(request.RequestUri!.Host == "api.github.com" ? Metadata() : Bytes(body)));
+        await using var fixture = new Fixture((request, _) => Task.FromResult(request.RequestUri!.Host == "api.github.com"
+            ? Metadata() : Bytes(new MemoryStream(Payload))), new MainWindow());
+        UpdateStartup.ForOwner(fixture.Owner, _ => fixture.Session);
         SetActive(fixture.Owner, false);
-        fixture.Session.Request(manual: false);
+        try
+        {
+            fixture.Session.Request(manual: false);
+            (await WaitForOfferAsync(fixture)).DownloadCommand.Execute(null);
+            await DrainUntilAsync(() => !fixture.Owner.IsVisible);
+            await fixture.Session.Completion;
+            var installation = Assert.IsType<WindowsUpdateInstallation>(TelePilot.App.Program.PendingUpdate);
+            Assert.Equal(Path.Combine(fixture.Directory, Name), installation.CreateStartInfo(1234).FileName);
+        }
+        finally
+        {
+            TelePilot.App.Program.PendingUpdate?.Dispose();
+            TelePilot.App.Program.PendingUpdate = null;
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task FailedVerificationNeverRequestsShutdownAndKeepsRetryAvailable()
+    {
+        var shutdownRequested = false;
+        await using var fixture = new Fixture((request, _) => Task.FromResult(request.RequestUri!.Host == "api.github.com" ? Metadata()
+            : Bytes(new MemoryStream(new byte[Payload.Length]))),
+            closeForUpdate: (_, _) => Task.FromResult(shutdownRequested = true));
+        fixture.Session.Request(manual: true);
         var offer = await WaitForOfferAsync(fixture);
-        var firstPanel = fixture.Session.ProgressWindow;
-        Assert.False(firstPanel!.IsVisible);
         offer.DownloadCommand.Execute(null);
-        await body.Waiting.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        body.Release.TrySetResult();
-        await DrainUntilAsync(() => fixture.Session.ProgressWindow is null && File.Exists(Path.Combine(fixture.Directory, Name)));
-        fixture.Owner.Activate();
-        await DrainUntilAsync(() => fixture.Owner.OwnedWindows.OfType<ConfirmationDialog>().Any());
-        var ready = fixture.Owner.OwnedWindows.OfType<ConfirmationDialog>().Single();
-        SetActive(fixture.Owner, false);
-        await File.WriteAllTextAsync(Path.Combine(fixture.Directory, Name), "modified after the verified download");
-        ready.Close(true);
-        await fixture.Session.Completion;
-        var secondPanel = fixture.Session.ProgressWindow;
-        Assert.NotNull(secondPanel); Assert.NotSame(firstPanel, secondPanel);
-        Assert.True(Assert.IsType<UpdateProgressViewModel>(secondPanel.DataContext).CanRetry);
-        fixture.Owner.Activate();
-        await DrainUntilAsync(() => secondPanel.IsVisible);
+        await fixture.Session.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(shutdownRequested);
+        Assert.True(offer.CanRetry);
+        Assert.Empty(Directory.EnumerateFiles(fixture.Directory));
     }
 
     [AvaloniaFact]
@@ -354,7 +383,7 @@ public sealed class UpdateStartupTests
         Assert.False(fixture.Session.ProgressWindow!.IsVisible);
         other.Close(); await otherResult; fixture.Owner.Activate();
         await DrainUntilAsync(() => fixture.Session.ProgressWindow!.IsVisible);
-        Assert.False(fixture.Session.ProgressWindow!.ShowActivated);
+        Assert.True(fixture.Session.ProgressWindow!.ShowActivated);
         Assert.Single(fixture.Requests);
         Assert.False(Directory.Exists(fixture.Directory));
     }
@@ -367,12 +396,13 @@ public sealed class UpdateStartupTests
         public UpdateStartupSession Session { get; }
         public List<Uri> Requests { get; } = [];
         public string Directory => Path.Combine(temporary.FullName, "updates");
-        public Fixture(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send, Window? owner = null)
+        public Fixture(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send, Window? owner = null,
+            Func<WindowsUpdateInstallation, CancellationToken, Task<bool>>? closeForUpdate = null)
         {
             this.send = send; Owner = owner ?? new Window(); Owner.Show(); Owner.Activate(); Dispatcher.UIThread.RunJobs();
             Session = new(Owner, new(2, 0, 2), Architecture.X64,
                 () => new HttpClient(new Handler((request, token) => { Requests.Add(request.RequestUri!); return this.send(request, token); })), Directory,
-                (_, token) => { token.ThrowIfCancellationRequested(); return Task.CompletedTask; });
+                (_, token) => { token.ThrowIfCancellationRequested(); return Task.CompletedTask; }, closeForUpdate);
         }
         public async ValueTask DisposeAsync()
         {

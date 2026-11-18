@@ -40,6 +40,7 @@ public sealed partial class MainWindow : Window
     private bool closeApproved;
     private bool updateShutdownComplete;
     private bool closePromptActive;
+    private WindowsUpdateInstallation? pendingUpdate;
     private IInputElement? focusBeforeMainMenu;
     private bool isMainMenuFocusRestorePending;
     private bool restoreChannelFocusAfterReplacement;
@@ -1504,6 +1505,25 @@ public sealed partial class MainWindow : Window
         Close();
     }
 
+    internal async Task<bool> CloseForUpdateAsync(WindowsUpdateInstallation installation, CancellationToken token)
+    {
+        if (closePromptActive || closeApproved || !IsVisible) return false;
+        closePromptActive = true;
+        try
+        {
+            if (CurrentViewModel is { } model && !await model.ConfirmCloseAsync()) return false;
+            if (token.IsCancellationRequested || !IsVisible || closeApproved) return false;
+
+            pendingUpdate = installation;
+            closeApproved = true;
+            // Let the updater operation finish before the ordinary closing path
+            // waits for it. The handoff is committed only once this window closes.
+            Dispatcher.UIThread.Post(Close);
+            return true;
+        }
+        finally { closePromptActive = false; }
+    }
+
     private async void OnClosing(object? sender, WindowClosingEventArgs e)
     {
         var currentViewModel = CurrentViewModel;
@@ -1537,6 +1557,11 @@ public sealed partial class MainWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        if (pendingUpdate is { } installation)
+        {
+            Program.PendingUpdate = installation;
+            pendingUpdate = null;
+        }
         Activated -= OnActivated;
         Deactivated -= OnDeactivated;
         Closing -= OnClosing;

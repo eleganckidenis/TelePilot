@@ -154,6 +154,8 @@ Każdy punkt ma wynik: **zaliczony**, **niezaliczony**, **nie dotyczy**. Dla wyn
 - [ ] Ten sam błąd nie jest jednocześnie dublowany przez dialog i region live.
 - [ ] Po zamknięciu dialogu fokus wraca do kontrolki wywołującej.
 - [ ] Zamykanie podczas nagrywania wymaga potwierdzenia i nie pozostawia procesu FFmpeg.
+- [ ] Na Windows oferta aktualizacji przy starcie otrzymuje fokus po zamknięciu wcześniej otwartego dialogu. Czytnik odczytuje numer wersji, nazwane pole historii zmian i przyciski Pobierz oraz Później. Tab i Shift+Tab zapętlają się, a Później i Escape przywracają fokus w głównym oknie.
+- [ ] Po wybraniu Pobierz instalacja wyświetla dostępny pasek postępu. Zgoda UAC jest obsługiwalna klawiaturą, a po pomyślnej instalacji fokus trafia do ponownie otwartego TelePilota.
 
 ## Kontrola hałasu czytnika
 

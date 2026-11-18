@@ -2,7 +2,7 @@
 #define AppExeName "TelePilot.exe"
 
 #ifndef AppVersion
-  #define AppVersion "2.1.3"
+  #define AppVersion "2.1.4"
 #endif
 
 #ifndef Runtime
@@ -70,6 +70,10 @@ Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
 [CustomMessages]
 LaunchTelePilot=Launch TelePilot
 polish.LaunchTelePilot=Uruchom TelePilot
+UpdateTitle=TelePilot update
+polish.UpdateTitle=Aktualizacja TelePilot
+UpdateProcessStillRunning=Setup could not confirm that the previous TelePilot process closed. Close TelePilot and try again.
+polish.UpdateProcessStillRunning=Nie udało się potwierdzić zamknięcia poprzedniego procesu TelePilot. Zamknij TelePilot i spróbuj ponownie.
 LegacyPerUserInstallDetected=An older per-user development build of TelePilot was detected. Uninstall that build from Windows Settings > Apps > Installed apps, then run this installer again.%n%nYour settings and playlist sources will remain preserved.
 polish.LegacyPerUserInstallDetected=Wykryto starszą wersję testową TelePilot zainstalowaną w profilu użytkownika. Odinstaluj ją w Ustawieniach Windows > Aplikacje > Zainstalowane aplikacje, a następnie uruchom ten instalator ponownie.%n%nUstawienia i źródła playlist pozostaną zachowane.
 VlcCleanupFailed=Setup could not remove obsolete VLC files. Close TelePilot and run Setup again.
@@ -97,11 +101,65 @@ Type: files; Name: "{app}\installer-language.txt"
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchTelePilot}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser skipifnotsilent; Check: IsTelePilotUpdate
 
 [Code]
 const
   LegacyPerUserUninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{873edad3-c012-470d-a2e9-f3b66d236796}_is1';
   ReparsePointAttribute = $400;
+  SynchronizeAccess = $100000;
+  ErrorInvalidParameter = 87;
+  WaitObjectSignaled = 0;
+
+function OpenProcess(DesiredAccess: Cardinal; InheritHandle: BOOL; ProcessId: Cardinal): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function WaitForSingleObject(Handle: THandle; Milliseconds: Cardinal): Cardinal;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function CloseHandle(Handle: THandle): BOOL;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+function UpdateProcessId(): Integer;
+begin
+  Result := StrToIntDef(ExpandConstant('{param:TELEPILOTUPDATE|0}'), 0);
+end;
+
+function IsTelePilotUpdate(): Boolean;
+begin
+  Result := WizardSilent and (UpdateProcessId() > 0);
+end;
+
+procedure InitializeWizard();
+begin
+  if IsTelePilotUpdate() then
+    WizardForm.Caption := ExpandConstant('{cm:UpdateTitle}');
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  PreviousProcess: THandle;
+begin
+  Result := '';
+  if not IsTelePilotUpdate() then
+    Exit;
+
+  PreviousProcess := OpenProcess(SynchronizeAccess, False, UpdateProcessId());
+  if PreviousProcess = 0 then
+  begin
+    if DLLGetLastError <> ErrorInvalidParameter then
+      Result := ExpandConstant('{cm:UpdateProcessStillRunning}');
+    Exit;
+  end;
+
+  try
+    Log('Waiting for the previous TelePilot process to exit.');
+    if WaitForSingleObject(PreviousProcess, 30000) = WaitObjectSignaled then
+      Log('The previous TelePilot process has exited.')
+    else
+      Result := ExpandConstant('{cm:UpdateProcessStillRunning}');
+  finally
+    CloseHandle(PreviousProcess);
+  end;
+end;
 
 function FfmpegExists(): Boolean;
 #if Runtime == "win-x64"
@@ -231,6 +289,8 @@ begin
   if CurStep = ssPostInstall then
   begin
     CleanUpVlcUpgrade();
+    if IsTelePilotUpdate() and FileExists(ExpandConstant('{app}\installer-language.txt')) then
+      Exit;
     if ActiveLanguage = 'polish' then
       LanguageCode := 'pl'
     else

@@ -1,5 +1,10 @@
 # Historia zmian — TelePilot dla Apple Silicon
 
+## 2.1.4
+
+- Po pobraniu aktualizacji wybierz **OK**, aby otworzyć obraz DMG i zamknąć TelePilota. Przeciągnij aplikację do folderu Aplikacje, aby ukończyć instalację.
+- After downloading the update, choose **OK** to open the DMG and quit TelePilot. Drag the app to Applications to finish installing.
+
 ## 2.1.3
 
 - Full screen hides the player controls and fills the display with centered video. Escape restores the previous layout and keyboard focus.

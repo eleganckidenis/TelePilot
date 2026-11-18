@@ -144,7 +144,57 @@ jobs:
           $installers = @(Get-ChildItem -Path "artifacts/release/*/$env:TELEPILOT_BUILD_RUNTIME/*-setup.exe")
           if ($installers.Count -ne 1) { throw 'Expected exactly one release installer.' }
           [xml]$project = Get-Content -LiteralPath 'src/TelePilot.App/TelePilot.App.csproj' -Raw
-          ./scripts/test-windows-installer.ps1 -Installer $installers[0].FullName -Version $project.Project.PropertyGroup.Version -Runtime $env:TELEPILOT_BUILD_RUNTIME
+          $profile = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'TelePilot'
+          if (Test-Path -LiteralPath $profile) { throw 'Expected a fresh disposable runner profile.' }
+          try {
+            ./scripts/test-windows-installer.ps1 -Installer $installers[0].FullName -Version $project.Project.PropertyGroup.Version -Runtime $env:TELEPILOT_BUILD_RUNTIME
+          } finally {
+            if (Test-Path -LiteralPath $profile) { Move-Item -LiteralPath $profile -Destination (Join-Path $env:RUNNER_TEMP 'clean-install-test-profile') }
+          }
+      - name: Upgrade the preceding public installation and verify native progress
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $installers = @(Get-ChildItem -Path "artifacts/release/*/$env:TELEPILOT_BUILD_RUNTIME/*-setup.exe")
+          if ($installers.Count -ne 1) { throw 'Expected exactly one release installer.' }
+          [xml]$project = Get-Content -LiteralPath 'src/TelePilot.App/TelePilot.App.csproj' -Raw
+          $version = [version]$project.Project.PropertyGroup.Version
+          $releases = @(gh api 'repos/eleganckidenis/TelePilot/releases?per_page=30' | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { throw 'Could not list the preceding public releases.' }
+          $preceding = foreach ($release in $releases) {
+            if ($release.draft -or $release.prerelease -or $release.tag_name -cnotmatch '^v(\d+\.\d+\.\d+)$') { continue }
+            $published = [version]$Matches[1]
+            if ($published -ge $version) { continue }
+            $name = "TelePilot-$published-$env:TELEPILOT_BUILD_RUNTIME-setup.exe"
+            $assets = @($release.assets | Where-Object {
+                $_.name -ceq $name -and $_.state -ceq 'uploaded' -and $_.digest -cmatch '^sha256:[0-9a-f]{64}$'
+            })
+            if ($assets.Count -eq 1) {
+              [pscustomobject]@{ Version = $published; Tag = $release.tag_name; Asset = $assets[0] }
+            }
+          }
+          $previous = $preceding | Sort-Object -Property Version -Descending | Select-Object -First 1
+          if (-not $previous) { throw 'No preceding public installer with a SHA-256 digest is available.' }
+          $stage = Join-Path $env:RUNNER_TEMP 'native-updater-ui'
+          $baseline = Join-Path $stage $previous.Asset.name
+          if (-not (Test-Path -LiteralPath $baseline)) {
+            gh release download $previous.Tag --repo eleganckidenis/TelePilot --pattern $previous.Asset.name --dir $stage
+            if ($LASTEXITCODE -ne 0) { throw 'Could not download the preceding public installer.' }
+          }
+          if ((Get-Item -LiteralPath $baseline).Length -ne $previous.Asset.size) { throw 'The preceding installer has the wrong size.' }
+          $evidence = Join-Path $env:RUNNER_TEMP 'update-installation-evidence'
+          ./scripts/test-windows-update-installation.ps1 -Installer $installers[0].FullName -Version $version.ToString(3) `
+            -PreviousInstaller $baseline -PreviousVersion $previous.Version.ToString(3) -PreviousSha256 $previous.Asset.digest.Substring(7) `
+            -Runtime $env:TELEPILOT_BUILD_RUNTIME -EvidenceDirectory $evidence
+      - name: Keep native update installation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: updater-installation-${{ matrix.runtime }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: ${{ runner.temp }}/update-installation-evidence/
       - name: Verify FFmpeg download and checksum rejection with real Inno Setup
         if: ${{ !cancelled() && steps.build_installer.outcome == 'success' }}
         shell: pwsh
