@@ -66,10 +66,52 @@ jobs:
           python3 ./scripts/prepare-macos-dependency-sources.py --archive-dir "$deps/ffmpeg/archives" \
             --manifest "$manifest/source-manifest.json" --license-dir "$manifest/licenses" \
             --output "macos/artifacts/TelePilot-$version-macos-third-party-sources.zip"
+      - name: Retain built Apple Silicon files for verification
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: TelePilot-macos-arm64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            macos/artifacts/TelePilot-*-Apple-Silicon.dmg
+            macos/artifacts/TelePilot-*-Apple-Silicon.dmg.sha256
+            macos/artifacts/TelePilot-*-macos-third-party-sources.zip
+            macos/artifacts/TelePilot-*-macos-third-party-sources.zip.sha256
       - name: Run native AppKit, playback and system checks
         shell: bash
         run: |
           deps="$RUNNER_TEMP/telepilot-dependencies"
+          printf 'Console user: %s; runner: %s\n' "$(stat -f %Su /dev/console)" "$(id -un)"
+          if launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
+            echo 'Runner has an Aqua launch domain.'
+          else
+            echo 'Runner has no Aqua launch domain.'
+          fi
+          cat > "$deps/opengl-probe.c" <<'EOF'
+          #include <OpenGL/OpenGL.h>
+          #include <stdio.h>
+          int main(void) {
+              CGLPixelFormatAttribute attributes[] = {
+                  kCGLPFAAllowOfflineRenderers, kCGLPFADoubleBuffer, kCGLPFAAccelerated, kCGLPFANoRecovery,
+                  kCGLPFAColorSize, 24, kCGLPFAAlphaSize, 8, kCGLPFADepthSize, 24,
+                  kCGLPFASupportsAutomaticGraphicsSwitching, 0
+              };
+              CGLPixelFormatObj format = NULL;
+              CGLContextObj context = NULL;
+              GLint count = 0;
+              CGLError result = CGLChoosePixelFormat(attributes, &format, &count);
+              printf("VLC accelerated OpenGL pixel formats: %d (error %d)\n", count, result);
+              if (result == kCGLNoError && format != NULL) {
+                  result = CGLCreateContext(format, NULL, &context);
+                  printf("VLC accelerated OpenGL context creation: %d\n", result);
+                  if (context != NULL) CGLDestroyContext(context);
+                  CGLDestroyPixelFormat(format);
+              }
+              return 0;
+          }
+          EOF
+          clang -Wno-deprecated-declarations -framework OpenGL "$deps/opengl-probe.c" -o "$deps/opengl-probe"
+          "$deps/opengl-probe"
           version="$(tr -d '[:space:]' < macos/VERSION)"
           mount="$deps/telepilot-volume"
           mkdir -p "$mount"
@@ -83,14 +125,3 @@ jobs:
             -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 15 \
             -c:v mpeg2video -g 12 -b:v 480k -c:a mp2 -b:a 128k -f mpegts "$TELEPILOT_TEST_TS_FILE"
           python3 ./macos/scripts/test-network-buffer.py --no-parallel
-      - name: Upload verified Apple Silicon release assets
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: TelePilot-macos-arm64
-          if-no-files-found: error
-          retention-days: 14
-          path: |
-            macos/artifacts/TelePilot-*-Apple-Silicon.dmg
-            macos/artifacts/TelePilot-*-Apple-Silicon.dmg.sha256
-            macos/artifacts/TelePilot-*-macos-third-party-sources.zip
-            macos/artifacts/TelePilot-*-macos-third-party-sources.zip.sha256

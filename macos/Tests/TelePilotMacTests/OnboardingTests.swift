@@ -55,6 +55,8 @@ struct OnboardingTests {
         let app = NSApplication.shared
         let policy = app.activationPolicy()
         try #require(app.setActivationPolicy(.regular))
+        // SwiftPM starts a test host without NSApplication.run(), which normally finishes AppKit launch.
+        app.finishLaunching()
         defer { if policy != .regular { _ = app.setActivationPolicy(policy) } }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -139,12 +141,18 @@ struct OnboardingTests {
         if stream != nil {
             let mainWindow = try #require(controller.window)
             mainWindow.makeKeyAndOrderFront(nil)
-            app.activate(ignoringOtherApps: true)
+            let runningApp = NSRunningApplication.current
+            let activationRequested = runningApp.activate(options: [.activateAllWindows])
             let activationDeadline = ContinuousClock.now + .seconds(3)
             while (!app.isActive || !mainWindow.isKeyWindow), ContinuousClock.now < activationDeadline {
+                for _ in 0..<32 {
+                    guard let event = app.nextEvent(matching: .any, until: .distantPast, inMode: .default, dequeue: true) else { break }
+                    app.sendEvent(event)
+                }
                 try await Task.sleep(for: .milliseconds(50))
             }
-            try #require(app.isActive && mainWindow.isKeyWindow, "The native playback test requires an active AppKit window.")
+            let activationStatus = "request=\(activationRequested), app=\(app.isActive), process=\(runningApp.isActive), key=\(mainWindow.isKeyWindow)"
+            try #require(app.isActive && mainWindow.isKeyWindow, "The native playback test requires an active AppKit window (\(activationStatus)).")
             let enter = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                                      windowNumber: 0, context: nil, characters: "\r",
                                                      charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
