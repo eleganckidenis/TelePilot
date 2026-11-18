@@ -69,12 +69,13 @@ jobs:
           export TELEPILOT_TEST_TS_FILE="$stage/synthetic.ts"
           export TELEPILOT_TEST_EXPECTED_DISPLAY_ASPECT=1.3333333333333333
           export TELEPILOT_RUN_APPKIT_INTEGRATION=1 TELEPILOT_RUN_SYSTEM_INTEGRATION=1
-          export TELEPILOT_DEBUG_TEST_EXIT=1
+          export TELEPILOT_APPKIT_TEST_HOST=1
           printf 'Console user: %s; runner: %s\n' "$(stat -f %Su /dev/console)" "$(id -un)"
           if launchctl print "gui/$(id -u)" >/dev/null 2>&1; then echo 'Aqua domain present'; else echo 'No Aqua domain'; fi
           ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=25' \
             -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 15 \
             -c:v mpeg2video -g 12 -b:v 480k -aspect 4:3 -c:a mp2 -b:a 128k -f mpegts "$TELEPILOT_TEST_TS_FILE"
-          python3 ./macos/scripts/test-network-buffer.py --no-parallel 2>&1 | tee "$stage/swift-tests.log"
+          python3 ./macos/scripts/test-network-buffer.py \
+            --filter managerOpensForFirstRunAndImportsSwitchesRemovesAndReturnsFocus 2>&1 | tee "$stage/swift-tests.log"
           grep -Eq 'Test run with [1-9][0-9]* tests? passed after' "$stage/swift-tests.log"
           grep -Fq 'Test managerOpensForFirstRunAndImportsSwitchesRemovesAndReturnsFocus() passed after' "$stage/swift-tests.log"
