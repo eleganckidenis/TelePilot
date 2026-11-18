@@ -102,7 +102,7 @@ jobs:
           export TELEPILOT_TEST_VLC_ROOT="$mount/TelePilot.app/Contents/Frameworks/libvlc"
           export TELEPILOT_TEST_TS_FILE="$deps/synthetic.ts"
           export TELEPILOT_TEST_EXPECTED_DISPLAY_ASPECT=1.3333333333333333
-          export TELEPILOT_RUN_APPKIT_INTEGRATION=1 TELEPILOT_RUN_SYSTEM_INTEGRATION=1
+          export TELEPILOT_APPKIT_TEST_HOST=1 TELEPILOT_RUN_APPKIT_INTEGRATION=1 TELEPILOT_RUN_SYSTEM_INTEGRATION=1
           ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=25' \
             -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 15 \
             -c:v mpeg2video -g 12 -b:v 480k -aspect 4:3 -c:a mp2 -b:a 128k -f mpegts "$TELEPILOT_TEST_TS_FILE"

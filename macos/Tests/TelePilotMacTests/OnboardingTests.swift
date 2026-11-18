@@ -65,9 +65,9 @@ struct OnboardingTests {
         let testDelegate = TestApplicationDelegate()
         app.delegate = testDelegate
         defer { app.delegate = previousDelegate; withExtendedLifetime(testDelegate) {} }
-        try #require(app.setActivationPolicy(.regular))
+        try #require(app.activationPolicy() == .regular || app.setActivationPolicy(.regular))
         // SwiftPM starts a test host without NSApplication.run(), which normally finishes AppKit launch.
-        app.finishLaunching()
+        if !app.isRunning { app.finishLaunching() }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
