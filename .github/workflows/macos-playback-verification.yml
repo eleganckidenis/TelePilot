@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   playback:
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -69,6 +69,7 @@ jobs:
           export TELEPILOT_TEST_TS_FILE="$stage/synthetic.ts"
           export TELEPILOT_TEST_EXPECTED_DISPLAY_ASPECT=1.3333333333333333
           export TELEPILOT_RUN_APPKIT_INTEGRATION=1 TELEPILOT_RUN_SYSTEM_INTEGRATION=1
+          export TELEPILOT_DEBUG_TEST_EXIT=1
           printf 'Console user: %s; runner: %s\n' "$(stat -f %Su /dev/console)" "$(id -un)"
           if launchctl print "gui/$(id -u)" >/dev/null 2>&1; then echo 'Aqua domain present'; else echo 'No Aqua domain'; fi
           ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=25' \

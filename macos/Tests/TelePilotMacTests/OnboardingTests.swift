@@ -370,9 +370,12 @@ struct OnboardingTests {
             if window.styleMask.contains(.fullScreen) { controller.fullscreen() }
         }
 
+        FileHandle.standardError.write(Data("Probe: About to show the split view.\n".utf8))
         controller.toggleList()
         #expect(controller.listShown)
+        FileHandle.standardError.write(Data("Probe: About to request native fullscreen.\n".utf8))
         controller.fullscreen()
+        FileHandle.standardError.write(Data("Probe: Native fullscreen request returned.\n".utf8))
         try await waitForFullscreen(window: window, button: button, enabled: true)
         #expect(!controller.listShown)
         #expect(video.window === window)
