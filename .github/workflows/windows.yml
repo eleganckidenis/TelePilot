@@ -48,6 +48,12 @@ jobs:
         run: |
           ./scripts/prepare-ci-ffmpeg.ps1 -Runtime $env:TELEPILOT_BUILD_RUNTIME
           dotnet test TelePilot.sln --configuration Release --no-restore -p:UsedAvaloniaProducts=
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "TELEPILOT_TEST_FFMPEG=$env:TELEPILOT_TEST_FFMPEG" >> $env:GITHUB_ENV
+      - name: Verify fullscreen on the native Windows desktop
+        timeout-minutes: 3
+        shell: pwsh
+        run: dotnet run --project scripts/TelePilot.NativeFullscreenSmoke --configuration Release -p:UsedAvaloniaProducts= -- $env:TELEPILOT_TEST_FFMPEG
 
   installers:
     name: Installer (${{ matrix.runtime }})

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ApplicationManifest Condition="$([MSBuild]::IsOSPlatform('Windows'))">../../src/TelePilot.App/app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/TelePilot.App/TelePilot.App.csproj" />
+  </ItemGroup>
+</Project>
