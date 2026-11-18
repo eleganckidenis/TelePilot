@@ -20,15 +20,15 @@ internal static class WindowsDesktop
 
     public static bool HasKeyboardFocus(nint window) => GetFocus() == window;
 
+    public static bool IsForeground(nint window) => GetForegroundWindow() == window;
+
     public static string DescribeWindows(nint window) =>
         $"Windows HWNDs: test=0x{window:X}, foreground=0x{GetForegroundWindow():X}, " +
         $"thread active=0x{GetActiveWindow():X}, thread focus=0x{GetFocus():X}.";
 
     public static void Press(nint window, byte key, byte modifier = 0)
     {
-        // The hosted desktop can leave the global foreground HWND unset while
-        // the test UI thread still owns activation and keyboard focus.
-        if (!IsActiveOnUiThread(window) || !HasKeyboardFocus(window))
+        if (!IsForeground(window) || !IsActiveOnUiThread(window) || !HasKeyboardFocus(window))
         {
             throw new InvalidOperationException($"Native keyboard focus left the synthetic playback window or moved to a child HWND. {DescribeWindows(window)}");
         }
