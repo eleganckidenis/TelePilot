@@ -220,7 +220,13 @@ try {
                 if ($null -ne $message) {
                     $sample.message = $message.Current.Name
                     if (-not $properties.IsOffscreen -and $sample.message -ceq "Version $ExpectedVersion has been downloaded. Open the installer?") {
-                        $notice = @{ Window=$window; Message=$sample.message; Cancel=(Find-Control $window 'confirmation-dialog-cancel'); Confirm=(Find-Control $window 'confirmation-dialog-confirm') }
+                        $confirm = Find-Control $window 'confirmation-dialog-confirm'
+                        $cancel = Find-Control $window 'confirmation-dialog-cancel'
+                        $sample.confirmName = if ($null -ne $confirm) { $confirm.Current.Name }
+                        $sample.cancelName = if ($null -ne $cancel) { $cancel.Current.Name }
+                        if ($null -ne $confirm -and $null -ne $cancel) {
+                            $notice = @{ Window=$window; Message=$sample.message; Cancel=$cancel; Confirm=$confirm }
+                        }
                     }
                 }
             } catch [Windows.Automation.ElementNotAvailableException] { $sample.staleUiaElement = $true }
