@@ -132,9 +132,10 @@ public sealed class MainWindowCurrentProgramRefreshTests
         Assert.Empty(fixture.FocusRequests);
         Assert.Empty(fixture.Status.Messages);
 
+        itemChanges.Clear();
         InvokeCurrentProgramRefresh(fixture.ViewModel);
 
-        Assert.Equal(2, itemChanges.Count);
+        Assert.Empty(itemChanges);
         Assert.Equal(0, collectionChanges);
         Assert.Empty(fixture.FocusRequests);
         Assert.Empty(fixture.Status.Messages);

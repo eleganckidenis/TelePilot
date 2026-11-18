@@ -284,7 +284,6 @@ import AppKit
         cancelButton.keyEquivalent = "\u{1b}"
         retryButton.title = l("Ponów", "Retry"); retryButton.target = self; retryButton.action = #selector(retryUpdate)
         downloadButton.title = l("Pobierz", "Download"); downloadButton.target = self; downloadButton.action = #selector(acceptDownload)
-        downloadButton.keyEquivalent = "\r"
         let downloads = button(l("Otwórz stronę pobierania", "Open Download Page"), self, #selector(downloadPage))
         for button in [downloadButton, cancelButton, retryButton] { button.bezelStyle = .rounded }
         message.lineBreakMode = .byWordWrapping; message.maximumNumberOfLines = 0
