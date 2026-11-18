@@ -6,9 +6,11 @@ import TelePilotCore
     func startPlaybackAttempt(_ url: URL, generation: Int, quickStart: Bool) {
         guard let policy = recovery else { return }
         playbackReady = false
+        clearSoftwareVideo()
         playbackAttempt += 1; let attempt = playbackAttempt
         let applied = policy.target
         let address = UInt(bitPattern: Unmanaged.passUnretained(video).toOpaque())
+        let softwareVideo = video.requiresSoftwareOutput
         var options = policy.settings.options(target: applied, live: policy.live, quickStart: quickStart)
         options += [":http-user-agent=\(PlaybackHTTP.userAgent)", ":http-header=Accept: \(PlaybackHTTP.accept)"]
         // LibVLC does not read macOS's manual HTTP proxy settings itself.
@@ -27,8 +29,10 @@ import TelePilotCore
             guard generation == playbackGeneration, attempt == playbackAttempt, !Task.isCancelled else { return }
             recovery?.beginAttempt(now: ProcessInfo.processInfo.systemUptime, applied: applied)
             do {
-                try await player.play(resolved, viewAddress: address, generation: generation, attempt: attempt, options: mediaOptions)
+                try await player.play(resolved, viewAddress: address, generation: generation, attempt: attempt,
+                                      options: mediaOptions, softwareVideo: softwareVideo)
                 guard generation == playbackGeneration, attempt == playbackAttempt, !Task.isCancelled else { return }
+                if softwareVideo { startSoftwareVideo(generation: generation, attempt: attempt) }
                 playbackReady = true; lastState = -1
                 await player.volume(preferences.volume); await player.mute(preferences.muted)
             } catch {
@@ -38,6 +42,25 @@ import TelePilotCore
                 let sample = PlaybackSample(state: 7)
                 let action = recovery?.evaluate(sample, now: ProcessInfo.processInfo.systemUptime) ?? .lost
                 await handleRecovery(action, sample: sample, generation: generation)
+            }
+        }
+    }
+
+    func clearSoftwareVideo() {
+        softwareVideoTask?.cancel()
+        softwareVideoTask = nil
+        video.clearSoftwareFrame()
+    }
+
+    private func startSoftwareVideo(generation: Int, attempt: Int) {
+        softwareVideoTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .milliseconds(33)) } catch { return }
+                guard let self, generation == playbackGeneration, attempt == playbackAttempt else { return }
+                guard video.isVisibleForPlayback else { continue }
+                let frame = await player.copySoftwareFrame(after: video.softwareFrameSequence, generation: generation, attempt: attempt)
+                guard !Task.isCancelled, generation == playbackGeneration, attempt == playbackAttempt else { return }
+                if let frame, video.isVisibleForPlayback { video.displaySoftwareFrame(frame) }
             }
         }
     }

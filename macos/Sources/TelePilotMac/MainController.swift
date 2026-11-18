@@ -23,6 +23,7 @@ import TelePilotRecording
     var playbackGeneration = 0
     var playbackAttempt = 0
     var playbackTask: Task<Void, Never>?
+    var softwareVideoTask: Task<Void, Never>?
     var loadingTask: Task<Void, Never>?
     var playlistTaskCancellable = false
     var pendingFileImports: [URL] = []
@@ -312,6 +313,7 @@ import TelePilotRecording
         let sourceID = playing?.sourceID
         playbackGeneration += 1; let generation = playbackGeneration
         recoveryTask?.cancel(); recoveryTask = nil; recovery = nil; playbackReady = false
+        clearSoftwareVideo()
         playbackTask?.cancel()
         playbackTask = Task { [weak self] in
             guard let self, generation == playbackGeneration else { return }

@@ -56,6 +56,7 @@ extension MainController {
         }
         await UpdateStartup.shutdown()
         playbackGeneration += 1; playbackTask?.cancel(); loadingTask?.cancel(); epgTask?.cancel(); pollTask?.cancel()
+        clearSoftwareVideo()
         await player.shutdown(); savePreferences()
         return true
     }

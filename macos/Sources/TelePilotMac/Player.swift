@@ -3,6 +3,12 @@ import CVLCBridge
 import TelePilotCore
 
 struct MediaTrack: Sendable { let id: Int32; let name: String; let selected: Bool }
+struct SoftwareVideoFrame: Sendable {
+    let image: CGImage
+    let sequence: UInt64
+    let displayAspect: Double
+}
+
 private final class VLCHandle: @unchecked Sendable {
     let pointer: OpaquePointer
     init(_ pointer: OpaquePointer) { self.pointer = pointer }
@@ -12,12 +18,14 @@ actor Player {
     private var handle: VLCHandle?
     private var commandGeneration = 0
     private var commandAttempt = 0
+    private var softwareOutput = false
     private let library: URL
     private let plugins: URL
     init(library: URL, plugins: URL) { self.library = library; self.plugins = plugins }
-    func play(_ url: URL, viewAddress: UInt, generation: Int, attempt: Int = 0, options: [String]) throws {
+    func play(_ url: URL, viewAddress: UInt, generation: Int, attempt: Int = 0, options: [String], softwareVideo: Bool = false) throws {
         guard generation > commandGeneration || (generation == commandGeneration && attempt >= commandAttempt), !Task.isCancelled else { return }
         commandGeneration = generation; commandAttempt = attempt
+        softwareOutput = false
         if handle == nil {
             guard let p = tvlc_create(library.path, plugins.path) else { throw PlayerError.unavailable }
             handle = VLCHandle(p)
@@ -26,9 +34,19 @@ actor Player {
         defer { allocated.forEach { free($0) } }
         let pointers = allocated.map { $0.map { UnsafePointer<CChar>($0) } }
         let result = pointers.withUnsafeBufferPointer {
-            tvlc_play(handle!.pointer, url.absoluteString, UnsafeMutableRawPointer(bitPattern: viewAddress), $0.baseAddress, Int32($0.count))
+            tvlc_play(handle!.pointer, url.absoluteString, UnsafeMutableRawPointer(bitPattern: viewAddress),
+                      $0.baseAddress, Int32($0.count), softwareVideo ? 1 : 0)
         }
         guard result == 0 else { throw PlayerError.playback }
+        softwareOutput = softwareVideo
+    }
+    func copySoftwareFrame(after previousSequence: UInt64, generation: Int, attempt: Int) -> SoftwareVideoFrame? {
+        guard softwareOutput, generation == commandGeneration, attempt == commandAttempt,
+              !Task.isCancelled, let handle else { return nil }
+        var sequence = previousSequence
+        var displayAspect = 0.0
+        guard let image = tvlc_copy_software_frame(handle.pointer, &sequence, &displayAspect) else { return nil }
+        return SoftwareVideoFrame(image: image, sequence: sequence, displayAspect: displayAspect)
     }
     func timeSeconds() -> TimeInterval { handle.map { Double(tvlc_time($0.pointer)) / 1000 } ?? -1 }
     func seek(seconds: TimeInterval, generation: Int? = nil, attempt: Int? = nil) -> Bool {
@@ -38,9 +56,10 @@ actor Player {
     }
     func stop(generation: Int) {
         guard generation >= commandGeneration, !Task.isCancelled else { return }; commandGeneration = generation
+        softwareOutput = false
         if let handle { tvlc_stop(handle.pointer) }
     }
-    func shutdown() { handle = nil }
+    func shutdown() { softwareOutput = false; handle = nil }
     func state() -> Int32 { handle.map { tvlc_state($0.pointer) } ?? 0 }
     func sample() -> PlaybackSample {
         guard let handle else { return PlaybackSample(state: 0) }
@@ -95,6 +114,13 @@ enum RememberedTrack {
 }
 
 @MainActor final class VideoSurface: NSView {
+    private static let supportsAcceleratedOutput = tvlc_supports_accelerated_video() != 0
+
+    var requiresSoftwareOutput: Bool { !Self.supportsAcceleratedOutput }
+    private(set) var softwareFrame: CGImage?
+    private(set) var softwareFrameSequence: UInt64 = 0
+    private(set) var softwareDisplayAspect = 0.0
+
     override var acceptsFirstResponder: Bool { false }
     override var isOpaque: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -109,6 +135,34 @@ enum RememberedTrack {
         // Cover the empty drawable without making VLC's embedded OpenGL view layer-backed.
         NSColor.black.setFill()
         NSBezierPath.fill(dirtyRect)
+        guard let image = softwareFrame, !bounds.isEmpty else { return }
+        let aspect = CGFloat(softwareDisplayAspect > 0 ? softwareDisplayAspect : Double(image.width) / Double(image.height))
+        let width = min(bounds.width, bounds.height * aspect)
+        let size = CGSize(width: width, height: width / aspect)
+        let rect = CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
+                          width: size.width, height: size.height)
+        NSGraphicsContext.current?.cgContext.draw(image, in: rect)
+    }
+
+    func displaySoftwareFrame(_ frame: SoftwareVideoFrame) {
+        guard frame.sequence != softwareFrameSequence else { return }
+        softwareFrame = frame.image
+        softwareFrameSequence = frame.sequence
+        softwareDisplayAspect = frame.displayAspect
+        needsDisplay = true
+    }
+
+    func clearSoftwareFrame() {
+        guard softwareFrame != nil else { return }
+        softwareFrame = nil
+        softwareFrameSequence = 0
+        softwareDisplayAspect = 0
+        needsDisplay = true
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        if softwareFrame != nil { needsDisplay = true }
     }
 
     var isVisibleForPlayback: Bool {

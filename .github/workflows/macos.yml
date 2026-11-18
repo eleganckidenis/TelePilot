@@ -22,7 +22,13 @@ jobs:
       - name: Confirm Apple Silicon host
         run: test "$(uname -m)" = arm64
       - name: Native Swift tests
-        run: ./macos/scripts/test.sh
+        shell: bash
+        run: |
+          ./macos/scripts/test.sh 2>&1 | tee "$RUNNER_TEMP/swift-tests.log"
+          if ! grep -Eq 'Test run with [1-9][0-9]* tests?( in [0-9]+ suites?)? passed after' "$RUNNER_TEMP/swift-tests.log"; then
+            echo '::error::Swift Testing did not report a successful completed run.'
+            exit 1
+          fi
 
   package:
     name: Apple Silicon package and playback verification
@@ -87,31 +93,6 @@ jobs:
           else
             echo 'Runner has no Aqua launch domain.'
           fi
-          cat > "$deps/opengl-probe.c" <<'EOF'
-          #include <OpenGL/OpenGL.h>
-          #include <stdio.h>
-          int main(void) {
-              CGLPixelFormatAttribute attributes[] = {
-                  kCGLPFAAllowOfflineRenderers, kCGLPFADoubleBuffer, kCGLPFAAccelerated, kCGLPFANoRecovery,
-                  kCGLPFAColorSize, 24, kCGLPFAAlphaSize, 8, kCGLPFADepthSize, 24,
-                  kCGLPFASupportsAutomaticGraphicsSwitching, 0
-              };
-              CGLPixelFormatObj format = NULL;
-              CGLContextObj context = NULL;
-              GLint count = 0;
-              CGLError result = CGLChoosePixelFormat(attributes, &format, &count);
-              printf("VLC accelerated OpenGL pixel formats: %d (error %d)\n", count, result);
-              if (result == kCGLNoError && format != NULL) {
-                  result = CGLCreateContext(format, NULL, &context);
-                  printf("VLC accelerated OpenGL context creation: %d\n", result);
-                  if (context != NULL) CGLDestroyContext(context);
-                  CGLDestroyPixelFormat(format);
-              }
-              return 0;
-          }
-          EOF
-          clang -Wno-deprecated-declarations -framework OpenGL "$deps/opengl-probe.c" -o "$deps/opengl-probe"
-          "$deps/opengl-probe"
           version="$(tr -d '[:space:]' < macos/VERSION)"
           mount="$deps/telepilot-volume"
           mkdir -p "$mount"
@@ -120,8 +101,15 @@ jobs:
           export PATH="$deps/ffmpeg/install/bin:$PATH"
           export TELEPILOT_TEST_VLC_ROOT="$mount/TelePilot.app/Contents/Frameworks/libvlc"
           export TELEPILOT_TEST_TS_FILE="$deps/synthetic.ts"
+          export TELEPILOT_TEST_EXPECTED_DISPLAY_ASPECT=1.3333333333333333
           export TELEPILOT_RUN_APPKIT_INTEGRATION=1 TELEPILOT_RUN_SYSTEM_INTEGRATION=1
           ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=25' \
             -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 15 \
-            -c:v mpeg2video -g 12 -b:v 480k -c:a mp2 -b:a 128k -f mpegts "$TELEPILOT_TEST_TS_FILE"
-          python3 ./macos/scripts/test-network-buffer.py --no-parallel
+            -c:v mpeg2video -g 12 -b:v 480k -aspect 4:3 -c:a mp2 -b:a 128k -f mpegts "$TELEPILOT_TEST_TS_FILE"
+          test_log="$RUNNER_TEMP/native-swift-tests.log"
+          python3 ./macos/scripts/test-network-buffer.py --no-parallel 2>&1 | tee "$test_log"
+          if ! grep -Eq 'Test run with [1-9][0-9]* tests?( in [0-9]+ suites?)? passed after' "$test_log" ||
+             ! grep -Fq 'Test managerOpensForFirstRunAndImportsSwitchesRemovesAndReturnsFocus() passed after' "$test_log"; then
+            echo '::error::Swift Testing did not complete the native playback and system test run successfully.'
+            exit 1
+          fi

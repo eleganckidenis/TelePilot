@@ -1,5 +1,9 @@
+#define GL_SILENCE_DEPRECATION
 #include "TVLC.h"
+#include <CoreFoundation/CFData.h>
+#include <OpenGL/OpenGL.h>
 #include <dlfcn.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -7,8 +11,264 @@
 #include <stdatomic.h>
 #include <time.h>
 typedef struct Track { int id; char *name; struct Track *next; } Track;
-struct TVLC { void *library, *core, *instance, *player, *events; int error_attached, end_attached; atomic_uint input_events; double ambiguous_since; };
+typedef struct SoftwareOutput SoftwareOutput;
+struct TVLC {
+    void *library, *core, *instance, *player, *events;
+    int error_attached, end_attached;
+    atomic_uint input_events;
+    double ambiguous_since;
+    int software_enabled;
+    pthread_mutex_t frame_mutex;
+    SoftwareOutput *software_output;
+    uint64_t frame_sequence;
+    uint64_t output_revision, aspect_revision;
+    double display_aspect, aspect_refresh_at;
+};
+
+struct SoftwareOutput {
+    TVLC *owner;
+    void *write_pixels, *displayed_pixels;
+    unsigned width, height, pitch;
+    uint64_t sequence, revision;
+};
+
 #define FN(t, n) ((t)dlsym(v->library, n))
+
+static int supports_pixel_format(const CGLPixelFormatAttribute *attributes) {
+    CGLPixelFormatObj format = NULL;
+    CGLContextObj context = NULL;
+    GLint count = 0;
+    CGLError result = CGLChoosePixelFormat(attributes, &format, &count);
+    if (result == kCGLNoError && format && count > 0) {
+        result = CGLCreateContext(format, NULL, &context);
+    }
+    int supported = result == kCGLNoError && context != NULL;
+    if (context) CGLReleaseContext(context);
+    if (format) CGLReleasePixelFormat(format);
+    return supported;
+}
+
+int tvlc_supports_accelerated_video(void) {
+    // Match both native video outputs in the pinned VLC 3.0.24.
+    const CGLPixelFormatAttribute layer[] = {
+        kCGLPFAAllowOfflineRenderers, kCGLPFADoubleBuffer, kCGLPFAAccelerated, kCGLPFANoRecovery,
+        kCGLPFAColorSize, 24, kCGLPFAAlphaSize, 8, kCGLPFADepthSize, 24,
+        kCGLPFASupportsAutomaticGraphicsSwitching, 0
+    };
+    const CGLPixelFormatAttribute view[] = {
+        kCGLPFADoubleBuffer, kCGLPFAAccelerated, kCGLPFANoRecovery,
+        kCGLPFAColorSize, 24, kCGLPFAAlphaSize, 8, kCGLPFADepthSize, 24,
+        kCGLPFAWindow, kCGLPFAAllowOfflineRenderers, 0
+    };
+    return supports_pixel_format(layer) || supports_pixel_format(view);
+}
+
+static unsigned setup_software_video(void **opaque, char *chroma, unsigned *width,
+                                     unsigned *height, unsigned *pitch, unsigned *lines) {
+    if (*width == 0 || *height == 0) return 0;
+    // Limit CPU conversion and the memory used by each pair of frame buffers.
+    unsigned max_width = *width >= *height ? 1920 : 1080;
+    unsigned max_height = *width >= *height ? 1080 : 1920;
+    if (*width > max_width || *height > max_height) {
+        if ((uint64_t)*width * max_height >= (uint64_t)*height * max_width) {
+            *height = (unsigned)((uint64_t)*height * max_width / *width);
+            *width = max_width;
+        } else {
+            *width = (unsigned)((uint64_t)*width * max_height / *height);
+            *height = max_height;
+        }
+        if (*width == 0) *width = 1;
+        if (*height == 0) *height = 1;
+    }
+
+    SoftwareOutput *output = calloc(1, sizeof(*output));
+    if (!output) return 0;
+    output->owner = *opaque;
+    output->width = *width;
+    output->height = *height;
+    output->pitch = (*width * 4 + 31u) & ~31u;
+    unsigned padded_lines = (*height + 31u) & ~31u;
+    size_t bytes = (size_t)output->pitch * padded_lines;
+    if (posix_memalign(&output->write_pixels, 32, bytes) != 0 ||
+        posix_memalign(&output->displayed_pixels, 32, bytes) != 0) {
+        free(output->write_pixels);
+        free(output->displayed_pixels);
+        free(output);
+        return 0;
+    }
+    memset(output->write_pixels, 0, bytes);
+    memset(output->displayed_pixels, 0, bytes);
+
+    memcpy(chroma, "RV32", 4);
+    pitch[0] = output->pitch;
+    lines[0] = padded_lines;
+    *opaque = output;
+    TVLC *v = output->owner;
+    pthread_mutex_lock(&v->frame_mutex);
+    output->revision = ++v->output_revision;
+    v->software_output = output;
+    pthread_mutex_unlock(&v->frame_mutex);
+    return 1;
+}
+
+static void *lock_software_video(void *opaque, void **planes) {
+    SoftwareOutput *output = opaque;
+    // VLC 3.0.24's vmem reads all five entries, even for packed RV32.
+    for (int plane = 0; plane < 5; ++plane) planes[plane] = NULL;
+    planes[0] = output->write_pixels;
+    return output;
+}
+
+static void display_software_video(void *opaque, void *picture) {
+    (void)picture;
+    SoftwareOutput *output = opaque;
+    TVLC *v = output->owner;
+    // vmem prepares and displays on the same output thread. The other buffer
+    // remains immutable while the player copies its latest displayed frame.
+    pthread_mutex_lock(&v->frame_mutex);
+    if (v->software_output == output) {
+        void *previous = output->displayed_pixels;
+        output->displayed_pixels = output->write_pixels;
+        output->write_pixels = previous;
+        output->sequence = ++v->frame_sequence;
+    }
+    pthread_mutex_unlock(&v->frame_mutex);
+}
+
+static void cleanup_software_video(void *opaque) {
+    SoftwareOutput *output = opaque;
+    TVLC *v = output->owner;
+    pthread_mutex_lock(&v->frame_mutex);
+    if (v->software_output == output) v->software_output = NULL;
+    pthread_mutex_unlock(&v->frame_mutex);
+    free(output->write_pixels);
+    free(output->displayed_pixels);
+    free(output);
+}
+
+// The public LibVLC 3.0.24 media-track ABI, used only by the software output.
+typedef struct VideoTrackInfo {
+    unsigned height, width, sar_num, sar_den, frame_rate_num, frame_rate_den;
+    int orientation, projection;
+    float viewpoint[4];
+} VideoTrackInfo;
+
+typedef struct MediaTrackInfo {
+    uint32_t codec, original_codec;
+    int id, type, profile, level;
+    union { void *audio; VideoTrackInfo *video; void *subtitle; };
+    unsigned bitrate;
+    char *language, *description;
+} MediaTrackInfo;
+
+static double read_video_aspect(TVLC *v) {
+    void *(*get_media)(void *) = FN(void *(*)(void *), "libvlc_media_player_get_media");
+    unsigned (*get_tracks)(void *, MediaTrackInfo ***) =
+        FN(unsigned (*)(void *, MediaTrackInfo ***), "libvlc_media_tracks_get");
+    void (*release_tracks)(MediaTrackInfo **, unsigned) =
+        FN(void (*)(MediaTrackInfo **, unsigned), "libvlc_media_tracks_release");
+    int (*get_video_track)(void *) = FN(int (*)(void *), "libvlc_video_get_track");
+    if (!get_media || !get_tracks || !release_tracks) return 0;
+
+    int selected_id = get_video_track ? get_video_track(v->player) : -1;
+    void *media = get_media(v->player);
+    if (!media) return 0;
+    MediaTrackInfo **tracks = NULL;
+    unsigned count = get_tracks(media, &tracks);
+    FN(void (*)(void *), "libvlc_media_release")(media);
+
+    const VideoTrackInfo *video = NULL, *only_video = NULL;
+    unsigned video_count = 0;
+    for (unsigned i = 0; i < count; ++i) {
+        const MediaTrackInfo *track = tracks[i];
+        if (!track || track->type != 1 || !track->video) continue;
+        ++video_count;
+        only_video = track->video;
+        if (selected_id >= 0 && track->id == selected_id) video = track->video;
+    }
+    if (!video && video_count == 1) video = only_video;
+    double aspect = 0;
+    if (video && video->width && video->height) {
+        aspect = (double)video->width / video->height;
+        if (video->sar_num && video->sar_den) aspect *= (double)video->sar_num / video->sar_den;
+        // vmem applies the source orientation before delivering the pixels.
+        if (video->orientation >= 4 && video->orientation <= 7) aspect = 1.0 / aspect;
+    }
+    if (tracks) release_tracks(tracks, count);
+    return aspect;
+}
+
+static double software_video_aspect(TVLC *v, uint64_t revision, double pixel_aspect) {
+    struct timespec clock;
+    clock_gettime(CLOCK_MONOTONIC, &clock);
+    double now = (double)clock.tv_sec + (double)clock.tv_nsec / 1e9;
+    // Late stream metadata and track changes can update the ratio after the first frame.
+    if (v->aspect_revision != revision || now >= v->aspect_refresh_at) {
+        v->display_aspect = read_video_aspect(v);
+        v->aspect_revision = revision;
+        v->aspect_refresh_at = now + 1;
+    }
+    return v->display_aspect > 0 ? v->display_aspect : pixel_aspect;
+}
+
+CGImageRef tvlc_copy_software_frame(TVLC *v, uint64_t *sequence, double *display_aspect) {
+    if (!v || !sequence) return NULL;
+    pthread_mutex_lock(&v->frame_mutex);
+    SoftwareOutput *output = v->software_output;
+    if (!output || output->sequence == 0 || output->sequence == *sequence) {
+        pthread_mutex_unlock(&v->frame_mutex);
+        return NULL;
+    }
+    uint64_t latest = output->sequence;
+    uint64_t revision = output->revision;
+    unsigned width = output->width, height = output->height, pitch = output->pitch;
+    CFDataRef data = CFDataCreate(NULL, output->displayed_pixels, (CFIndex)((size_t)pitch * height));
+    pthread_mutex_unlock(&v->frame_mutex);
+    if (!data) return NULL;
+
+    CGDataProviderRef provider = CGDataProviderCreateWithCFData(data);
+    CFRelease(data);
+    if (!provider) return NULL;
+    CGColorSpaceRef color_space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGImageRef image = color_space ? CGImageCreate(width, height, 8, 32, pitch, color_space,
+        kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipFirst, provider, NULL, true,
+        kCGRenderingIntentDefault) : NULL;
+    if (color_space) CGColorSpaceRelease(color_space);
+    CGDataProviderRelease(provider);
+    if (image) {
+        *sequence = latest;
+        // LibVLC calls can wait on its decoder. Never call them with frame_mutex held.
+        if (display_aspect) *display_aspect = software_video_aspect(v, revision, (double)width / height);
+    }
+    return image;
+}
+
+typedef void (*SetVideoCallbacks)(void *, void *(*)(void *, void **),
+                                  void (*)(void *, void *, void *const *), void (*)(void *, void *), void *);
+typedef void (*SetVideoFormatCallbacks)(void *, unsigned (*)(void **, char *, unsigned *, unsigned *,
+                                                           unsigned *, unsigned *), void (*)(void *));
+
+static int configure_video_output(TVLC *v, void *view, int software_video) {
+    void (*set_view)(void *, void *) = FN(void (*)(void *, void *), "libvlc_media_player_set_nsobject");
+    if (software_video || v->software_enabled) {
+        SetVideoCallbacks set_callbacks = FN(SetVideoCallbacks, "libvlc_video_set_callbacks");
+        SetVideoFormatCallbacks set_format = FN(SetVideoFormatCallbacks, "libvlc_video_set_format_callbacks");
+        if (!set_callbacks || !set_format) return -1;
+        if (software_video) {
+            // set_nsobject resets vout selection, so clear the old drawable first.
+            set_view(v->player, NULL);
+            set_callbacks(v->player, lock_software_video, NULL, display_software_video, v);
+            set_format(v->player, setup_software_video, cleanup_software_video);
+        } else {
+            set_callbacks(v->player, NULL, NULL, NULL, NULL);
+            set_format(v->player, NULL, NULL);
+        }
+    }
+    if (!software_video) set_view(v->player, view);
+    v->software_enabled = software_video;
+    return 0;
+}
+
 // LibVLC can replace Error with Ended when the failed input dies. Preserve the
 // actual error event for this input; callbacks only write this atomic flag.
 static void encountered_error(const void *event, void *data) {
@@ -27,6 +287,7 @@ TVLC *tvlc_create(const char *library, const char *plugins) {
     atomic_init(&v->input_events, 0);
     char core[4096]; snprintf(core,sizeof(core),"%s",library);
     char *slash = strrchr(core,'/'); if (!slash) {free(v);return NULL;}
+    if (pthread_mutex_init(&v->frame_mutex, NULL) != 0) { free(v); return NULL; }
     snprintf(slash+1,sizeof(core)-(size_t)(slash+1-core),"libvlccore.dylib");
     setenv("VLC_PLUGIN_PATH",plugins,1);
     v->core = dlopen(core,RTLD_NOW|RTLD_GLOBAL);
@@ -50,12 +311,28 @@ TVLC *tvlc_create(const char *library, const char *plugins) {
 void tvlc_stop(TVLC *v) {
     if(v&&v->player) {
         FN(void (*)(void *),"libvlc_media_player_stop")(v->player);
+        pthread_mutex_lock(&v->frame_mutex);
+        v->software_output = NULL;
+        pthread_mutex_unlock(&v->frame_mutex);
         atomic_store_explicit(&v->input_events,0,memory_order_release);
         v->ambiguous_since=0;
     }
 }
-void tvlc_destroy(TVLC *v) {if(!v)return; if(v->player) {tvlc_stop(v);if(v->error_attached)FN(void (*)(void *,int,void (*)(const void *,void *),void *),"libvlc_event_detach")(v->events,0x10a,encountered_error,v);if(v->end_attached)FN(void (*)(void *,int,void (*)(const void *,void *),void *),"libvlc_event_detach")(v->events,0x109,end_reached,v);FN(void (*)(void *),"libvlc_media_player_release")(v->player);}if(v->instance)FN(void (*)(void *),"libvlc_release")(v->instance);if(v->library)dlclose(v->library);if(v->core)dlclose(v->core);free(v);}
-int tvlc_play(TVLC *v,const char *url,void *view,const char *const *options,int count){
+void tvlc_destroy(TVLC *v) {
+    if (!v) return;
+    if (v->player) {
+        tvlc_stop(v);
+        if(v->error_attached)FN(void (*)(void *,int,void (*)(const void *,void *),void *),"libvlc_event_detach")(v->events,0x10a,encountered_error,v);
+        if(v->end_attached)FN(void (*)(void *,int,void (*)(const void *,void *),void *),"libvlc_event_detach")(v->events,0x109,end_reached,v);
+        FN(void (*)(void *),"libvlc_media_player_release")(v->player);
+    }
+    if (v->instance) FN(void (*)(void *),"libvlc_release")(v->instance);
+    if (v->library) dlclose(v->library);
+    if (v->core) dlclose(v->core);
+    pthread_mutex_destroy(&v->frame_mutex);
+    free(v);
+}
+int tvlc_play(TVLC *v,const char *url,void *view,const char *const *options,int count,int software_video){
     if(!v)return -1;
     void (*add_option)(void *,const char *) = FN(void (*)(void *,const char *),"libvlc_media_add_option");
     if(!add_option)return -1;
@@ -68,7 +345,7 @@ int tvlc_play(TVLC *v,const char *url,void *view,const char *const *options,int 
     for(int i=0;i<count;i++) if(options[i])add_option(m,options[i]);
     FN(void (*)(void *,void *),"libvlc_media_player_set_media")(v->player,m);
     FN(void (*)(void *),"libvlc_media_release")(m);
-    FN(void (*)(void *,void *),"libvlc_media_player_set_nsobject")(v->player,view);
+    if (configure_video_output(v, view, software_video) != 0) return -1;
     return FN(int (*)(void *),"libvlc_media_player_play")(v->player);
 }
 // libvlc_media_stats_t ABI from the bundled, pinned LibVLC.
