@@ -146,7 +146,7 @@ static void cleanup_software_video(void *opaque) {
     free(output);
 }
 
-// The public LibVLC 3.0.24 media-track ABI, used only by the software output.
+// The public LibVLC 3.0.24 media-track ABI.
 typedef struct VideoTrackInfo {
     unsigned height, width, sar_num, sar_den, frame_rate_num, frame_rate_den;
     int orientation, projection;
@@ -161,7 +161,7 @@ typedef struct MediaTrackInfo {
     char *language, *description;
 } MediaTrackInfo;
 
-static double read_video_aspect(TVLC *v) {
+double tvlc_video_display_aspect(TVLC *v) {
     void *(*get_media)(void *) = FN(void *(*)(void *), "libvlc_media_player_get_media");
     unsigned (*get_tracks)(void *, MediaTrackInfo ***) =
         FN(unsigned (*)(void *, MediaTrackInfo ***), "libvlc_media_tracks_get");
@@ -191,7 +191,7 @@ static double read_video_aspect(TVLC *v) {
     if (video && video->width && video->height) {
         aspect = (double)video->width / video->height;
         if (video->sar_num && video->sar_den) aspect *= (double)video->sar_num / video->sar_den;
-        // vmem applies the source orientation before delivering the pixels.
+        // Both outputs present the rotated image.
         if (video->orientation >= 4 && video->orientation <= 7) aspect = 1.0 / aspect;
     }
     if (tracks) release_tracks(tracks, count);
@@ -204,7 +204,7 @@ static double software_video_aspect(TVLC *v, uint64_t revision, double pixel_asp
     double now = (double)clock.tv_sec + (double)clock.tv_nsec / 1e9;
     // Late stream metadata and track changes can update the ratio after the first frame.
     if (v->aspect_revision != revision || now >= v->aspect_refresh_at) {
-        v->display_aspect = read_video_aspect(v);
+        v->display_aspect = tvlc_video_display_aspect(v);
         v->aspect_revision = revision;
         v->aspect_refresh_at = now + 1;
     }

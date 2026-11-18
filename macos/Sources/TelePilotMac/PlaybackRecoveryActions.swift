@@ -9,7 +9,7 @@ import TelePilotCore
         clearSoftwareVideo()
         playbackAttempt += 1; let attempt = playbackAttempt
         let applied = policy.target
-        let address = UInt(bitPattern: Unmanaged.passUnretained(video).toOpaque())
+        let address = UInt(bitPattern: Unmanaged.passUnretained(video.nativeDrawable).toOpaque())
         let softwareVideo = video.requiresSoftwareOutput
         var options = policy.settings.options(target: applied, live: policy.live, quickStart: quickStart)
         options += [":http-user-agent=\(PlaybackHTTP.userAgent)", ":http-header=Accept: \(PlaybackHTTP.accept)"]
@@ -50,6 +50,7 @@ import TelePilotCore
         softwareVideoTask?.cancel()
         softwareVideoTask = nil
         video.clearSoftwareFrame()
+        video.nativeDisplayAspect = 0
     }
 
     private func startSoftwareVideo(generation: Int, attempt: Int) {

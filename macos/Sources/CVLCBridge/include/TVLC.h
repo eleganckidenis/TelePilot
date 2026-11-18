@@ -3,6 +3,7 @@
 #include <stdint.h>
 typedef struct TVLC TVLC;
 int tvlc_supports_accelerated_video(void);
+double tvlc_video_display_aspect(TVLC *);
 TVLC *tvlc_create(const char *library, const char *plugins);
 void tvlc_destroy(TVLC *);
 int tvlc_play(TVLC *, const char *url, void *view, const char *const *options, int option_count, int software_video);

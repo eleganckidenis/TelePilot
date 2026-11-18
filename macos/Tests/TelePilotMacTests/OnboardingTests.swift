@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+@preconcurrency import ScreenCaptureKit
 import TelePilotCore
 import TelePilotRecording
 import Testing
@@ -263,14 +264,27 @@ struct OnboardingTests {
         #expect(video.window === mainWindow)
         #expect(video.frame.width > splitWidth)
         #expect(fullScreenButton.accessibilityLabel() == "Exit Full Screen")
-        #expect(mainWindow.firstResponder === controller.pauseButton)
+        #expect(mainWindow.firstResponder === controller.fullscreenExit)
+        let mainContent = try #require(mainWindow.contentView)
+        #expect(video.convert(video.bounds, to: mainContent) == mainContent.bounds)
+        #expect(controller.fullscreenExit.accessibilityLabel() == "Exit Full Screen")
+        #expect(controller.cycleFocus(in: mainWindow, backward: true))
+        #expect(mainWindow.firstResponder === controller.fullscreenExit)
         controller.windowWillExitFullScreen(Notification(name: NSWindow.willExitFullScreenNotification, object: mainWindow))
         controller.windowDidExitFullScreen(Notification(name: NSWindow.didExitFullScreenNotification, object: mainWindow))
         #expect(controller.listShown)
         #expect(video.window === mainWindow)
         #expect(fullScreenButton.accessibilityLabel() == "Full Screen")
-        #expect(controller.cycleFocus(in: mainWindow, backward: false))
-        #expect((mainWindow.firstResponder as? NSButton)?.title == "Stop")
+        #expect(mainWindow.firstResponder === controller.search.currentEditor())
+        #expect(!video.fillsViewport)
+        #expect(video.frame.width == splitWidth)
+
+        let surface = VideoSurface(frame: NSRect(x: 0, y: 0, width: 1600, height: 900))
+        #expect(surface.pictureRect(aspect: 4.0 / 3) == CGRect(x: 200, y: 0, width: 1200, height: 900))
+        surface.fillsViewport = true
+        #expect(surface.pictureRect(aspect: 4.0 / 3) == CGRect(x: 0, y: -150, width: 1600, height: 1200))
+        surface.setFrameSize(NSSize(width: 900, height: 900))
+        #expect(surface.pictureRect(aspect: 2) == CGRect(x: -450, y: 0, width: 1800, height: 900))
 
         // Terminal transitions release playback, cancel stale retries, preserve the
         // channel selection and recording state, and return keyboard focus to the list.
@@ -364,7 +378,7 @@ struct OnboardingTests {
         let window = try #require(controller.window)
         let button = try #require(controller.playerControls.compactMap { $0 as? NSButton }.first { $0.title == "Full Screen" })
         let video = controller.video
-        let renderer: NSView? = if video.requiresSoftwareOutput { nil } else { try #require(video.subviews.first) }
+        let renderer: NSView? = if video.requiresSoftwareOutput { nil } else { try #require(video.nativeDrawable.subviews.first) }
         let attempt = controller.playbackAttempt
         defer {
             if window.styleMask.contains(.fullScreen) { controller.fullscreen() }
@@ -376,22 +390,33 @@ struct OnboardingTests {
         try await waitForFullscreen(window: window, button: button, enabled: true)
         #expect(!controller.listShown)
         #expect(video.window === window)
-        if let renderer { #expect(renderer.superview === video) }
-        #expect(!video.visibleRect.isEmpty)
+        if let renderer { #expect(renderer.superview === video.nativeDrawable) }
+        let content = try #require(window.contentView)
+        #expect(video.convert(video.bounds, to: content) == content.bounds)
+        let screen = try #require(window.screen)
+        #expect(window.convertToScreen(video.convert(video.bounds, to: nil)) == screen.frame)
+        #expect(controller.status.isHidden && controller.tabs.isHidden)
+        #expect(controller.playerControls.allSatisfy { $0.window == nil || $0.isHiddenOrHasHiddenAncestor })
         let videoPoint = NSPoint(x: video.bounds.midX, y: video.bounds.midY)
         #expect(video.hitTest(video.convert(videoPoint, to: video.superview)) == nil)
-        #expect(window.firstResponder === controller.pauseButton)
+        #expect(window.firstResponder === controller.fullscreenExit)
+        #expect(controller.cycleFocus(in: window, backward: false))
+        #expect(window.firstResponder === controller.fullscreenExit)
         let fullscreenFrames = await controller.player.sample().progress?.displayedVideo ?? 0
         try await waitForPlaying(controller, phase: "Second in full screen", afterDisplayedFrames: fullscreenFrames)
+        try await verifyFullscreenEdgePixels(window: window, video: video)
 
-        controller.fullscreen()
+        let escape = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                                  windowNumber: window.windowNumber, context: nil, characters: "\u{1b}",
+                                                  charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+        #expect(controller.handleKey(escape) == nil)
         try await waitForFullscreen(window: window, button: button, enabled: false)
         #expect(controller.listShown)
         #expect(video.window === window)
-        if let renderer { #expect(renderer.superview === video) }
+        if let renderer { #expect(renderer.superview === video.nativeDrawable) }
         #expect(!video.visibleRect.isEmpty)
-        #expect(controller.cycleFocus(in: window, backward: false))
-        #expect((window.firstResponder as? NSButton)?.title == "Stop")
+        #expect(window.firstResponder === controller.table)
+        #expect(!video.fillsViewport && !controller.status.isHidden)
         let windowedFrames = await controller.player.sample().progress?.displayedVideo ?? 0
         try await waitForPlaying(controller, phase: "Second after full screen", afterDisplayedFrames: windowedFrames)
         #expect(controller.playbackAttempt == attempt)
@@ -419,7 +444,7 @@ struct OnboardingTests {
         let displayedFrames = sample.progress?.displayedVideo ?? 0
         let video = controller.video
         let window = controller.window
-        let renderers = video.subviews.map { "\(type(of: $0)) frame=\($0.frame) visible=\($0.visibleRect)" }
+        let renderers = video.nativeDrawable.subviews.map { "\(type(of: $0)) frame=\($0.frame) visible=\($0.visibleRect)" }
         let diagnostics = "state=\(sample.state), decoded frames=\(sample.progress?.decodedVideo ?? 0), displayed frames=\(displayedFrames), "
             + "app active=\(NSApp.isActive), key=\(window?.isKeyWindow == true), visible=\(window?.isVisible == true), "
             + "occluded=\(window?.occlusionState.contains(.visible) == false), accelerated display=\(CGDisplayUsesOpenGLAcceleration(CGMainDisplayID())), "
@@ -429,9 +454,56 @@ struct OnboardingTests {
         if video.requiresSoftwareOutput {
             try await waitForRenderedSoftwareVideo(video, phase: phase)
         } else {
-            try #require(video.subviews.contains { $0.window === window && !$0.visibleRect.isEmpty },
+            try #require(video.nativeDrawable.subviews.contains { $0.window === window && !$0.visibleRect.isEmpty },
                          "Expected \(phase) to use an embedded, visible renderer. \(diagnostics)")
         }
+    }
+
+    @MainActor
+    private func verifyFullscreenEdgePixels(window: NSWindow, video: VideoSurface) async throws {
+        // Only the generated color test card guarantees colored pixels on every edge.
+        guard ProcessInfo.processInfo.environment["TELEPILOT_TEST_EXPECTED_DISPLAY_ASPECT"] != nil else { return }
+        let content = try #require(window.contentView)
+        let deadline = ContinuousClock.now + .seconds(5)
+        repeat {
+            let bitmap: NSBitmapImageRep
+            if !video.requiresSoftwareOutput, #available(macOS 14.4, *) {
+                // Native GL is composited separately. Capture only this test process's window.
+                let shareable = try await SCShareableContent.currentProcess
+                let own = try #require(shareable.windows.first { $0.windowID == CGWindowID(window.windowNumber) })
+                let filter = SCContentFilter(desktopIndependentWindow: own)
+                let configuration = SCStreamConfiguration()
+                configuration.width = Int(content.bounds.width)
+                configuration.height = Int(content.bounds.height)
+                configuration.showsCursor = false
+                configuration.ignoreShadowsSingleWindow = true
+                let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+                bitmap = NSBitmapImageRep(cgImage: image)
+            } else {
+                bitmap = try #require(content.bitmapImageRepForCachingDisplay(in: content.bounds))
+                content.cacheDisplay(in: content.bounds, to: bitmap)
+            }
+            let width = bitmap.pixelsWide, height = bitmap.pixelsHigh
+            func chromatic(_ x: Int, _ y: Int) -> Bool {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { return false }
+                let hi = max(color.redComponent, color.greenComponent, color.blueComponent)
+                let lo = min(color.redComponent, color.greenComponent, color.blueComponent)
+                return hi - lo > 0.18
+            }
+            let steps = 1...12
+            let sides = [
+                steps.filter { chromatic(1, height * $0 / 13) }.count,
+                steps.filter { chromatic(width - 2, height * $0 / 13) }.count,
+                steps.filter { chromatic(width * $0 / 13, 1) }.count,
+                steps.filter { chromatic(width * $0 / 13, height - 2) }.count
+            ]
+            if sides.allSatisfy({ $0 >= 5 }) {
+                print("Verified synthetic video pixels on all four fullscreen edges: \(sides).")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        } while ContinuousClock.now < deadline
+        Issue.record("Expected colored video pixels along every edge of the full-screen window.")
     }
 
     @MainActor

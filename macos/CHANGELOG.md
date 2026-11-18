@@ -1,5 +1,9 @@
 # Historia zmian — TelePilot dla Apple Silicon
 
+## 2.1.3
+
+- Full screen hides the player controls and fills the display with centered video. Escape restores the previous layout and keyboard focus.
+
 ## 2.1.2
 
 [Release notes in English and Polish / opis zmian po angielsku i po polsku](../CHANGELOG.md#212).

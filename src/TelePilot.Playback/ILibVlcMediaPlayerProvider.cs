@@ -8,5 +8,7 @@ public interface ILibVlcMediaPlayerProvider
 
     MediaPlayer MediaPlayer { get; }
 
+    void SetVideoViewport(int width, int height);
+
     string LibVlcVersion { get; }
 }

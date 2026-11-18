@@ -37,7 +37,10 @@ extension MainController {
     @objc func playFavorite(_ sender: NSMenuItem) { if let c = allChannels.first(where:{$0.id == sender.representedObject as? String}) { play(c) } }
     @objc func focusSearch() {
         if let guide = NSApp.keyWindow?.contentViewController as? GuideBrowser, !guide.archive { NSApp.keyWindow?.makeFirstResponder(guide.search) }
-        else if NSApp.keyWindow === window { if section == 2 { selectSection(0) }; window?.makeFirstResponder(search) }
+        else if NSApp.keyWindow === window {
+            if section == 2 || !listShown { selectSection(section == 2 ? 0 : section) }
+            window?.makeFirstResponder(search)
+        }
     }
     @objc func liveSection() { selectSection(0) }
     @objc func favoritesSection() { selectSection(1) }
@@ -45,7 +48,7 @@ extension MainController {
     @objc func retry() { if let playing { if let p = archiveProgramme { playArchive(playing,programme:p) } else { play(playing) } } }
     @objc func checkForUpdates() { if let window { UpdateStartup.check(window: window) } }
     @objc func about() {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.2"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.3"
         alert("TelePilot — macOS", l("Natywna aplikacja AppKit. Wersja \(version).\nNa podstawie TelePilot dla Windows, GPL-3.0-or-later.\nNie zawiera playlist IPTV.", "Native AppKit app. Version \(version).\nBased on TelePilot for Windows, GPL-3.0-or-later.\nIPTV playlists are supplied by the user."),window:window) }
     @objc func shortcuts() { alert(l("Skróty klawiszowe", "Keyboard Shortcuts"), l("⌘⇧L — Menedżer playlist\n⌘O — playlista z pliku; ⌘U — z URL\nEnter na liście — odtwarzanie\n⌘S — stop; ⌘L — lista / odtwarzacz\n⌘M — wyciszenie; ⌘↑ / ⌘↓ — głośność\n⌘T — dźwięk; ⌘⇧T — napisy\n⌘E — EPG; F5 — odświeżanie\n⌘1 / 2 / 3 lub Control+Tab — zakładki\nF11 lub ⌘Control+F — pełny ekran\nPage Up/Down na odtwarzaczu — kanały\nHome/End na odtwarzaczu — głośność\n⌘← / ⌘→ w archiwum — przewiń o 30 sekund\nEscape — wyjście z pełnego ekranu\n⌘, — ustawienia; ⌘Q — zakończenie\nSkróty Ctrl+litera także działają.", "⌘⇧L — Playlist Manager\n⌘O — add from file; ⌘U — add from URL\nEnter on the list — play\n⌘S — stop; ⌘L — channel list / player\n⌘M — mute; ⌘↑ / ⌘↓ — volume\n⌘T — audio; ⌘⇧T — subtitles\n⌘E — TV guide; F5 — refresh\n⌘1 / 2 / 3 or Control+Tab — tabs\nF11 or ⌘Control+F — full screen\nPage Up/Down in the player — change channels\nHome/End in the player — volume\n⌘← / ⌘→ during catch-up — seek by 30 seconds\nEscape — exit full screen\n⌘, — settings; ⌘Q — quit\nControl + letter shortcuts also work."),window:window) }
     @objc func openRecordings() { let u = URL(fileURLWithPath:preferences.recordingsDirectory); do { try FileManager.default.createDirectory(at:u,withIntermediateDirectories:true);NSWorkspace.shared.open(u) } catch { alert(l("Nie otwarto folderu", "Could Not Open Folder"),l("Sprawdź ścieżkę folderu nagrań.", "Check the path to the recordings folder."),window:window) } }
@@ -119,6 +122,10 @@ extension MainController {
         if event.keyCode == 103 {fullscreen();return nil}
         if event.keyCode == 53, window?.styleMask.contains(.fullScreen) == true {fullscreen();return nil}
         let responder = window?.firstResponder
+        if f.isEmpty && responder === fullscreenExit {
+            if event.keyCode == 49 { togglePause(); return nil }
+            if event.keyCode == 36 || event.keyCode == 76 { fullscreen(); return nil }
+        }
         if event.keyCode == 48, f.isEmpty || f == .shift,
            cycleFocus(in: eventWindow, backward: f == .shift) { return nil }
         let editing = responder is NSTextView || responder is NSTextField || responder is NSPopUpButton || responder is NSDatePicker

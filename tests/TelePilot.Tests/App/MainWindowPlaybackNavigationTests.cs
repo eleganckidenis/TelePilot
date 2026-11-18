@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Reflection;
+using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Automation.Peers;
 using Avalonia.Automation.Provider;
@@ -324,6 +325,8 @@ public sealed class MainWindowPlaybackNavigationTests
 
         public LibVLCSharp.Shared.MediaPlayer MediaPlayer => throw new InvalidOperationException("Startup must not attach a player.");
 
+        public void SetVideoViewport(int width, int height) { }
+
         public string LibVlcVersion => "Startup test";
     }
 
@@ -427,7 +430,7 @@ public sealed class MainWindowPlaybackNavigationTests
     }
 
     [AvaloniaFact]
-    public async Task FullscreenFromSplitExpandsTheSameVideoHostAndRestoresSplitLayout()
+    public async Task FullscreenFromSplitFillsTheEntireWindowAndRestoresItsLayoutAndFocus()
     {
         var coordinator = new FocusCoordinator();
         var channelName = string.Concat(Enumerable.Repeat("Long synthetic channel name ", 50)).TrimEnd();
@@ -449,6 +452,10 @@ public sealed class MainWindowPlaybackNavigationTests
             var list = window.FindControl<ListBox>("ChannelList")!;
             var video = window.FindControl<AccessibleVideoView>("VideoView")!;
             var fullscreen = window.FindControl<Button>("FullscreenButton")!;
+            var exitFullscreen = window.FindControl<Button>("FullscreenExitButton")!;
+            var root = Assert.IsType<Grid>(window.Content);
+            var menu = window.FindControl<Menu>("MainMenu")!;
+            var statusBar = window.FindControl<Border>("StatusBar")!;
             var displayName = player.Children.OfType<StackPanel>().Single().Children.OfType<TextBlock>().First();
             var toolbar = window.FindControl<ScrollViewer>("PlaybackControlsScroll")!;
             var volume = window.FindControl<Grid>("VolumeControls")!;
@@ -468,10 +475,24 @@ public sealed class MainWindowPlaybackNavigationTests
             Assert.True(model.IsPlaybackFullscreen);
             Assert.False(model.IsChannelListViewVisible);
             Assert.Same(video, window.FindControl<AccessibleVideoView>("VideoView"));
-            Assert.Equal(window.FindControl<Grid>("MainContent")!.Bounds.Width, video.Bounds.Width, 1);
+            Assert.Equal(root.Bounds.Width, video.Bounds.Width, 1);
+            Assert.Equal(root.Bounds.Height, video.Bounds.Height, 1);
+            Assert.Equal(default(Point), video.TranslatePoint(default, root)!.Value);
             Assert.True(video.Bounds.Width > splitWidth);
-            Assert.True(player.IsKeyboardFocusWithin);
+            Assert.False(menu.IsEffectivelyVisible);
+            Assert.False(toolbar.IsEffectivelyVisible);
+            Assert.False(volume.IsEffectivelyVisible);
+            Assert.Equal(0, statusBar.Bounds.Height);
+            Assert.True(statusBar.IsVisible);
+            Assert.Same(exitFullscreen, window.FocusManager!.GetFocusedElement());
             Assert.Equal(fullscreen.Content, AutomationProperties.GetName(fullscreen));
+
+            foreach (var modifiers in new[] { RawInputModifiers.None, RawInputModifiers.Shift })
+            {
+                window.KeyPress(Key.Tab, modifiers, PhysicalKey.Tab, null);
+                window.KeyRelease(Key.Tab, modifiers, PhysicalKey.Tab, null);
+                Assert.Same(exitFullscreen, window.FocusManager.GetFocusedElement());
+            }
 
             window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
             window.KeyRelease(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
@@ -482,6 +503,17 @@ public sealed class MainWindowPlaybackNavigationTests
             Assert.False(model.IsPlaybackFullscreen);
             Assert.True(model.IsChannelListViewVisible);
             Assert.Equal(splitWidth, video.Bounds.Width);
+            Assert.True(menu.IsEffectivelyVisible);
+            Assert.True(toolbar.IsEffectivelyVisible);
+            Assert.True(volume.IsEffectivelyVisible);
+            Assert.True(list.IsKeyboardFocusWithin);
+
+            window.KeyPress(Key.F11, RawInputModifiers.None, PhysicalKey.F11, null);
+            window.KeyRelease(Key.F11, RawInputModifiers.None, PhysicalKey.F11, null);
+            Dispatcher.UIThread.RunJobs();
+            menu.Open();
+            Assert.Equal(WindowState.Normal, window.WindowState);
+            Assert.True(menu.IsVisible && menu.IsOpen);
         }
         finally
         {

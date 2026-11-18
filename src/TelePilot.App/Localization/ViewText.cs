@@ -90,6 +90,7 @@ public static class ViewText
     public static string ExternalEPGAddressOptional => T("Zewnętrzny adres _EPG, opcjonalnie", "External _EPG address (optional)");
     public static string ExternalXMLTVEPGAddressOptional => T("Zewnętrzny adres EPG XMLTV, opcjonalnie", "External XMLTV EPG address (optional)");
     public static string F11TogglesFullScreenEscapeExits => T("F11 włącza lub wyłącza pełny ekran. Escape opuszcza pełny ekran.", "F11 toggles full screen. Escape exits full screen.");
+    public static string ExitFullScreen => T("Opuść pełny ekran", "Exit full screen");
     public static string FFmpegFileOptional => T("Plik _FFmpeg, opcjonalnie", "_FFmpeg file (optional)");
     public static string FavoriteChannelsToRemove => T("Ulubione kanały do usunięcia", "Favorite channels to remove");
     public static string Favorites => T("_Ulubione", "F_avorites");

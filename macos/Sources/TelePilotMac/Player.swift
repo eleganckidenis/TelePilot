@@ -49,6 +49,7 @@ actor Player {
         return SoftwareVideoFrame(image: image, sequence: sequence, displayAspect: displayAspect)
     }
     func timeSeconds() -> TimeInterval { handle.map { Double(tvlc_time($0.pointer)) / 1000 } ?? -1 }
+    func displayAspect() -> Double { handle.map { tvlc_video_display_aspect($0.pointer) } ?? 0 }
     func seek(seconds: TimeInterval, generation: Int? = nil, attempt: Int? = nil) -> Bool {
         guard generation == nil || generation == commandGeneration, attempt == nil || attempt == commandAttempt, !Task.isCancelled else { return false }
         guard let handle, seconds.isFinite else { return false }
@@ -117,6 +118,15 @@ enum RememberedTrack {
     private static let supportsAcceleratedOutput = tvlc_supports_accelerated_video() != 0
 
     var requiresSoftwareOutput: Bool { !Self.supportsAcceleratedOutput }
+    let nativeDrawable = NSView()
+    var nativeDisplayAspect = 0.0 {
+        didSet { if nativeDisplayAspect != oldValue { needsLayout = true } }
+    }
+    var fillsViewport = false {
+        didSet {
+            if fillsViewport != oldValue { needsLayout = true; needsDisplay = true }
+        }
+    }
     private(set) var softwareFrame: CGImage?
     private(set) var softwareFrameSequence: UInt64 = 0
     private(set) var softwareDisplayAspect = 0.0
@@ -128,6 +138,11 @@ enum RememberedTrack {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setAccessibilityElement(false)
+        clipsToBounds = true
+        if !requiresSoftwareOutput {
+            nativeDrawable.setAccessibilityElement(false)
+            addSubview(nativeDrawable)
+        }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
 
@@ -137,11 +152,24 @@ enum RememberedTrack {
         NSBezierPath.fill(dirtyRect)
         guard let image = softwareFrame, !bounds.isEmpty else { return }
         let aspect = CGFloat(softwareDisplayAspect > 0 ? softwareDisplayAspect : Double(image.width) / Double(image.height))
-        let width = min(bounds.width, bounds.height * aspect)
+        NSGraphicsContext.current?.cgContext.draw(image, in: pictureRect(aspect: aspect))
+    }
+
+    func pictureRect(aspect: CGFloat) -> CGRect {
+        guard aspect.isFinite, aspect > 0, !bounds.isEmpty else { return bounds }
+        let width = fillsViewport ? max(bounds.width, bounds.height * aspect) : min(bounds.width, bounds.height * aspect)
         let size = CGSize(width: width, height: width / aspect)
-        let rect = CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
-                          width: size.width, height: size.height)
-        NSGraphicsContext.current?.cgContext.draw(image, in: rect)
+        return CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
+                      width: size.width, height: size.height)
+    }
+
+    override func layout() {
+        super.layout()
+        // VLC aspect-fits its drawable. Oversizing the drawable itself keeps both
+        // native video output modules attached and clips only the excess picture.
+        if nativeDrawable.superview != nil {
+            nativeDrawable.frame = fillsViewport ? pictureRect(aspect: nativeDisplayAspect) : bounds
+        }
     }
 
     func displaySoftwareFrame(_ frame: SoftwareVideoFrame) {
@@ -162,6 +190,7 @@ enum RememberedTrack {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
+        needsLayout = true
         if softwareFrame != nil { needsDisplay = true }
     }
 
@@ -172,7 +201,7 @@ enum RememberedTrack {
 
     func refreshRenderer() {
         needsDisplay = true
-        subviews.forEach { $0.needsDisplay = true }
+        nativeDrawable.subviews.forEach { $0.needsDisplay = true }
     }
 
     override func viewDidEndLiveResize() {

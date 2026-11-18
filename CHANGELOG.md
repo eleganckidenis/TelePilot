@@ -1,5 +1,15 @@
 # Changelog / Historia zmian
 
+## 2.1.3
+
+### Polski
+
+- Pełny ekran pokazuje sam obraz od krawędzi do krawędzi, bez menu, pasków ani kontrolek. Jeśli proporcje filmu i ekranu się różnią, TelePilot wyśrodkowuje i przycina obraz bez rozciągania. Escape przywraca poprzedni układ i fokus.
+
+### English
+
+- Full screen shows edge-to-edge video and hides menus, bars and controls. When the video and screen have different proportions, TelePilot crops from the center without stretching. Escape restores the previous layout and keyboard focus.
+
 ## 2.1.2
 
 ### Polski

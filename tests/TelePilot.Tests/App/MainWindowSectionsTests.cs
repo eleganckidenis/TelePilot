@@ -1074,6 +1074,7 @@ public sealed class MainWindowSectionsTests
     {
         public Task PrepareAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public LibVLCSharp.Shared.MediaPlayer MediaPlayer => throw new InvalidOperationException("Toolbar test must not create video.");
+        public void SetVideoViewport(int width, int height) { }
         public string LibVlcVersion => "synthetic";
     }
 

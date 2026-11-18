@@ -80,6 +80,35 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
 
     public string LibVlcVersion => PreparedNativeResources.LibVlc.Version;
 
+    public void SetVideoViewport(int width, int height)
+    {
+        _commandQueue.Writer.TryWrite(() =>
+        {
+            if (_disposed || !_nativeResources.IsValueCreated)
+            {
+                return Task.CompletedTask;
+            }
+
+            var crop = string.Empty;
+            if (width > 0 && height > 0)
+            {
+                // VLC crops in the encoded coordinate system, before it rotates the picture.
+                using var media = _mediaPlayer.Media;
+                var videoId = _mediaPlayer.VideoTrack;
+                var videoTrack = media?.Tracks.FirstOrDefault(track =>
+                    track.TrackType == TrackType.Video && track.Id == videoId);
+                var transposed = videoTrack?.Data.Video.Orientation is VideoOrientation.LeftTop
+                    or VideoOrientation.LeftBottom or VideoOrientation.RightTop or VideoOrientation.RightBottom;
+                crop = transposed
+                    ? FormattableString.Invariant($"{height}:{width}")
+                    : FormattableString.Invariant($"{width}:{height}");
+            }
+
+            _mediaPlayer.CropGeometry = crop;
+            return Task.CompletedTask;
+        });
+    }
+
     private NativePlayerResources PreparedNativeResources => _nativeResources.IsValueCreated
         ? _nativeResources.Value
         : throw new InvalidOperationException(T("Najpierw przygotuj silnik odtwarzania przez PrepareAsync.", "Prepare the player with PrepareAsync first."));
