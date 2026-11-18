@@ -7,6 +7,13 @@ import Testing
 @testable import TelePilotMac
 
 struct OnboardingTests {
+    @MainActor
+    private final class TestApplicationDelegate: NSObject, NSApplicationDelegate {
+        func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+            .terminateCancel
+        }
+    }
+
     @Test func usesPreferredSupportedLanguageWithEnglishFallback() {
         #expect(Language.system.resolve(preferredLanguages: ["pl-PL", "en-GB"]) == .polish)
         #expect(Language.system.resolve(preferredLanguages: ["de-DE", "pl-PL"]) == .polish)
@@ -53,11 +60,14 @@ struct OnboardingTests {
         await NativePlaybackTestGate.shared.acquire()
         defer { Task { await NativePlaybackTestGate.shared.release() } }
         let app = NSApplication.shared
-        let policy = app.activationPolicy()
+        let previousDelegate = app.delegate
+        // This test owns its windows, while the Swift Testing process owns its lifetime.
+        let testDelegate = TestApplicationDelegate()
+        app.delegate = testDelegate
+        defer { app.delegate = previousDelegate; withExtendedLifetime(testDelegate) {} }
         try #require(app.setActivationPolicy(.regular))
         // SwiftPM starts a test host without NSApplication.run(), which normally finishes AppKit launch.
         app.finishLaunching()
-        defer { if policy != .regular { _ = app.setActivationPolicy(policy) } }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -67,6 +77,9 @@ struct OnboardingTests {
         let environment = ProcessInfo.processInfo.environment
         let vlc = URL(fileURLWithPath: environment["TELEPILOT_TEST_VLC_ROOT"] ?? "/Applications/VLC.app/Contents/MacOS")
         let stream = environment["TELEPILOT_RUN_PLAYBACK_INTEGRATION"] == "1" ? environment["TELEPILOT_TEST_STREAM_URL"] : nil
+        if environment["TELEPILOT_RUN_PLAYBACK_INTEGRATION"] == "1" {
+            try #require(stream != nil, "The native playback test requires its synthetic stream.")
+        }
         let player = Player(library: vlc.appendingPathComponent("lib/libvlc.dylib"), plugins: vlc.appendingPathComponent("plugins"))
         Localization.configure(.english)
         defer { Localization.configure(.system) }
@@ -76,6 +89,7 @@ struct OnboardingTests {
                                         persistExternalGuide: { savedGuideChanges.append($0) })
         defer {
             if let monitor = controller.keyMonitor { NSEvent.removeMonitor(monitor) }
+            controller.clearSoftwareVideo()
             controller.pollTask?.cancel()
             controller.epgTask?.cancel()
             controller.settingsWindow?.window?.orderOut(nil)
@@ -167,6 +181,7 @@ struct OnboardingTests {
             controller.stopPlayback()
             await controller.playbackTask?.value
             #expect(controller.playing == nil)
+            #expect(controller.video.softwareFrame == nil)
             controller.table.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
             controller.table.keyDown(with: enter)
             #expect(controller.playing?.name == "Third")
@@ -349,7 +364,7 @@ struct OnboardingTests {
         let window = try #require(controller.window)
         let button = try #require(controller.playerControls.compactMap { $0 as? NSButton }.first { $0.title == "Full Screen" })
         let video = controller.video
-        let renderer = try #require(video.subviews.first)
+        let renderer = video.subviews.first
         let attempt = controller.playbackAttempt
         defer {
             if window.styleMask.contains(.fullScreen) { controller.fullscreen() }
@@ -361,7 +376,7 @@ struct OnboardingTests {
         try await waitForFullscreen(window: window, button: button, enabled: true)
         #expect(!controller.listShown)
         #expect(video.window === window)
-        #expect(renderer.superview === video)
+        if let renderer { #expect(renderer.superview === video) }
         #expect(!video.visibleRect.isEmpty)
         let videoPoint = NSPoint(x: video.bounds.midX, y: video.bounds.midY)
         #expect(video.hitTest(video.convert(videoPoint, to: video.superview)) == nil)
@@ -373,7 +388,7 @@ struct OnboardingTests {
         try await waitForFullscreen(window: window, button: button, enabled: false)
         #expect(controller.listShown)
         #expect(video.window === window)
-        #expect(renderer.superview === video)
+        if let renderer { #expect(renderer.superview === video) }
         #expect(!video.visibleRect.isEmpty)
         #expect(controller.cycleFocus(in: window, backward: false))
         #expect((window.firstResponder as? NSButton)?.title == "Stop")
@@ -411,7 +426,39 @@ struct OnboardingTests {
             + "surface=\(video.frame), visible surface=\(video.visibleRect), renderers=\(renderers)"
         try #require(sample.state == 3 && displayedFrames > afterDisplayedFrames,
                      "Expected \(phase) to display new video frames. \(diagnostics)")
-        try #require(video.subviews.contains { $0.window === window && !$0.visibleRect.isEmpty },
-                     "Expected \(phase) to use an embedded, visible renderer. \(diagnostics)")
+        if !video.subviews.contains(where: { $0.window === window && !$0.visibleRect.isEmpty }) {
+            try await waitForRenderedSoftwareVideo(video, phase: phase)
+        }
+    }
+
+    @MainActor
+    private func waitForRenderedSoftwareVideo(_ video: VideoSurface, phase: String) async throws {
+        let deadline = ContinuousClock.now + .seconds(2)
+        var first: (sequence: UInt64, samples: [Int])?
+        while ContinuousClock.now < deadline {
+            let sequence = video.softwareFrameSequence
+            if video.softwareFrame != nil, sequence != first?.sequence,
+               let samples = renderedColorSamples(video), Set(samples).count > 5 {
+                if let first, first.samples != samples { return }
+                if first == nil { first = (sequence, samples) }
+            }
+            try await Task.sleep(for: .milliseconds(40))
+        }
+        Issue.record("Expected \(phase) to draw changing video pixels inside the AppKit view.")
+    }
+
+    @MainActor
+    private func renderedColorSamples(_ video: VideoSurface) -> [Int]? {
+        guard let bitmap = video.bitmapImageRepForCachingDisplay(in: video.bounds) else { return nil }
+        video.cacheDisplay(in: video.bounds, to: bitmap)
+        return (1...12).flatMap { row in
+            (1...16).compactMap { column in
+                let x = column * bitmap.pixelsWide / 17
+                let y = row * bitmap.pixelsHigh / 13
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { return nil }
+                return Int(color.redComponent * 15) * 256 + Int(color.greenComponent * 15) * 16
+                    + Int(color.blueComponent * 15)
+            }
+        }
     }
 }

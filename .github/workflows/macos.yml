@@ -22,7 +22,13 @@ jobs:
       - name: Confirm Apple Silicon host
         run: test "$(uname -m)" = arm64
       - name: Native Swift tests
-        run: ./macos/scripts/test.sh
+        shell: bash
+        run: |
+          ./macos/scripts/test.sh 2>&1 | tee "$RUNNER_TEMP/swift-tests.log"
+          if ! grep -Eq 'Test run with [1-9][0-9]* tests? passed after' "$RUNNER_TEMP/swift-tests.log"; then
+            echo '::error::Swift Testing did not report a successful completed run.'
+            exit 1
+          fi
 
   package:
     name: Apple Silicon package and playback verification
@@ -124,4 +130,10 @@ jobs:
           ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=25' \
             -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 15 \
             -c:v mpeg2video -g 12 -b:v 480k -c:a mp2 -b:a 128k -f mpegts "$TELEPILOT_TEST_TS_FILE"
-          python3 ./macos/scripts/test-network-buffer.py --no-parallel
+          test_log="$RUNNER_TEMP/native-swift-tests.log"
+          python3 ./macos/scripts/test-network-buffer.py --no-parallel 2>&1 | tee "$test_log"
+          if ! grep -Eq 'Test run with [1-9][0-9]* tests? passed after' "$test_log" ||
+             ! grep -Fq 'Test managerOpensForFirstRunAndImportsSwitchesRemovesAndReturnsFocus() passed after' "$test_log"; then
+            echo '::error::Swift Testing did not complete the native playback and system test run successfully.'
+            exit 1
+          fi

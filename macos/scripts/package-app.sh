@@ -111,6 +111,7 @@ rm -f "$LIBVLC/plugins/plugins.dat"
 # standalone GUI and notification modules depend on Sparkle and Growl; the
 # separate libvout_macosx and libcaopengllayer video outputs stay bundled.
 rm -f "$LIBVLC/plugins/libmacosx_plugin.dylib" "$LIBVLC/plugins/libosx_notifications_plugin.dylib"
+[[ -f "$LIBVLC/plugins/libvmem_plugin.dylib" ]] || fail "Missing VLC software video output"
 ditto "$ROOT/Resources/licenses" "$RESOURCES/licenses"
 ditto "$ROOT/docs/DEPENDENCIES.md" "$RESOURCES/licenses/DEPENDENCIES.md"
 [[ -z "$VLC_LICENSE_DIR" ]] || ditto "$VLC_LICENSE_DIR" "$RESOURCES/licenses/VLC-contrib"

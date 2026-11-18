@@ -1,9 +1,12 @@
 #pragma once
+#include <CoreGraphics/CGImage.h>
 #include <stdint.h>
 typedef struct TVLC TVLC;
 TVLC *tvlc_create(const char *library, const char *plugins);
 void tvlc_destroy(TVLC *);
-int tvlc_play(TVLC *, const char *url, void *view, const char *const *options, int option_count);
+int tvlc_play(TVLC *, const char *url, void *view, const char *const *options, int option_count, int software_video);
+// Initialize sequence to zero. A new frame updates it, otherwise the result is null.
+CGImageRef tvlc_copy_software_frame(TVLC *, uint64_t *sequence) CF_RETURNS_RETAINED;
 typedef struct TVLCProgress {
     int read_bytes, decoded_video, displayed_video, decoded_audio, played_audio;
 } TVLCProgress;

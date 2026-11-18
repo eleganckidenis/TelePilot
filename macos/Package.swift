@@ -8,7 +8,7 @@ let package = Package(
         .systemLibrary(name: "CZlib"),
         .target(name: "TelePilotCore", dependencies: ["CZlib"]),
         .target(name: "TelePilotRecording"),
-        .target(name: "CVLCBridge"),
+        .target(name: "CVLCBridge", linkerSettings: [.linkedFramework("CoreGraphics"), .linkedFramework("CoreFoundation")]),
         .executableTarget(name: "TelePilotMac", dependencies: ["TelePilotCore", "TelePilotRecording", "CVLCBridge"]),
         .testTarget(name: "TelePilotCoreTests", dependencies: ["TelePilotCore"]),
         .testTarget(name: "TelePilotRecordingTests", dependencies: ["TelePilotRecording"]),
