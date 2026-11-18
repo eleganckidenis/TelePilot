@@ -1,0 +1,42 @@
+name: Alternate Apple Silicon playback verification
+
+on:
+  push:
+    branches: ['codex/verify-telepilot-2.1.2-macos-26']
+
+permissions:
+  contents: read
+
+jobs:
+  playback:
+    runs-on: macos-26
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Test the release code with pinned runtime libraries
+        shell: bash
+        run: |
+          test "$(uname -m)" = arm64
+          stage="$RUNNER_TEMP/telepilot-native-playback"
+          mkdir -p "$stage/volume"
+          curl --proto '=https' --proto-redir '=https' -fLSs --retry 3 --connect-timeout 20 \
+            https://github.com/eleganckidenis/TelePilot/releases/download/v2.1.1/TelePilot-2.1.1-Apple-Silicon.dmg \
+            -o "$stage/previous-release.dmg"
+          printf '%s  %s\n' 8651159aba432c641170f12c205193b0c676679a775a2ab263b34bdbfed00964 "$stage/previous-release.dmg" | shasum -a 256 -c -
+          hdiutil verify "$stage/previous-release.dmg"
+          hdiutil attach -readonly -nobrowse -mountpoint "$stage/volume" "$stage/previous-release.dmg" >/dev/null
+          trap 'hdiutil detach -quiet "$stage/volume"' EXIT
+          app="$stage/volume/TelePilot.app"
+          codesign --verify --deep --strict "$app"
+          export PATH="$app/Contents/Resources/tools:$PATH"
+          export TELEPILOT_TEST_VLC_ROOT="$app/Contents/Frameworks/libvlc"
+          export TELEPILOT_TEST_TS_FILE="$stage/synthetic.ts"
+          export TELEPILOT_RUN_APPKIT_INTEGRATION=1 TELEPILOT_RUN_SYSTEM_INTEGRATION=1
+          printf 'Console user: %s; runner: %s\n' "$(stat -f %Su /dev/console)" "$(id -un)"
+          if launchctl print "gui/$(id -u)" >/dev/null 2>&1; then echo 'Aqua domain present'; else echo 'No Aqua domain'; fi
+          ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=25' \
+            -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 15 \
+            -c:v mpeg2video -g 12 -b:v 480k -c:a mp2 -b:a 128k -f mpegts "$TELEPILOT_TEST_TS_FILE"
+          python3 ./macos/scripts/test-network-buffer.py --no-parallel
