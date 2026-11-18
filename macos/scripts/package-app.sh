@@ -107,9 +107,10 @@ ditto "$VLC_ROOT/plugins" "$LIBVLC/plugins"
 [[ ! -d "$VLC_ROOT/share" ]] || ditto "$VLC_ROOT/share" "$LIBVLC/share"
 # The provider cache stores source-bundle locations; LibVLC scans the copied plugins.
 rm -f "$LIBVLC/plugins/plugins.dat"
-# This obsolete VLC notification module alone needs Growl.framework. TelePilot
-# uses AppKit/VoiceOver announcements and does not expose VLC GUI notifications.
-rm -f "$LIBVLC/plugins/libosx_notifications_plugin.dylib"
+# TelePilot supplies its own interface, notifications and updater. VLC's
+# standalone GUI and notification modules depend on Sparkle and Growl; the
+# separate libvout_macosx and libcaopengllayer video outputs stay bundled.
+rm -f "$LIBVLC/plugins/libmacosx_plugin.dylib" "$LIBVLC/plugins/libosx_notifications_plugin.dylib"
 ditto "$ROOT/Resources/licenses" "$RESOURCES/licenses"
 ditto "$ROOT/docs/DEPENDENCIES.md" "$RESOURCES/licenses/DEPENDENCIES.md"
 [[ -z "$VLC_LICENSE_DIR" ]] || ditto "$VLC_LICENSE_DIR" "$RESOURCES/licenses/VLC-contrib"
@@ -177,7 +178,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 PLIST
 plutil -lint "$CONTENTS/Info.plist"
 {
-  printf 'Excluded: libosx_notifications_plugin.dylib (obsolete Growl notifications; TelePilot uses AppKit announcements)\n\n'
+  printf 'Excluded: libmacosx_plugin.dylib (standalone VLC interface and Sparkle updater)\n'
+  printf 'Excluded: libosx_notifications_plugin.dylib (obsolete Growl notifications)\n\n'
   printf 'TelePilot %s; VLC 3.0.24; architecture %s\nOfficial DMG SHA256: %s\n\n' "$VERSION" "$ARCH" "$EXPECTED_SHA"
   find "$LIBVLC/plugins" -type f -name '*.dylib' -exec basename {} \; | LC_ALL=C sort
 } > "$RESOURCES/licenses/VLC_PLUGIN_INVENTORY.txt"

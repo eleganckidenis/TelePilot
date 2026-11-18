@@ -1,3 +1,4 @@
+using System.Reflection;
 using Avalonia.Automation;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
@@ -673,6 +674,16 @@ public sealed class MainWindowSectionsTests
             Assert.True(pause.Focus());
             PressKey(window, Key.Tab, RawInputModifiers.Shift);
             Assert.True(archive.IsKeyboardFocusWithin);
+
+            archive.FindControl<Button>("PlayArchiveButton")!.IsEnabled = false;
+            archive.FindControl<Button>("RefreshGuideButton")!.IsEnabled = false;
+            var details = archive.FindControl<AccessibleTextBox>("ProgramDetails")!;
+            var picker = archive.FindControl<AccessibleComboBox>("ChannelPicker")!;
+            var nativeTabStarting = typeof(ArchiveView).GetMethod("OnTabNavigationStarting",
+                BindingFlags.Instance | BindingFlags.NonPublic)!;
+            nativeTabStarting.Invoke(archive, [details, EventArgs.Empty]);
+            Assert.Same(pause, details.NextTabTarget);
+            Assert.Same(tabs.SelectedItem, picker.PreviousTabTarget);
         }
         finally
         {

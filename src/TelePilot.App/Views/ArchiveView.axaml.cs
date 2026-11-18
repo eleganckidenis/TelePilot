@@ -26,13 +26,17 @@ public sealed partial class ArchiveView : UserControl
 
     public bool IsChannelFocusWithin => ChannelPicker.IsKeyboardFocusWithin;
     public bool FocusInitialControl() => ChannelPicker.FocusSelector();
-    internal Control LastTabTarget => GetTabTarget(ChannelPicker, backward: true) ?? ChannelPicker;
+    internal Control LastTabTarget => GetTabTarget(ChannelPicker, backward: true, stayInArchive: true) ?? ChannelPicker;
+    internal Control? PreviousSectionTabTarget { get; set; }
+    internal Control? NextSectionTabTarget { get; set; }
+    internal event EventHandler? TabNavigationStarting;
 
     private void OnTabNavigationStarting(object? sender, EventArgs e)
     {
         // Native editors and selectors cannot use Avalonia's internal tab traversal.
         // Recompute their edges when navigating so disabled archive actions cannot
         // trap focus after selecting a channel without archive configuration.
+        TabNavigationStarting?.Invoke(this, e);
         ChannelPicker.PreviousTabTarget = GetTabTarget(ChannelPicker, backward: true);
         ChannelPicker.NextTabTarget = GetTabTarget(ChannelPicker, backward: false);
         ArchiveDatePicker.PreviousTabTarget = GetTabTarget(ArchiveDatePicker, backward: true);
@@ -41,14 +45,22 @@ public sealed partial class ArchiveView : UserControl
         ProgramDetails.NextTabTarget = GetTabTarget(ProgramDetails, backward: false);
     }
 
-    private Control? GetTabTarget(Control current, bool backward)
+    private Control? GetTabTarget(Control current, bool backward, bool stayInArchive = false)
     {
         Control[] order = [ChannelPicker, ArchiveDatePicker, ShowDayButton, PreviousDayButton,
             NextDayButton, ShowAllChannelsCheckBox, ProgramList, ProgramDetails, PlayArchiveButton, RefreshGuideButton];
         int index = Array.IndexOf(order, current);
+        var boundary = backward ? PreviousSectionTabTarget : NextSectionTabTarget;
         for (int offset = 1; offset < order.Length; offset++)
         {
-            Control candidate = order[(index + (backward ? -offset : offset) + order.Length) % order.Length];
+            int targetIndex = index + (backward ? -offset : offset);
+            if (!stayInArchive && (targetIndex < 0 || targetIndex >= order.Length)
+                && boundary is { IsEffectivelyVisible: true, IsEffectivelyEnabled: true })
+            {
+                return boundary;
+            }
+
+            Control candidate = order[(targetIndex + order.Length) % order.Length];
             if (candidate.IsEffectivelyVisible && candidate.IsEffectivelyEnabled)
             {
                 return candidate;

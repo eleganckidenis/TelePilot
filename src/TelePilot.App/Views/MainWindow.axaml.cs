@@ -70,6 +70,7 @@ public sealed partial class MainWindow : Window
         ConfigureMainFocusCycleEdges();
         SearchBox.TabNavigationStarting += OnTabNavigationStarting;
         GroupSelector.TabNavigationStarting += OnTabNavigationStarting;
+        ArchivePane.TabNavigationStarting += OnTabNavigationStarting;
         ChannelList.AddHandler(
             InputElement.KeyDownEvent,
             OnChannelListKeyDown,
@@ -1108,7 +1109,7 @@ public sealed partial class MainWindow : Window
         bool moveBackward = (e.KeyModifiers & KeyModifiers.Shift) != 0;
         bool channelListVisible = CurrentViewModel?.IsChannelListViewVisible
             ?? (SectionTabs.IsEffectivelyVisible && ChannelListView.IsEffectivelyEnabled);
-        bool playerVisible = PlayerView.IsEffectivelyVisible;
+        Control? firstPlayerControl = GetFirstPlayerTabTarget();
         Control? lastSectionControl = channelListVisible ? GetLastSectionTabTarget() : null;
         Control? target = null;
 
@@ -1116,18 +1117,18 @@ public sealed partial class MainWindow : Window
         {
             if (lastSectionControl is not null && IsFocusWithin(lastSectionControl))
             {
-                target = playerVisible ? PauseResumeButton : SelectedSectionTab();
+                target = firstPlayerControl ?? SelectedSectionTab();
             }
             else if (IsFocusWithin(VolumeSlider))
             {
-                target = channelListVisible ? SelectedSectionTab() : PauseResumeButton;
+                target = channelListVisible ? SelectedSectionTab() : firstPlayerControl;
             }
         }
         else if (SelectedSectionTab() is { } selectedTab && IsFocusWithin(selectedTab))
         {
-            target = playerVisible ? VolumeSlider : lastSectionControl;
+            target = firstPlayerControl is not null ? VolumeSlider : lastSectionControl;
         }
-        else if (IsFocusWithin(PauseResumeButton))
+        else if (firstPlayerControl is not null && IsFocusWithin(firstPlayerControl))
         {
             target = channelListVisible ? lastSectionControl : VolumeSlider;
         }
@@ -1141,6 +1142,16 @@ public sealed partial class MainWindow : Window
             () => FocusMainCycleTarget(target, moveBackward),
             DispatcherPriority.Input);
         return true;
+    }
+
+    private Button? GetFirstPlayerTabTarget()
+    {
+        if (!PlayerView.IsEffectivelyVisible)
+        {
+            return null;
+        }
+
+        return PauseResumeButton.IsEffectivelyEnabled ? PauseResumeButton : StopPlaybackButton;
     }
 
     private Control? GetLastSectionTabTarget()
@@ -1173,9 +1184,9 @@ public sealed partial class MainWindow : Window
     private void ConfigureMainFocusCycleEdges()
     {
         SearchBox.PreviousTabTarget = SelectedSectionTab();
-        Control? afterChannels = PlayerView.IsEffectivelyVisible && PauseResumeButton.IsEffectivelyEnabled
-            ? PauseResumeButton
-            : SelectedSectionTab();
+        Control? afterChannels = (Control?)GetFirstPlayerTabTarget() ?? SelectedSectionTab();
+        ArchivePane.PreviousSectionTabTarget = SelectedSectionTab();
+        ArchivePane.NextSectionTabTarget = afterChannels;
         Control? nextFilterTarget = afterChannels;
         if (ChannelList.ItemCount > 0)
         {
