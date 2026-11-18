@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
@@ -116,7 +115,6 @@ internal static class Program
             Title = "TelePilot native fullscreen smoke",
             Width = 800,
             Height = 540,
-            Topmost = true,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
         };
         windowService.SetOwner(window);
@@ -136,130 +134,74 @@ internal static class Program
             await WaitAsync(() => model.Channels.Count == 2, "two synthetic channels", token,
                 () => $"Loaded {model.Channels.Count} channels from {model.Sources.Count} sources.");
             window.Activate();
-            var hostedArm64 = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 &&
-                Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true" &&
-                Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT") == "github-hosted";
-            await WaitAsync(() => window.IsActive && window.IsVisible && WindowsDesktop.IsActiveOnUiThread(handle) &&
-                (WindowsDesktop.IsForeground(handle) || hostedArm64),
-                "synthetic window activation", token,
-                () => $"Avalonia active={window.IsActive}, visible={window.IsVisible}. {WindowsDesktop.DescribeWindows(handle)}");
-            Console.WriteLine(WindowsDesktop.DescribeWindows(handle));
-            var useKeyboard = WindowsDesktop.IsForeground(handle);
-            Require(useKeyboard || hostedArm64, "The test window lost global foreground during activation.");
-            Console.WriteLine(useKeyboard
-                ? "Mode: native desktop pixels and end-to-end keyboard with global foreground."
-                : "Mode: native desktop pixels on hosted ARM64. Another window owns global foreground, so app commands drive the scenario without keyboard assertions.");
+            await WaitAsync(() => WindowsDesktop.IsForeground(handle), "synthetic window foreground", token,
+                () => $"Window reports IsActive={window.IsActive} and IsVisible={window.IsVisible}.");
             var initialState = window.WindowState;
-            if (useKeyboard)
-            {
-                focus.Request(FocusTarget.ChannelList, model.Channels[0].Id);
-                await WaitAsync(() => list.IsKeyboardFocusWithin && model.SelectedChannel == model.Channels[0] &&
-                    WindowsDesktop.HasKeyboardFocus(handle), "first channel focus", token, () => WindowsDesktop.DescribeWindows(handle));
-            }
-            else
-            {
-                model.SelectedChannel = model.Channels[0];
-            }
-
-            Dispatch(WindowsDesktop.Enter, model.PlaySelectedCommand);
+            focus.Request(FocusTarget.ChannelList, model.Channels[0].Id);
+            await WaitAsync(() => list.IsKeyboardFocusWithin && model.SelectedChannel == model.Channels[0], "first channel focus", token);
+            WindowsDesktop.Press(handle, WindowsDesktop.Enter);
             await WaitAsync(() => playback.Current.State == PlaybackState.Playing && playback.MediaPlayer.VoutCount > 0 &&
-                (!useKeyboard || player.IsKeyboardFocusWithin), "first playback and player presentation", token,
-                () => $"Playback state={playback.Current.State}.");
+                player.IsKeyboardFocusWithin, "first playback and player focus", token, () => $"Playback state={playback.Current.State}.");
             var previousFocus = window.FocusManager?.GetFocusedElement();
             await CheckPictureAsync("4:3 windowed", video, handle, 4d / 3, fullscreen: false, token);
 
-            Dispatch(WindowsDesktop.F11, model.ToggleFullscreenCommand);
+            WindowsDesktop.Press(handle, WindowsDesktop.F11);
             await CheckFullscreenAsync("4:3 fullscreen", 4d / 3);
-            if (useKeyboard)
-            {
-                Console.WriteLine("Checking fullscreen Tab, Shift+Tab and Escape.");
-                WindowsDesktop.Press(handle, WindowsDesktop.Tab);
-                await Task.Delay(100, token);
-                Require(exit.IsFocused, "Tab moved focus away from Exit Full Screen.");
-                WindowsDesktop.Press(handle, WindowsDesktop.Tab, WindowsDesktop.Shift);
-                await Task.Delay(100, token);
-                Require(exit.IsFocused, "Shift+Tab moved focus away from Exit Full Screen.");
-            }
-
-            Dispatch(WindowsDesktop.Escape, model.ExitFullscreenCommand);
+            Console.WriteLine("Checking fullscreen Tab, Shift+Tab and Escape.");
+            WindowsDesktop.Press(handle, WindowsDesktop.Tab);
+            await Task.Delay(100, token);
+            Require(exit.IsFocused, "Tab moved focus away from Exit Full Screen.");
+            WindowsDesktop.Press(handle, WindowsDesktop.Tab, WindowsDesktop.Shift);
+            await Task.Delay(100, token);
+            Require(exit.IsFocused, "Shift+Tab moved focus away from Exit Full Screen.");
+            WindowsDesktop.Press(handle, WindowsDesktop.Escape);
             await WaitAsync(() => window.WindowState == initialState && menu.IsEffectivelyVisible && controls.IsEffectivelyVisible &&
-                (!useKeyboard || ReferenceEquals(window.FocusManager?.GetFocusedElement(), previousFocus)),
-                "exit restores the player window", token);
+                ReferenceEquals(window.FocusManager?.GetFocusedElement(), previousFocus), "Escape restores window and player focus", token);
             await CheckPictureAsync("4:3 restored", video, handle, 4d / 3, fullscreen: false, token);
 
-            Dispatch(WindowsDesktop.L, model.ToggleChannelListCommand, WindowsDesktop.Control);
-            await WaitAsync(() => model.IsChannelListViewVisible && tabs.IsEffectivelyVisible &&
-                (!useKeyboard || list.IsKeyboardFocusWithin), "split view", token);
-            Dispatch(WindowsDesktop.F11, model.ToggleFullscreenCommand);
+            WindowsDesktop.Press(handle, WindowsDesktop.L, WindowsDesktop.Control);
+            await WaitAsync(() => list.IsKeyboardFocusWithin && tabs.IsEffectivelyVisible, "split view and channel list focus", token);
+            WindowsDesktop.Press(handle, WindowsDesktop.F11);
             await CheckFullscreenAsync("4:3 fullscreen from split view", 4d / 3);
-            Dispatch(WindowsDesktop.F11, model.ToggleFullscreenCommand);
-            await WaitAsync(() => window.WindowState == initialState && model.IsChannelListViewVisible && tabs.IsEffectivelyVisible &&
-                menu.IsEffectivelyVisible && controls.IsEffectivelyVisible && (!useKeyboard || list.IsKeyboardFocusWithin),
-                "exit restores split view", token);
+            WindowsDesktop.Press(handle, WindowsDesktop.F11);
+            await WaitAsync(() => window.WindowState == initialState && list.IsKeyboardFocusWithin && tabs.IsEffectivelyVisible &&
+                menu.IsEffectivelyVisible && controls.IsEffectivelyVisible, "F11 restores split view and list focus", token);
             await CheckPictureAsync("4:3 split restored", video, handle, 4d / 3, fullscreen: false, token);
             await StopAndCheckAsync();
 
-            if (useKeyboard)
-            {
-                WindowsDesktop.Press(handle, WindowsDesktop.Down);
-                await WaitAsync(() => list.IsKeyboardFocusWithin && model.SelectedChannel == model.Channels[1], "second channel selection", token);
-            }
-            else
-            {
-                model.SelectedChannel = model.Channels[1];
-            }
-
-            Dispatch(WindowsDesktop.Enter, model.PlaySelectedCommand);
+            WindowsDesktop.Press(handle, WindowsDesktop.Down);
+            await WaitAsync(() => list.IsKeyboardFocusWithin && model.SelectedChannel == model.Channels[1], "second channel selection", token);
+            WindowsDesktop.Press(handle, WindowsDesktop.Enter);
             await WaitAsync(() => playback.Current.State == PlaybackState.Playing && playback.MediaPlayer.VoutCount > 0 &&
-                (!useKeyboard || player.IsKeyboardFocusWithin), "second playback and player presentation", token,
-                () => $"Playback state={playback.Current.State}.");
-            if (useKeyboard)
-            {
-                previousFocus = window.FocusManager?.GetFocusedElement();
-                Console.WriteLine("Checking Tab after opening the second channel.");
-                WindowsDesktop.Press(handle, WindowsDesktop.Tab);
-                await WaitAsync(() => player.IsKeyboardFocusWithin && !ReferenceEquals(window.FocusManager?.GetFocusedElement(), previousFocus),
-                    "Tab reaches next player control after second Enter", token);
-            }
-
+                player.IsKeyboardFocusWithin, "second playback and player focus", token, () => $"Playback state={playback.Current.State}.");
+            previousFocus = window.FocusManager?.GetFocusedElement();
+            Console.WriteLine("Checking Tab after opening the second channel.");
+            WindowsDesktop.Press(handle, WindowsDesktop.Tab);
+            await WaitAsync(() => player.IsKeyboardFocusWithin && !ReferenceEquals(window.FocusManager?.GetFocusedElement(), previousFocus),
+                "Tab reaches next player control after second Enter", token);
             await CheckPictureAsync("anamorphic 16:9 windowed", video, handle, 16d / 9, fullscreen: false, token);
             Console.WriteLine("Entering fullscreen on the second channel.");
-            Dispatch(WindowsDesktop.F11, model.ToggleFullscreenCommand);
+            WindowsDesktop.Press(handle, WindowsDesktop.F11);
             await CheckFullscreenAsync("anamorphic 16:9 fullscreen", 16d / 9);
             await StopAndCheckAsync();
-            var checks = useKeyboard ? "Native fullscreen and keyboard checks" : "Native fullscreen pixel and presentation checks";
-            Console.WriteLine($"{checks} passed ({RuntimeInformation.ProcessArchitecture}, LibVLC {playback.LibVlcVersion}).");
-
-            void Dispatch(byte key, ICommand command, byte modifier = 0)
-            {
-                if (useKeyboard)
-                {
-                    WindowsDesktop.Press(handle, key, modifier);
-                }
-                else
-                {
-                    command.Execute(null);
-                }
-            }
+            Console.WriteLine($"Native fullscreen and keyboard checks passed ({RuntimeInformation.ProcessArchitecture}, LibVLC {playback.LibVlcVersion}).");
 
             async Task CheckFullscreenAsync(string stage, double aspectRatio)
             {
-                await WaitAsync(() => window.WindowState == WindowState.FullScreen && model.IsPlaybackFullscreen &&
+                await WaitAsync(() => window.WindowState == WindowState.FullScreen && model.IsPlaybackFullscreen && exit.IsFocused &&
                     !menu.IsEffectivelyVisible && !tabs.IsEffectivelyVisible && !controls.IsEffectivelyVisible &&
-                    !model.IsChannelListViewVisible && !list.IsEffectivelyEnabled && (!useKeyboard || exit.IsFocused),
-                    $"{stage} presentation", token);
+                    !model.IsChannelListViewVisible && !list.IsEffectivelyEnabled,
+                    $"{stage} hides chrome and focuses Exit Full Screen", token);
                 await CheckPictureAsync(stage, video, handle, aspectRatio, fullscreen: true, token);
             }
 
             async Task StopAndCheckAsync()
             {
-                Console.WriteLine($"Stopping playback in {window.WindowState}.");
-                Dispatch(WindowsDesktop.S, model.StopCommand, WindowsDesktop.Control);
+                Console.WriteLine($"Triggering Ctrl+S in {window.WindowState}.");
+                WindowsDesktop.Press(handle, WindowsDesktop.S, WindowsDesktop.Control);
                 await WaitAsync(() => playback.Current.State == PlaybackState.Idle && !model.IsPlayerViewVisible &&
-                    window.WindowState == initialState && model.IsChannelListViewVisible && menu.IsEffectivelyVisible &&
-                    (!useKeyboard || (list.IsKeyboardFocusWithin && WindowsDesktop.HasKeyboardFocus(handle))),
-                    "stop restores the channel list", token,
-                    () => WindowsDesktop.DescribeWindows(handle));
+                    window.WindowState == initialState && list.IsKeyboardFocusWithin && menu.IsEffectivelyVisible,
+                    "Ctrl+S stops playback and restores channel list focus", token);
             }
         }
         finally
@@ -281,7 +223,7 @@ internal static class Program
             viewport = new(start.X, start.Y, end.X, end.Y);
             error = WindowsDesktop.CheckGradient(handle, viewport, aspectRatio, fullscreen);
             return error is null;
-        }, stage, token, () => $"{error} {WindowsDesktop.DescribeWindows(handle)}");
+        }, stage, token, () => error);
         Console.WriteLine($"{stage} ({viewport.Width}x{viewport.Height}): desktop pixels match the expected " +
             (fullscreen ? "center crop at monitor edges." : "aspect fit."));
     }

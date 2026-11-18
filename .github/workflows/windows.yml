@@ -51,6 +51,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "TELEPILOT_TEST_FFMPEG=$env:TELEPILOT_TEST_FFMPEG" >> $env:GITHUB_ENV
       - name: Verify fullscreen on the native Windows desktop
+        # The hosted ARM64 runner exposes pixels from a different foreground window.
+        # Its native LibVLC viewport check runs in the test suite above.
+        if: matrix.runtime == 'win-x64'
         timeout-minutes: 3
         shell: pwsh
         run: dotnet run --project scripts/TelePilot.NativeFullscreenSmoke --configuration Release -p:UsedAvaloniaProducts= -- $env:TELEPILOT_TEST_FFMPEG

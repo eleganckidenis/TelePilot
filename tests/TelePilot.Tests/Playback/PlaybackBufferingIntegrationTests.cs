@@ -13,6 +13,28 @@ namespace TelePilot.Tests.Playback;
 public sealed class PlaybackBufferingIntegrationTests
 {
     [Fact]
+    public async Task RealLibVlcSetsAndClearsViewportCropOnThePlaybackWorker()
+    {
+        if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("TELEPILOT_RUN_PLAYBACK_INTEGRATION") != "1")
+        {
+            Assert.Skip("The native LibVLC integration requires Windows and TELEPILOT_RUN_PLAYBACK_INTEGRATION=1.");
+            return;
+        }
+
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var service = new LibVlcPlaybackService(NullLogger<LibVlcPlaybackService>.Instance);
+        await service.PrepareAsync(cancellationToken);
+        service.SetVideoViewport(2560, 1440);
+        // Queue a barrier before reading the native setting from the test thread.
+        await service.PrepareAsync(cancellationToken);
+        Assert.Equal("2560:1440", service.MediaPlayer.CropGeometry);
+
+        service.SetVideoViewport(0, 0);
+        await service.PrepareAsync(cancellationToken);
+        Assert.True(string.IsNullOrEmpty(service.MediaPlayer.CropGeometry));
+    }
+
+    [Fact]
     public async Task RealLibVlcEndedReleasesSyntheticTsAndNeverReconnects()
     {
         if (!OperatingSystem.IsWindows() || Environment.GetEnvironmentVariable("TELEPILOT_RUN_PLAYBACK_INTEGRATION") != "1")
