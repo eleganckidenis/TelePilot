@@ -17,10 +17,56 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hoste
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 Add-Type -TypeDefinition @'
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
-public static class NativeUpdaterForeground {
+using System.Text;
+public static class NativeUpdaterWindows {
+    private delegate bool EnumWindowProc(IntPtr window, IntPtr state);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowProc callback, IntPtr state);
+    [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumWindowProc callback, IntPtr state);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder value, int capacity);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, StringBuilder value, int capacity);
+    [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr window);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+
+    public static IntPtr Owner(IntPtr window) { return GetWindow(window, 4); } // GW_OWNER
+    public static uint ProcessId(IntPtr window) {
+        uint id;
+        GetWindowThreadProcessId(window, out id);
+        return id;
+    }
+    public static string ClassName(IntPtr window) {
+        var value = new StringBuilder(64);
+        GetClassName(window, value, value.Capacity);
+        return value.ToString();
+    }
+    public static string Caption(IntPtr window) {
+        var value = new StringBuilder(120);
+        GetWindowText(window, value, value.Capacity);
+        return value.ToString();
+    }
+    public static IntPtr[] TopLevelWindows(int processId) {
+        var windows = new List<IntPtr>();
+        EnumWindows((window, state) => {
+            if (ProcessId(window) == processId) windows.Add(window);
+            return true;
+        }, IntPtr.Zero);
+        return windows.ToArray();
+    }
+    public static IntPtr[] VisibleEditors(IntPtr parent, int processId) {
+        var windows = new List<IntPtr>();
+        EnumChildWindows(parent, (window, state) => {
+            if (ProcessId(window) == processId && IsWindowVisible(window)
+                && string.Equals(ClassName(window), "Edit", StringComparison.OrdinalIgnoreCase)) windows.Add(window);
+            return true;
+        }, IntPtr.Zero);
+        return windows.ToArray();
+    }
 }
 '@
 $Executable = (Resolve-Path -LiteralPath $Executable).Path
@@ -51,6 +97,13 @@ function Find-Control($Window, [string]$Id) {
     $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty, $Id)
     $Window.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
 }
+function Get-WindowElement([IntPtr]$Handle) {
+    try { [Windows.Automation.AutomationElement]::FromHandle($Handle) }
+    catch [ArgumentException] {
+        # A short-lived progress window can close between enumeration and lookup.
+        if ([NativeUpdaterWindows]::IsWindow($Handle)) { throw }
+    }
+}
 function Invoke-Control($Control) {
     $invoke = $null
     if ($null -eq $Control -or -not $Control.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) {
@@ -58,62 +111,123 @@ function Invoke-Control($Control) {
     }
     $invoke.Invoke()
 }
-function Find-ReleaseNotes($Window) {
-    # The Win32 EDIT supplies the Text pattern and its platform automation ID.
-    $name = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Release notes')
-    $edit = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Edit)
-    $condition = [Windows.Automation.AndCondition]::new([Windows.Automation.Condition[]]@($name, $edit))
-    $Window.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
+function Read-ReleaseNotes([IntPtr]$WindowHandle, [int]$ProcessId, $Inspection) {
+    # The hosted Win32 EDIT may not be reachable through the Avalonia provider's
+    # descendant tree. Query that child HWND's own UIA provider directly.
+    foreach ($editor in [NativeUpdaterWindows]::VisibleEditors($WindowHandle, $ProcessId)) {
+        $notes = Get-WindowElement $editor
+        if ($null -eq $notes) { continue }
+        $properties = $notes.Current
+        $textPattern = $null
+        $hasTextPattern = $notes.TryGetCurrentPattern([Windows.Automation.TextPattern]::Pattern, [ref]$textPattern)
+        $entry = [ordered]@{
+            handle=$editor.ToInt64(); name=$properties.Name; controlType=$properties.ControlType.ProgrammaticName
+            offscreen=$properties.IsOffscreen; textPattern=$hasTextPattern; length=0
+        }
+        $Inspection.Add($entry)
+        if ($properties.ControlType -ne [Windows.Automation.ControlType]::Edit -or
+            $properties.Name -cne 'Release notes' -or $properties.IsOffscreen -or -not $hasTextPattern) { continue }
+        $notesText = $textPattern.DocumentRange.GetText(-1)
+        if (-not [string]::IsNullOrWhiteSpace($notesText)) {
+            $entry.length = $notesText.Length
+            $entry.isPlaceholder = $notesText.Trim() -ceq 'Release notes for this version are unavailable.'
+            if (-not $entry.isPlaceholder) { return $notesText }
+        }
+    }
 }
 $app = Start-Process -FilePath $Executable -WorkingDirectory (Split-Path -Parent $Executable) -PassThru
 $timer = [Diagnostics.Stopwatch]::StartNew()
 $offer = $null
 $notice = $null
 $main = $null
-$windowNames = @()
+$mainHandle = [IntPtr]::Zero
+$observedWindows = [ordered]@{}
+$controlSamples = [ordered]@{}
+$lastOfferInspection = $null
+$lastActivation = $null
 $progressSeen = $false
 $nonmodalVerified = $false
 $progressMessages = [Collections.Generic.List[string]]::new()
 try {
-    $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)
     while ($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
         if ($app.HasExited) { throw "QA TelePilot exited before showing an update: $($app.ExitCode)." }
-        try {
-            $windows = [Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Children, $condition)
-            $windowNames = @($windows | ForEach-Object { $_.Current.Name })
-            $progressVisibleThisPass = $false
-            foreach ($window in $windows) {
+        $handles = [NativeUpdaterWindows]::TopLevelWindows($app.Id)
+        $progressVisibleThisPass = $false
+        $ownedWindowVisible = $false
+        foreach ($handle in $handles) {
+            $owner = [NativeUpdaterWindows]::Owner($handle)
+            $visible = [NativeUpdaterWindows]::IsWindowVisible($handle)
+            $sample = [ordered]@{
+                handle=$handle.ToInt64(); owner=$owner.ToInt64(); visible=$visible
+                caption=[NativeUpdaterWindows]::Caption($handle); class=[NativeUpdaterWindows]::ClassName($handle)
+                nativeEnabled=[NativeUpdaterWindows]::IsWindowEnabled($handle)
+            }
+            $key = [string]$handle.ToInt64()
+            $observedWindows[$key] = $sample
+            if (-not $visible) { continue }
+            if ($owner -ne [IntPtr]::Zero) { $ownedWindowVisible = $true }
+            try {
+                $window = Get-WindowElement $handle
+                if ($null -eq $window) { continue }
+                $properties = $window.Current
+                $sample.uiaName = $properties.Name
+                $sample.uiaId = $properties.AutomationId
+                $sample.uiaOffscreen = $properties.IsOffscreen
+                $sample.uiaEnabled = $properties.IsEnabled
+                if (-not $controlSamples.Contains($key)) {
+                    $controls = $window.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)
+                    $controlSamples[$key] = @($controls | ForEach-Object { $_.Current.AutomationId } |
+                        Where-Object { $_ } | Select-Object -First 12)
+                }
+                $liveTab = Find-Control $window 'tab-live'
+                if ($null -ne $liveTab) {
+                    $main = $window
+                    $mainHandle = $handle
+                    $sample.liveTabName = $liveTab.Current.Name
+                }
                 $progressMessage = Find-Control $window 'update-progress-text'
-                if ($null -ne $progressMessage -and -not $window.Current.IsOffscreen) {
-                    if ($null -eq $offer -and $progressMessage.Current.Name -ceq "Version $ExpectedVersion is available. Download the update?") {
-                        $notes = Find-ReleaseNotes $window
+                if ($null -ne $progressMessage) {
+                    $sample.message = $progressMessage.Current.Name
+                    if ($null -eq $offer -and $sample.message -ceq "Version $ExpectedVersion is available. Download the update?") {
+                        $editorInspection = [Collections.Generic.List[object]]::new()
+                        $notesText = Read-ReleaseNotes $handle $app.Id $editorInspection
                         $download = Find-Control $window 'update-download'
                         $later = Find-Control $window 'update-later'
-                        $textPattern = $null
-                        if ($null -ne $notes -and $null -ne $download -and $null -ne $later -and
-                            $notes.TryGetCurrentPattern([Windows.Automation.TextPattern]::Pattern, [ref]$textPattern)) {
-                            $notesText = $textPattern.DocumentRange.GetText(-1)
-                            if ([string]::IsNullOrWhiteSpace($notesText) -or $download.Current.Name -cne 'Download' -or $later.Current.Name -cne 'Later') {
-                                throw 'The pre-download offer did not expose its accessible release notes and actions.'
-                            }
-                            $offer = @{ Message=$progressMessage.Current.Name; Download=$download; NotesLength=$notesText.Length; Consented=$false }
+                        $downloadInvoke = $null
+                        $laterInvoke = $null
+                        $lastOfferInspection = [ordered]@{
+                            message=$sample.message; handle=$handle.ToInt64(); offscreen=$properties.IsOffscreen
+                            editors=$editorInspection.ToArray()
+                            downloadName=$(if ($null -ne $download) { $download.Current.Name })
+                            laterName=$(if ($null -ne $later) { $later.Current.Name })
+                            downloadInvoke=($null -ne $download -and $download.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$downloadInvoke))
+                            laterInvoke=($null -ne $later -and $later.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$laterInvoke))
+                        }
+                        if ($null -ne $notesText -and -not $properties.IsOffscreen -and
+                            $lastOfferInspection.downloadName -ceq 'Download' -and $lastOfferInspection.laterName -ceq 'Later' -and
+                            $lastOfferInspection.downloadInvoke -and $lastOfferInspection.laterInvoke) {
+                            $offer = @{ Message=$sample.message; Download=$download; NotesLength=$notesText.Length; Consented=$false }
                         }
                     }
-                    if ($null -ne (Find-Control $window 'update-progress-bar')) {
+                    $bar = Find-Control $window 'update-progress-bar'
+                    if ($null -ne $bar -and -not $bar.Current.IsOffscreen -and -not $properties.IsOffscreen) {
                         $progressVisibleThisPass = $true
                         $progressSeen = $true
-                        if (-not $progressMessages.Contains($progressMessage.Current.Name)) { $progressMessages.Add($progressMessage.Current.Name) }
+                        if (-not $progressMessages.Contains($sample.message)) { $progressMessages.Add($sample.message) }
                     }
                 }
                 $message = Find-Control $window 'confirmation-dialog-content'
-                if ($null -ne $message -and $message.Current.Name -ceq "Version $ExpectedVersion has been downloaded. Open the installer?") {
-                    $notice = @{ Window=$window; Message=$message.Current.Name; Cancel=(Find-Control $window 'confirmation-dialog-cancel'); Confirm=(Find-Control $window 'confirmation-dialog-confirm') }
-                    continue
+                if ($null -ne $message) {
+                    $sample.message = $message.Current.Name
+                    if (-not $properties.IsOffscreen -and $sample.message -ceq "Version $ExpectedVersion has been downloaded. Open the installer?") {
+                        $notice = @{ Window=$window; Message=$sample.message; Cancel=(Find-Control $window 'confirmation-dialog-cancel'); Confirm=(Find-Control $window 'confirmation-dialog-confirm') }
+                    }
                 }
-                if ($null -ne (Find-Control $window 'tab-live')) { $main = $window }
-            }
+            } catch [Windows.Automation.ElementNotAvailableException] { $sample.staleUiaElement = $true }
+        }
+        try {
             if ($null -ne $offer -and -not $offer.Consented -and $null -ne $main) {
-                if (-not $main.Current.IsEnabled) { throw 'The pre-download offer disabled its owner.' }
+                if (-not $main.Current.IsEnabled -or -not [NativeUpdaterWindows]::IsWindowEnabled($mainHandle)) { throw 'The pre-download offer disabled its owner.' }
                 Start-Sleep -Milliseconds 500
                 if (@(Get-ChildItem -LiteralPath $updates -Force).Count -ne 0) {
                     throw 'The updater wrote files before receiving consent.'
@@ -123,18 +237,25 @@ try {
                 $nonmodalVerified = $true
             }
             if ($progressVisibleThisPass -and $null -eq $notice -and $null -ne $main) {
-                if (-not $main.Current.IsEnabled) { throw 'The download progress window disabled its owner.' }
+                if (-not $main.Current.IsEnabled -or -not [NativeUpdaterWindows]::IsWindowEnabled($mainHandle)) { throw 'The download progress window disabled its owner.' }
                 $nonmodalVerified = $true
             }
             if ($null -ne $notice) { break }
-            if ($null -ne $main -and $main.Current.IsEnabled -and -not $main.Current.IsOffscreen) {
-                [void][NativeUpdaterForeground]::SetForegroundWindow([IntPtr]$main.Current.NativeWindowHandle)
+            $foreground = [NativeUpdaterWindows]::GetForegroundWindow()
+            if ($null -ne $main -and -not $ownedWindowVisible -and $foreground -ne $mainHandle -and
+                $main.Current.IsEnabled -and -not $main.Current.IsOffscreen) {
+                # Startup and the ready-to-install prompt wait for an active owner.
+                # Never take focus away from an owned window that's already open.
+                $lastActivation = [ordered]@{
+                    from=$foreground.ToInt64(); previousProcessId=[NativeUpdaterWindows]::ProcessId($foreground)
+                    succeeded=[NativeUpdaterWindows]::SetForegroundWindow($mainHandle)
+                }
             }
         } catch [Windows.Automation.ElementNotAvailableException] { }
         Start-Sleep -Milliseconds 250
     }
     if ($null -eq $offer -or -not $offer.Consented -or $null -eq $notice) {
-        throw "Current-source native updater did not complete the offer and consent flow; windows: $($windowNames -join ', ')."
+        throw 'Current-source native updater did not complete the offer and consent flow.'
     }
     if ($notice.Confirm.Current.Name -cne 'Open installer' -or $notice.Cancel.Current.Name -cne 'Later') {
         throw 'The updater did not expose its expected accessible installer controls.'
@@ -157,6 +278,18 @@ try {
     $evidence | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $EvidenceDirectory "new-updater-native-$Runtime.json") -Encoding UTF8
     Invoke-Control $notice.Cancel
     Write-Host "PASS: current-source native $Runtime updater offered $ExpectedVersion with release notes and verified the installer after $($evidence.elapsedSeconds)s; progressObserved=$progressSeen, nonmodal=$nonmodalVerified."
+} catch {
+    $foreground = [NativeUpdaterWindows]::GetForegroundWindow()
+    $diagnostics = [ordered]@{
+        failure=$_.Exception.Message; runtime=$Runtime; processId=$app.Id; elapsedSeconds=[Math]::Round($timer.Elapsed.TotalSeconds, 3)
+        foregroundHandle=$foreground.ToInt64(); foregroundProcessId=[NativeUpdaterWindows]::ProcessId($foreground)
+        mainHandle=$mainHandle.ToInt64(); lastActivation=$lastActivation; windows=@($observedWindows.Values); controlSamples=$controlSamples
+        offerInspection=$lastOfferInspection; consented=($null -ne $offer -and $offer.Consented)
+        progressMessages=$progressMessages.ToArray(); updateCacheEntries=@(Get-ChildItem -LiteralPath $updates -Force).Count
+    }
+    $diagnostics | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $EvidenceDirectory "new-updater-native-$Runtime-failure.json") -Encoding UTF8
+    Write-Host (ConvertTo-Json -InputObject $diagnostics -Depth 7 -Compress)
+    throw
 } finally {
     if (-not $app.HasExited) {
         try {
