@@ -142,6 +142,7 @@ struct OnboardingTests {
             // Cold LibVLC plugin discovery is separate from opening the stream.
             await controller.playbackTask?.value
             try await waitForPlaying(player, channel: "Second")
+            try await exerciseNativeFullscreen(controller, player: player)
 
             controller.stopPlayback()
             await controller.playbackTask?.value
@@ -209,6 +210,33 @@ struct OnboardingTests {
             }
             await player.shutdown()
         }
+
+        let mainWindow = try #require(controller.window)
+        let fullScreenButton = try #require(controller.playerControls.compactMap { $0 as? NSButton }.first { $0.title == "Full Screen" })
+        let video = controller.video
+        controller.playing = try #require(controller.rows.last)
+        controller.listShown = true
+        controller.updateVisibility()
+        mainWindow.contentView?.layoutSubtreeIfNeeded()
+        let splitWidth = video.frame.width
+        #expect(video.window === mainWindow)
+        #expect(splitWidth > 0)
+        mainWindow.makeFirstResponder(controller.search)
+        #expect(mainWindow.firstResponder === controller.search.currentEditor())
+        controller.windowWillEnterFullScreen(Notification(name: NSWindow.willEnterFullScreenNotification, object: mainWindow))
+        controller.windowDidEnterFullScreen(Notification(name: NSWindow.didEnterFullScreenNotification, object: mainWindow))
+        #expect(!controller.listShown)
+        #expect(video.window === mainWindow)
+        #expect(video.frame.width > splitWidth)
+        #expect(fullScreenButton.accessibilityLabel() == "Exit Full Screen")
+        #expect(mainWindow.firstResponder === controller.pauseButton)
+        controller.windowWillExitFullScreen(Notification(name: NSWindow.willExitFullScreenNotification, object: mainWindow))
+        controller.windowDidExitFullScreen(Notification(name: NSWindow.didExitFullScreenNotification, object: mainWindow))
+        #expect(controller.listShown)
+        #expect(video.window === mainWindow)
+        #expect(fullScreenButton.accessibilityLabel() == "Full Screen")
+        #expect(controller.cycleFocus(in: mainWindow, backward: false))
+        #expect((mainWindow.firstResponder as? NSButton)?.title == "Stop")
 
         // Terminal transitions release playback, cancel stale retries, preserve the
         // channel selection and recording state, and return keyboard focus to the list.
@@ -297,15 +325,69 @@ struct OnboardingTests {
         #expect(savedGuideChanges == ["https://example.invalid/guide", nil])
     }
 
-    private func waitForPlaying(_ player: Player, channel: String) async throws {
+    @MainActor
+    private func exerciseNativeFullscreen(_ controller: MainController, player: Player) async throws {
+        let window = try #require(controller.window)
+        let button = try #require(controller.playerControls.compactMap { $0 as? NSButton }.first { $0.title == "Full Screen" })
+        let video = controller.video
+        let renderer = try #require(video.subviews.first)
+        let attempt = controller.playbackAttempt
+        let policy = NSApp.activationPolicy()
+        if policy != .regular {
+            try #require(NSApp.setActivationPolicy(.regular))
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        defer {
+            if window.styleMask.contains(.fullScreen) { controller.fullscreen() }
+            if policy != .regular { _ = NSApp.setActivationPolicy(policy) }
+        }
+
+        controller.toggleList()
+        #expect(controller.listShown)
+        controller.fullscreen()
+        try await waitForFullscreen(window: window, button: button, enabled: true)
+        #expect(!controller.listShown)
+        #expect(video.window === window)
+        #expect(renderer.superview === video)
+        #expect(!video.visibleRect.isEmpty)
+        let videoPoint = NSPoint(x: video.bounds.midX, y: video.bounds.midY)
+        #expect(video.hitTest(video.convert(videoPoint, to: video.superview)) == nil)
+        #expect(window.firstResponder === controller.pauseButton)
+        let fullscreenFrames = await player.sample().progress?.displayedVideo ?? 0
+        try await waitForPlaying(player, channel: "Second", afterDisplayedFrames: fullscreenFrames)
+
+        controller.fullscreen()
+        try await waitForFullscreen(window: window, button: button, enabled: false)
+        #expect(controller.listShown)
+        #expect(video.window === window)
+        #expect(renderer.superview === video)
+        #expect(!video.visibleRect.isEmpty)
+        #expect(controller.cycleFocus(in: window, backward: false))
+        #expect((window.firstResponder as? NSButton)?.title == "Stop")
+        let windowedFrames = await player.sample().progress?.displayedVideo ?? 0
+        try await waitForPlaying(player, channel: "Second", afterDisplayedFrames: windowedFrames)
+        #expect(controller.playbackAttempt == attempt)
+    }
+
+    @MainActor
+    private func waitForFullscreen(window: NSWindow, button: NSButton, enabled: Bool) async throws {
+        let title = enabled ? "Exit Full Screen" : "Full Screen"
+        let deadline = ContinuousClock.now + .seconds(6)
+        while (window.styleMask.contains(.fullScreen) != enabled || button.title != title), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try #require(window.styleMask.contains(.fullScreen) == enabled && button.title == title)
+    }
+
+    private func waitForPlaying(_ player: Player, channel: String, afterDisplayedFrames: Int = 0) async throws {
         let deadline = ContinuousClock.now + .seconds(8)
         var sample = await player.sample()
-        while (sample.state != 3 || (sample.progress?.displayedVideo ?? 0) == 0) && ContinuousClock.now < deadline {
+        while (sample.state != 3 || (sample.progress?.displayedVideo ?? 0) <= afterDisplayedFrames) && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(50))
             sample = await player.sample()
         }
         let displayedFrames = sample.progress?.displayedVideo ?? 0
-        try #require(sample.state == 3 && displayedFrames > 0,
-                     "Expected \(channel) to display video after Enter; VLC state: \(sample.state), displayed frames: \(displayedFrames)")
+        try #require(sample.state == 3 && displayedFrames > afterDisplayedFrames,
+                     "Expected \(channel) to display new video frames; VLC state: \(sample.state), displayed frames: \(displayedFrames)")
     }
 }

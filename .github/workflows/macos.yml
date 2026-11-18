@@ -23,3 +23,74 @@ jobs:
         run: test "$(uname -m)" = arm64
       - name: Native Swift tests
         run: ./macos/scripts/test.sh
+
+  package:
+    name: Apple Silicon package and playback verification
+    if: startsWith(github.ref, 'refs/heads/release/')
+    needs: tests
+    runs-on: macos-15
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Prepare pinned dependencies
+        shell: bash
+        run: |
+          test "$(uname -m)" = arm64
+          deps="$RUNNER_TEMP/telepilot-dependencies"
+          mkdir -p "$deps/vlc-notices"
+          curl --proto '=https' --proto-redir '=https' -fLSs --retry 3 --connect-timeout 20 \
+            https://download.videolan.org/pub/videolan/vlc/3.0.24/macosx/vlc-3.0.24-arm64.dmg \
+            -o "$deps/vlc.dmg"
+          printf '%s  %s\n' 64a89d93cdd30b0e97131743e246373db82d6826ea882d265d46d74b136da2b7 "$deps/vlc.dmg" | shasum -a 256 -c -
+          ditto -x -k docs/licenses/VLC-CONTRIB-NOTICES.zip "$deps/vlc-notices"
+          curl --proto '=https' --proto-redir '=https' -fLSs --retry 3 --connect-timeout 20 \
+            https://github.com/eleganckidenis/TelePilot/releases/download/v2.1.1/TelePilot-2.1.1-macos-third-party-sources.zip \
+            -o "$deps/ffmpeg-sources.zip"
+          printf '%s  %s\n' df15b6a5057f4f81aa5b427886971e2bc36215fb7aa767f2ca398a869c099f2d "$deps/ffmpeg-sources.zip" | shasum -a 256 -c -
+          mkdir -p "$deps/archives"
+          unzip -q -j "$deps/ffmpeg-sources.zip" '*/sources/*' -d "$deps/archives"
+          ./macos/scripts/build-ffmpeg.sh --output "$deps/ffmpeg" --archive-dir "$deps/archives" --offline
+      - name: Build and verify the DMG and corresponding source archives
+        shell: bash
+        run: |
+          deps="$RUNNER_TEMP/telepilot-dependencies"
+          manifest="$deps/ffmpeg/install/share/telepilot-ffmpeg"
+          version="$(tr -d '[:space:]' < macos/VERSION)"
+          test "${GITHUB_REF_NAME#release/}" = "$version"
+          ./macos/scripts/package-app.sh --skip-tests --vlc-dmg "$deps/vlc.dmg" \
+            --vlc-license-dir "$deps/vlc-notices" --ffmpeg "$deps/ffmpeg/install/bin/ffmpeg" \
+            --ffmpeg-manifest "$manifest/source-manifest.json" --ffmpeg-license-dir "$manifest/licenses"
+          ./macos/scripts/create-ready-dmg.sh
+          python3 ./scripts/prepare-macos-dependency-sources.py --archive-dir "$deps/ffmpeg/archives" \
+            --manifest "$manifest/source-manifest.json" --license-dir "$manifest/licenses" \
+            --output "macos/artifacts/TelePilot-$version-macos-third-party-sources.zip"
+      - name: Run native AppKit, playback and system checks
+        shell: bash
+        run: |
+          deps="$RUNNER_TEMP/telepilot-dependencies"
+          version="$(tr -d '[:space:]' < macos/VERSION)"
+          mount="$deps/telepilot-volume"
+          mkdir -p "$mount"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "macos/artifacts/TelePilot-$version-Apple-Silicon.dmg" > /dev/null
+          trap 'hdiutil detach -quiet "$mount"' EXIT
+          export PATH="$deps/ffmpeg/install/bin:$PATH"
+          export TELEPILOT_TEST_VLC_ROOT="$mount/TelePilot.app/Contents/Frameworks/libvlc"
+          export TELEPILOT_TEST_TS_FILE="$deps/synthetic.ts"
+          export TELEPILOT_RUN_APPKIT_INTEGRATION=1 TELEPILOT_RUN_SYSTEM_INTEGRATION=1
+          ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=25' \
+            -f lavfi -i 'sine=frequency=440:sample_rate=48000' -t 15 \
+            -c:v mpeg2video -g 12 -b:v 480k -c:a mp2 -b:a 128k -f mpegts "$TELEPILOT_TEST_TS_FILE"
+          python3 ./macos/scripts/test-network-buffer.py --no-parallel
+      - name: Upload verified Apple Silicon release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: TelePilot-macos-arm64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            macos/artifacts/TelePilot-*-Apple-Silicon.dmg
+            macos/artifacts/TelePilot-*-Apple-Silicon.dmg.sha256
+            macos/artifacts/TelePilot-*-macos-third-party-sources.zip
+            macos/artifacts/TelePilot-*-macos-third-party-sources.zip.sha256

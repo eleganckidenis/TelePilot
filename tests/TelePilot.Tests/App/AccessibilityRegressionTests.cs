@@ -126,14 +126,21 @@ public sealed class AccessibilityRegressionTests
             window.UpdateLayout();
 
             ListBoxItem container = Assert.IsType<ListBoxItem>(channelList.ContainerFromItem(channel));
-            TextBlock visibleText = Assert.Single(container.GetVisualDescendants().OfType<TextBlock>());
+            var visibleText = container.GetVisualDescendants().OfType<TextBlock>().ToArray();
 
             Assert.Equal(channel.AccessibleName, AutomationProperties.GetName(container));
             Assert.True(channelListView.IsVisible);
             Assert.Equal(channel.AutomationId, AutomationProperties.GetAutomationId(container));
-            Assert.Equal(AccessibilityView.Raw, AutomationProperties.GetAccessibilityView(visibleText));
-            Assert.Null(AutomationProperties.GetName(visibleText));
-            Assert.Null(AutomationProperties.GetAutomationId(visibleText));
+            Assert.Collection(visibleText,
+                name => Assert.Equal("Kanał informacyjny", name.Text),
+                details => Assert.Equal("teraz: Wiadomości dnia · grupa: Informacyjne", details.Text));
+            Assert.All(visibleText, text =>
+            {
+                Assert.Equal(AccessibilityView.Raw, AutomationProperties.GetAccessibilityView(text));
+                Assert.Null(AutomationProperties.GetName(text));
+                Assert.Null(AutomationProperties.GetAutomationId(text));
+                Assert.False(text.Focusable);
+            });
 
             var peerFactory = container.GetType().GetMethod(
                 "OnCreateAutomationPeer",
@@ -144,6 +151,12 @@ public sealed class AccessibilityRegressionTests
 
             Assert.Equal(AutomationControlType.ListItem, peer.GetAutomationControlType());
             Assert.NotNull(peer.GetProvider<ISelectionItemProvider>());
+
+            channel.CurrentProgram = "Prognoza pogody";
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("teraz: Prognoza pogody · grupa: Informacyjne", visibleText[1].Text);
+            Assert.Equal("Kanał informacyjny, teraz: Prognoza pogody, grupa: Informacyjne",
+                AutomationProperties.GetName(container));
         }
         finally
         {

@@ -110,7 +110,7 @@ jobs:
           $env:VlcWindowsX64Enabled = ($env:TELEPILOT_BUILD_RUNTIME -eq 'win-x64').ToString().ToLowerInvariant()
           $env:VlcWindowsArm64Enabled = ($env:TELEPILOT_BUILD_RUNTIME -eq 'win-arm64').ToString().ToLowerInvariant()
           $env:VlcWindowsX86Enabled = 'false'
-          # Only this separate QA app has an older assembly version; release files above remain 2.1.1.
+          # Only the separate updater test app impersonates 2.0.2.
           dotnet publish src/TelePilot.App/TelePilot.App.csproj -c Release -r $env:TELEPILOT_BUILD_RUNTIME --self-contained true --no-restore -p:Version=2.0.2 -p:UsedAvaloniaProducts= -o $qaApp
           if ($LASTEXITCODE -ne 0) { throw 'Could not build the current-source updater QA app.' }
           $profile = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) 'TelePilot'

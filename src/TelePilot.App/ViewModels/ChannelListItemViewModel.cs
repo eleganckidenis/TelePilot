@@ -33,6 +33,7 @@ public sealed class ChannelListItemViewModel : ObservableObject
             if (SetProperty(ref currentProgram, value ?? string.Empty))
             {
                 OnPropertyChanged(nameof(AccessibleName));
+                OnPropertyChanged(nameof(DetailsText));
             }
         }
     }
@@ -45,6 +46,7 @@ public sealed class ChannelListItemViewModel : ObservableObject
             if (SetProperty(ref playbackState, value ?? string.Empty))
             {
                 OnPropertyChanged(nameof(AccessibleName));
+                OnPropertyChanged(nameof(DetailsText));
             }
         }
     }
@@ -57,36 +59,35 @@ public sealed class ChannelListItemViewModel : ObservableObject
             if (SetProperty(ref isFavorite, value))
             {
                 OnPropertyChanged(nameof(AccessibleName));
+                OnPropertyChanged(nameof(DetailsText));
             }
         }
     }
 
     public string AutomationId => $"channel-{SanitizeAutomationId(Id)}";
 
-    public string AccessibleName
+    public string AccessibleName => $"{Name}, {string.Join(", ", DescribeDetails())}";
+
+    public string DetailsText => string.Join(" · ", DescribeDetails());
+
+    private IEnumerable<string> DescribeDetails()
     {
-        get
+        if (!string.IsNullOrWhiteSpace(CurrentProgram))
         {
-            var parts = new List<string> { Name };
-            if (!string.IsNullOrWhiteSpace(CurrentProgram))
-            {
-                parts.Add(T($"teraz: {CurrentProgram.Trim()}", $"now: {CurrentProgram.Trim()}"));
-            }
-
-            if (!string.IsNullOrWhiteSpace(PlaybackState))
-            {
-                parts.Add(PlaybackState.Trim());
-            }
-
-            if (IsFavorite)
-            {
-                parts.Add("ulubiony");
-            }
-
-            parts.Add(T($"grupa: {Group}", $"group: {Group}"));
-
-            return string.Join(", ", parts);
+            yield return T($"teraz: {CurrentProgram.Trim()}", $"now: {CurrentProgram.Trim()}");
         }
+
+        if (!string.IsNullOrWhiteSpace(PlaybackState))
+        {
+            yield return PlaybackState.Trim();
+        }
+
+        if (IsFavorite)
+        {
+            yield return "ulubiony";
+        }
+
+        yield return T($"grupa: {Group}", $"group: {Group}");
     }
 
     public override string ToString() => Name;

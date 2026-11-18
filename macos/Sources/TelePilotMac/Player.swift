@@ -96,11 +96,35 @@ enum RememberedTrack {
 
 @MainActor final class VideoSurface: NSView {
     override var acceptsFirstResponder: Bool { false }
+    override var isOpaque: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        wantsLayer = true; layer?.backgroundColor = NSColor.black.cgColor
         setAccessibilityElement(false)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // Cover the empty drawable without making VLC's embedded OpenGL view layer-backed.
+        NSColor.black.setFill()
+        NSBezierPath.fill(dirtyRect)
+    }
+
+    var isVisibleForPlayback: Bool {
+        guard let window, window.isVisible, !window.isMiniaturized else { return false }
+        return window.occlusionState.contains(.visible) && !isHiddenOrHasHiddenAncestor && !visibleRect.isEmpty
+    }
+
+    func refreshRenderer() {
+        needsDisplay = true
+        subviews.forEach { $0.needsDisplay = true }
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        refreshRenderer()
+    }
+
     override func accessibilityChildren() -> [Any]? { [] }
 }

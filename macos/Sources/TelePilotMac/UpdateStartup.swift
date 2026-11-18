@@ -6,6 +6,7 @@ import AppKit
     private static var task: Task<Void, Never>?
     private static var worker: Task<(UpdateAsset, URL)?, Error>?
     private static var panel: UpdateProgressWindow?
+    private static var downloadDecision: CheckedContinuation<Bool, Never>?
     private static var activeAlert: NSAlert?
     private static weak var owner: NSWindow?
     private static var status: ((String) -> Void)?
@@ -26,7 +27,7 @@ import AppKit
         owner = window
         guard !shuttingDown else { return }
         if task != nil {
-            if manual {
+            if manual, task?.isCancelled == false {
                 userRequested = true
                 if awaitingReady {
                     if canPresent(window) { window.makeKeyAndOrderFront(nil) }
@@ -38,7 +39,7 @@ import AppKit
         generation += 1; let operation = generation
         guard let installed = installedVersion() else { return }
         if panel == nil {
-            panel = UpdateProgressWindow(cancel: { cancel() }, retry: {
+            panel = UpdateProgressWindow(download: { decideDownload(true) }, cancel: { cancel() }, retry: {
                 if let owner { check(window: owner) }
             })
         }
@@ -65,10 +66,19 @@ import AppKit
                     return
                 }
                 try Task.checkCancellation()
-                let notice = l("Dostępna wersja \(asset.version). Pobieranie aktualizacji…", "Version \(asset.version) is available. Downloading the update…")
-                status?(notice)
+                let accepted = await withCheckedContinuation { continuation in
+                    downloadDecision = continuation
+                    panel?.offer(version: asset.version, notes: ReleaseNotes.text(asset.notes, language: Localization.language))
+                    requestPanel(active: userRequested, operation: operation) {
+                        guard !userRequested else { return }
+                        status?(l("Dostępna wersja \(asset.version). Zmiany i pobieranie znajdziesz w menu Pomoc → Sprawdź aktualizacje.",
+                                  "Version \(asset.version) is available. Choose Help → Check for Updates to review the changes and download it."))
+                    }
+                }
+                guard accepted else { return }
+                try Task.checkCancellation()
                 panel?.downloading(version: asset.version)
-                requestPanel(active: userRequested, operation: operation)
+                status?(l("Pobieranie aktualizacji \(asset.version)…", "Downloading update \(asset.version)…"))
                 let download = Task.detached(priority: .utility) { () async throws -> (UpdateAsset, URL)? in
                     let session = UpdateRedirectPolicy.makeSession(timeout: 600)
                     defer { session.invalidateAndCancel() }
@@ -146,18 +156,25 @@ import AppKit
         NSApp.isActive && NSApp.modalWindow == nil && window.isVisible && window.attachedSheet == nil
             && (window.isKeyWindow || panel?.window?.isKeyWindow == true)
     }
-    private static func requestPanel(active: Bool, operation: Int) {
+    private static func requestPanel(active: Bool, operation: Int, onVisible: (() -> Void)? = nil) {
         presentationTask?.cancel()
         presentationTask = Task {
             while !Task.isCancelled && !shuttingDown && generation == operation {
-                if let owner, canPresent(owner) { panel?.show(active: active); return }
+                if let owner, canPresent(owner) { panel?.show(active: active, onVisible: onVisible); return }
                 do { try await Task.sleep(for: .seconds(0.25)) } catch { return }
             }
         }
     }
     static func cancel() {
-        generation += 1; task?.cancel(); worker?.cancel()
+        generation += 1
         presentationTask?.cancel(); presentationTask = nil
+        task?.cancel(); worker?.cancel()
+        decideDownload(false)
+    }
+    private static func decideDownload(_ accepted: Bool) {
+        let decision = downloadDecision
+        downloadDecision = nil
+        decision?.resume(returning: accepted)
     }
     static func shutdown() async {
         shuttingDown = true
@@ -210,51 +227,127 @@ import AppKit
 }
 
 @MainActor private final class UpdatePanel: NSPanel {
-    // An automatic progress window must not become key when the app reactivates.
-    // Help > Check for Updates explicitly opts into keyboard focus.
+    // An automatic offer keeps the owner's keyboard focus until the user
+    // clicks the panel or opens it through Help > Check for Updates.
     var allowsKeyboardFocus = false
+    var tabStops: [NSView] = []
     override var canBecomeKey: Bool { allowsKeyboardFocus }
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown && !allowsKeyboardFocus {
+            allowsKeyboardFocus = true
+            makeKey()
+        }
+        if event.type == .keyDown, event.keyCode == 48 {
+            let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            if modifiers.isEmpty || modifiers == .shift {
+                let stops = tabStops.filter { !$0.isHiddenOrHasHiddenAncestor && ($0 as? NSControl)?.isEnabled != false }
+                if !stops.isEmpty {
+                    let backward = modifiers == .shift
+                    let current = stops.firstIndex { $0 === firstResponder } ?? (backward ? 0 : -1)
+                    let next = (current + (backward ? stops.count - 1 : 1)) % stops.count
+                    if makeFirstResponder(stops[next]) { return }
+                }
+            }
+        }
+        super.sendEvent(event)
+    }
 }
 
 @MainActor final class UpdateProgressWindow: NSWindowController, NSWindowDelegate {
+    private static let width: CGFloat = 500
     let message = label("")
     let progressBar = NSProgressIndicator()
     let cancelButton = NSButton()
     let retryButton = NSButton()
+    let downloadButton = NSButton()
+    private let notesScroll = NSTextView.scrollableTextView()
+    var notesText: NSTextView { notesScroll.documentView as! NSTextView }
+    private var notesGroup: NSStackView!
+    private let downloadWork: () -> Void
     private let cancelWork: () -> Void
     private let retryWork: () -> Void
     private var active = false
     private var programmaticClose = false
     private var version: UpdateVersion?
-    init(cancel: @escaping () -> Void, retry: @escaping () -> Void) {
-        cancelWork = cancel; retryWork = retry
-        let panel = UpdatePanel(contentRect: NSRect(x: 0, y: 0, width: 500, height: 165), styleMask: [.titled, .closable, .utilityWindow], backing: .buffered, defer: false)
+    init(download: @escaping () -> Void, cancel: @escaping () -> Void, retry: @escaping () -> Void) {
+        downloadWork = download; cancelWork = cancel; retryWork = retry
+        let margin: CGFloat = 16
+        let readingWidth = Self.width - 2 * margin
+        let panel = UpdatePanel(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 165), styleMask: [.titled, .closable, .utilityWindow], backing: .buffered, defer: false)
         panel.title = l("Aktualizacja TelePilot", "TelePilot update")
         panel.isReleasedWhenClosed = false; panel.hidesOnDeactivate = false; panel.isFloatingPanel = false
-        panel.becomesKeyOnlyIfNeeded = true
+        panel.becomesKeyOnlyIfNeeded = true; panel.collectionBehavior.insert(.fullScreenAuxiliary)
         super.init(window: panel); panel.delegate = self
         message.setAccessibilityLabel(l("Stan aktualizacji", "Update status"))
         progressBar.minValue = 0; progressBar.maxValue = 100; progressBar.setAccessibilityLabel(l("Postęp pobierania aktualizacji", "Update download progress"))
         cancelButton.title = l("Anuluj", "Cancel"); cancelButton.target = self; cancelButton.action = #selector(cancelOrClose)
+        cancelButton.keyEquivalent = "\u{1b}"
         retryButton.title = l("Ponów", "Retry"); retryButton.target = self; retryButton.action = #selector(retryUpdate)
+        downloadButton.title = l("Pobierz", "Download"); downloadButton.target = self; downloadButton.action = #selector(acceptDownload)
+        downloadButton.keyEquivalent = "\r"
         let downloads = button(l("Otwórz stronę pobierania", "Open Download Page"), self, #selector(downloadPage))
+        for button in [downloadButton, cancelButton, retryButton] { button.bezelStyle = .rounded }
         message.lineBreakMode = .byWordWrapping; message.maximumNumberOfLines = 0
-        let body = stack([message, progressBar, stack([cancelButton, retryButton, downloads])], vertical: true)
+        message.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+        let notesTitle = l("Zmiany w tej wersji", "Changes in this version")
+        notesText.font = .systemFont(ofSize: NSFont.systemFontSize)
+        notesText.isRichText = false; notesText.isEditable = false; notesText.isSelectable = true
+        notesText.isAutomaticLinkDetectionEnabled = false; notesText.isAutomaticDataDetectionEnabled = false
+        notesText.setAccessibilityLabel(notesTitle)
+        notesText.textContainerInset = NSSize(width: 8, height: 8)
+        notesScroll.hasVerticalScroller = true; notesScroll.borderType = .bezelBorder
+        notesScroll.heightAnchor.constraint(equalToConstant: 150).isActive = true
+        notesScroll.widthAnchor.constraint(equalToConstant: readingWidth).isActive = true
+        notesGroup = stack([label(notesTitle), notesScroll], vertical: true)
+        let body = stack([message, notesGroup, progressBar, stack([downloadButton, cancelButton, retryButton, downloads])], vertical: true)
         message.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
-        progressBar.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
-        fill(body, in: panel.contentView!, margin: 16)
+        progressBar.widthAnchor.constraint(equalToConstant: readingWidth).isActive = true
+        fill(body, in: panel.contentView!, margin: margin)
+        notesGroup.isHidden = true; downloadButton.isHidden = true
+        panel.tabStops = [notesText, downloadButton, cancelButton, retryButton, downloads]
         panel.center()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) unavailable") }
-    func show(active: Bool) {
-        (window as? UpdatePanel)?.allowsKeyboardFocus = active
-        if active { window?.makeKeyAndOrderFront(nil); window?.makeFirstResponder(cancelButton) }
-        else { window?.orderFront(nil) }
+    func show(active: Bool, onVisible: (() -> Void)? = nil) {
+        guard let panel = window as? UpdatePanel else { return }
+        panel.allowsKeyboardFocus = active
+        if active {
+            panel.makeKeyAndOrderFront(nil)
+            panel.makeFirstResponder(downloadButton.isHidden ? cancelButton : notesText)
+        }
+        else { panel.orderFront(nil) }
+        if panel.isVisible { onVisible?() }
     }
     func checking() {
+        hideOffer()
         active = true; version = nil; retryButton.isHidden = true; cancelButton.title = l("Anuluj", "Cancel")
         message.stringValue = l("Sprawdzanie aktualizacji…", "Checking for updates…")
         progressBar.isHidden = false; progressBar.isIndeterminate = true; progressBar.startAnimation(nil)
+    }
+    func offer(version: UpdateVersion, notes: String?) {
+        active = false; self.version = version
+        progressBar.stopAnimation(nil); progressBar.isHidden = true
+        retryButton.isHidden = true; cancelButton.title = l("Później", "Later")
+        downloadButton.isHidden = false; downloadButton.isEnabled = true
+        message.stringValue = l("Dostępna jest wersja \(version). Czy chcesz pobrać aktualizację?",
+                                "Version \(version) is available. Would you like to download the update?")
+        notesText.string = notes ?? l("Brak opisu zmian dla tej wersji.", "No release notes are available for this version.")
+        notesGroup.isHidden = false
+        window?.setContentSize(NSSize(width: Self.width, height: 310))
+        window?.contentView?.layoutSubtreeIfNeeded()
+        let start = NSRange(location: 0, length: 0)
+        notesText.setSelectedRange(start)
+        notesText.scrollRangeToVisible(start)
+        window?.recalculateKeyViewLoop()
+    }
+    private func hideOffer() {
+        guard !downloadButton.isHidden else { return }
+        if window?.firstResponder === notesText || window?.firstResponder === downloadButton {
+            window?.makeFirstResponder(cancelButton)
+        }
+        downloadButton.isHidden = true; notesGroup.isHidden = true
+        window?.setContentSize(NSSize(width: Self.width, height: 165))
+        window?.recalculateKeyViewLoop()
     }
     func downloading(version: UpdateVersion) {
         checking(); self.version = version
@@ -268,11 +361,17 @@ import AppKit
         message.stringValue = l("Wersja \(version). Pobrano \(Int(percent))% (\(received / 1_048_576) z \(total / 1_048_576) MB).", "Version \(version). Downloaded \(Int(percent))% (\(received / 1_048_576) of \(total / 1_048_576) MB).")
     }
     func finished(_ text: String) {
+        hideOffer()
         active = false; message.stringValue = text; progressBar.stopAnimation(nil); progressBar.isHidden = true
         retryButton.isHidden = true; cancelButton.title = l("Zamknij", "Close")
     }
     func failed(_ text: String) { finished(text); retryButton.isHidden = false }
     func closeWithoutCancelling() { active = false; programmaticClose = true; close(); programmaticClose = false }
+    @objc func acceptDownload() {
+        guard !downloadButton.isHidden, downloadButton.isEnabled else { return }
+        downloadButton.isEnabled = false
+        downloadWork()
+    }
     @objc func cancelOrClose() { cancelWork(); closeWithoutCancelling() }
     @objc func retryUpdate() { retryWork() }
     @objc func downloadPage() { NSWorkspace.shared.open(URL(string: "https://github.com/eleganckidenis/TelePilot/releases/latest")!) }

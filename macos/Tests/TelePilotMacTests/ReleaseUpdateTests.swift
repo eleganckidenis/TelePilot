@@ -23,6 +23,43 @@ import Testing
         #expect(selected.sha256 == Self.digest)
     }
 
+    @Test(arguments: ["##", "###"])
+    func releaseNotesUseTheSelectedLanguageAndOnlyTheChanges(_ heading: String) throws {
+        let body = "\(heading) English\r\n\r\n- **Playback** uses the [new renderer](https://example.test/hidden).\r\n\r\n"
+            + "\(heading) Polski\r\n\r\n- Lepsza widoczność obrazu.\r\n\r\n"
+            + "| Platform / System | Installer / Instalator |\r\n|---|---|\r\n| macOS | Test.dmg |\r\n\r\n"
+            + "\(heading) Verification / Weryfikacja\r\n\r\nSynthetic tests."
+        let selected = try #require(try ReleaseUpdate.selectAsset(from: Self.release(body: body), current: UpdateVersion("2.0.0")!))
+        let english = try #require(ReleaseNotes.text(selected.notes, language: .english))
+        let polish = try #require(ReleaseNotes.text(selected.notes, language: .polish))
+        #expect(english == "- Playback uses the new renderer.")
+        #expect(polish == "- Lepsza widoczność obrazu.")
+    }
+
+    @Test(arguments: ["absent", "null", "malformed", "blank"])
+    func missingOrMalformedNotesDoNotRejectAValidUpdate(_ scenario: String) throws {
+        let body: Any? = switch scenario {
+        case "null": NSNull()
+        case "malformed": 2
+        case "blank": " \n "
+        default: nil
+        }
+        let selected = try #require(try ReleaseUpdate.selectAsset(from: Self.release(body: body), current: UpdateVersion("2.0.0")!))
+        #expect(ReleaseNotes.text(selected.notes, language: .polish) == nil)
+    }
+
+    @Test func notesFallBackToTheAvailableLanguageOrUnsectionedText() {
+        #expect(ReleaseNotes.text("## English\n\n- A fix.\n\n## Verification\nTests.", language: .polish) == "- A fix.")
+        #expect(ReleaseNotes.text("- An improvement.", language: .english) == "- An improvement.")
+    }
+
+    @Test func longNotesStayBoundedAndDoNotSplitASurrogatePair() throws {
+        let output = try #require(ReleaseNotes.text(String(repeating: "🌍", count: 17_000), language: .english))
+        #expect(output.utf16.count <= 16_384)
+        #expect(output.hasSuffix("🌍…"))
+        #expect(!output.contains("\u{FFFD}"))
+    }
+
     @MainActor
     @Test(arguments: ["dismissed", "invalid", "cannot open", "accepted"])
     func onlyAcceptedVerifiedAndOpenedDownloadRequestsQuit(_ scenario: String) async {
@@ -163,8 +200,11 @@ import Testing
         return URLSession(configuration: configuration)
     }
 
-    static func release(tag: String = "v2.10.0", draft: Bool = false, prerelease: Bool = false, assets: [[String: Any]]? = nil) -> Data {
-        try! JSONSerialization.data(withJSONObject: ["tag_name": tag, "draft": draft, "prerelease": prerelease, "assets": assets ?? [asset()]])
+    static func release(tag: String = "v2.10.0", draft: Bool = false, prerelease: Bool = false,
+                        assets: [[String: Any]]? = nil, body: Any? = nil) -> Data {
+        var metadata: [String: Any] = ["tag_name": tag, "draft": draft, "prerelease": prerelease, "assets": assets ?? [asset()]]
+        metadata["body"] = body
+        return try! JSONSerialization.data(withJSONObject: metadata)
     }
 
     private static func asset(name: String = name, url: String = url, size: Int = payload.count,

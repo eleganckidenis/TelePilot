@@ -18,6 +18,17 @@
     automation:AutomationProperties.Name="{x:Static loc:ViewText.TelePilotAccessibleIPTVPlayer2}"
     automation:AutomationProperties.AutomationId="main-window">
 
+  <Window.Styles>
+    <Style Selector="Grid#MainContent">
+      <Setter Property="Margin" Value="12" />
+      <Setter Property="ColumnSpacing" Value="12" />
+    </Style>
+    <Style Selector="Grid#MainContent.fullscreen">
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="ColumnSpacing" Value="0" />
+    </Style>
+  </Window.Styles>
+
   <Window.KeyBindings>
     <KeyBinding Gesture="Ctrl+Shift+P" Command="{Binding OpenPlaylistManagerCommand}" />
     <KeyBinding Gesture="Ctrl+O" Command="{Binding OpenPlaylistManagerForFileCommand}" />
@@ -162,7 +173,8 @@
       <TabItem Header="{x:Static loc:ViewText.Archive}" automation:AutomationProperties.Name="{x:Static loc:ViewText.Archive}" automation:AutomationProperties.AutomationId="tab-archive" />
     </TabControl>
 
-    <Grid Grid.Row="2" Margin="12" ColumnDefinitions="3*,2*" ColumnSpacing="12">
+    <Grid x:Name="MainContent" Grid.Row="2" Classes.fullscreen="{Binding IsPlaybackFullscreen}"
+          ColumnDefinitions="2*,3*">
       <Grid
           x:Name="ChannelListView"
           Grid.Column="0"
@@ -174,6 +186,8 @@
             x:Name="ChannelFiltersPanel"
             ColumnDefinitions="2*,1.2*"
             ColumnSpacing="8"
+            RowDefinitions="Auto,Auto"
+            RowSpacing="8"
             IsVisible="{Binding IsChannelsViewEnabled}">
           <StackPanel>
             <Label x:Name="ChannelSearchLabel" Classes="field-label" Content="{Binding SearchLabel}" Target="SearchBox" />
@@ -195,11 +209,20 @@
                 automation:AutomationProperties.HelpText="{x:Static loc:ViewText.UseUpOrDownToSelect}"
                 automation:AutomationProperties.AutomationId="channel-group-filter" />
           </StackPanel>
+          <TextBlock
+              Grid.Row="1"
+              Grid.ColumnSpan="2"
+              FontWeight="SemiBold"
+              Text="{Binding ChannelCountText}"
+              automation:AutomationProperties.Name="{Binding ChannelCountText}"
+              automation:AutomationProperties.AutomationId="channel-count" />
         </Grid>
 
         <ListBox
             x:Name="ChannelList"
             Grid.Row="1"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+            BorderThickness="1"
             IsTextSearchEnabled="False"
             ItemsSource="{Binding Channels}"
             SelectedItem="{Binding SelectedChannel}"
@@ -233,10 +256,19 @@
           </ListBox.ContextMenu>
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:ChannelListItemViewModel">
-              <TextBlock
-                  Text="{Binding AccessibleName}"
-                  TextWrapping="Wrap"
-                  automation:AutomationProperties.AccessibilityView="Raw" />
+              <StackPanel Spacing="2">
+                <TextBlock
+                    FontSize="15"
+                    FontWeight="SemiBold"
+                    Text="{Binding Name}"
+                    TextTrimming="CharacterEllipsis"
+                    automation:AutomationProperties.AccessibilityView="Raw" />
+                <TextBlock
+                    FontSize="13"
+                    Text="{Binding DetailsText}"
+                    TextTrimming="CharacterEllipsis"
+                    automation:AutomationProperties.AccessibilityView="Raw" />
+              </StackPanel>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
@@ -247,11 +279,6 @@
             ColumnDefinitions="*,Auto,Auto"
             ColumnSpacing="8"
             IsVisible="{Binding IsChannelsViewEnabled}">
-          <TextBlock
-              VerticalAlignment="Center"
-              Text="{Binding ChannelCountText}"
-              automation:AutomationProperties.Name="{Binding ChannelCountText}"
-              automation:AutomationProperties.AutomationId="channel-count" />
           <Button
               Grid.Column="1"
               x:Name="ManageFavoritesButton"
@@ -263,7 +290,7 @@
           <Button
               x:Name="PlaySelectedChannelButton"
               Grid.Column="2"
-              Classes="primary-action"
+              Classes="accent primary-action"
               Content="{x:Static loc:ViewText.Play}"
               Command="{Binding PlaySelectedCommand}"
               automation:AutomationProperties.Name="{x:Static loc:ViewText.PlaySelectedChannel3}"
@@ -290,9 +317,10 @@
         <TextBlock
             Classes="section-heading"
             Text="{Binding PlaybackHeading}"
+            IsVisible="{Binding !IsPlaybackFullscreen}"
             automation:AutomationProperties.HeadingLevel="2" />
 
-        <Border Grid.Row="1" Background="Black" MinHeight="220">
+        <Border Grid.Row="1" Background="Black">
           <controls:AccessibleVideoView
               x:Name="VideoView"
               automation:AutomationProperties.Name="{x:Static loc:ViewText.CurrentChannelVideo}"
@@ -301,27 +329,27 @@
               automation:AutomationProperties.AccessibilityView="Raw" />
         </Border>
 
-        <StackPanel Grid.Row="2" Spacing="4">
+        <StackPanel Grid.Row="2" Spacing="4" IsVisible="{Binding !IsPlaybackFullscreen}">
           <TextBlock
               FontSize="18"
               FontWeight="SemiBold"
               Text="{Binding CurrentChannelName}"
               TextWrapping="Wrap"
-              automation:AutomationProperties.Name="{x:Static loc:ViewText.CurrentChannel}"
+              MaxLines="1"
+              TextTrimming="CharacterEllipsis"
+              automation:AutomationProperties.Name="{Binding CurrentChannelName}"
               automation:AutomationProperties.AutomationId="current-channel" />
           <TextBlock
               Text="{Binding CurrentProgramName}"
               TextWrapping="Wrap"
-              automation:AutomationProperties.Name="{x:Static loc:ViewText.CurrentProgram}"
+              MaxLines="1"
+              TextTrimming="CharacterEllipsis"
+              automation:AutomationProperties.Name="{Binding CurrentProgramName}"
               automation:AutomationProperties.AutomationId="current-program" />
           <TextBlock
               Text="{Binding PlaybackStateText}"
               automation:AutomationProperties.Name="{x:Static loc:ViewText.PlaybackStatus}"
               automation:AutomationProperties.AutomationId="playback-state" />
-          <TextBlock
-              Text="{Binding VolumeText}"
-              automation:AutomationProperties.Name="{Binding VolumeText}"
-              automation:AutomationProperties.AutomationId="playback-volume" />
           <TextBlock
               Text="{Binding RecordingStatusText}"
               automation:AutomationProperties.Name="{Binding RecordingStatusText}"
@@ -329,7 +357,20 @@
               automation:AutomationProperties.AutomationId="recording-status" />
         </StackPanel>
 
-        <WrapPanel Grid.Row="3" HorizontalAlignment="Left" ItemHeight="38">
+        <Border Grid.Row="3" Grid.RowSpan="2" IsHitTestVisible="False"
+                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,1,0,0" />
+
+        <ScrollViewer x:Name="PlaybackControlsScroll" Grid.Row="3" MaxHeight="136"
+                      Focusable="False" IsTabStop="False"
+                      HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <WrapPanel HorizontalAlignment="Left" Margin="8,8,0,0">
+            <WrapPanel.Styles>
+              <Style Selector="Button">
+                <Setter Property="MinHeight" Value="36" />
+              </Style>
+            </WrapPanel.Styles>
             <Button
                 x:Name="PauseResumeButton"
                 Margin="0,0,8,8"
@@ -339,6 +380,7 @@
                 automation:AutomationProperties.AutomationId="pause-resume" />
             <Button
                 Margin="0,0,8,8"
+                x:Name="StopPlaybackButton"
                 Content="{x:Static loc:ViewText.Stop2}"
                 Command="{Binding StopCommand}"
                 automation:AutomationProperties.Name="{x:Static loc:ViewText.StopPlayback}"
@@ -382,6 +424,7 @@
             <Button
                 x:Name="FullscreenButton"
                 Margin="0,0,8,8"
+                Classes="accent"
                 Content="{x:Static loc:ViewText.FullScreen2}"
                 Command="{Binding ToggleFullscreenCommand}"
                 automation:AutomationProperties.Name="{x:Static loc:ViewText.ToggleFullScreen}"
@@ -394,9 +437,11 @@
                 Command="{Binding ReturnToChannelListCommand}"
                 automation:AutomationProperties.Name="{Binding ReturnToListText}"
                 automation:AutomationProperties.AutomationId="return-to-channel-list" />
-        </WrapPanel>
+          </WrapPanel>
+        </ScrollViewer>
 
-        <Grid Grid.Row="3" ColumnDefinitions="Auto,240,Auto" ColumnSpacing="8">
+        <Grid x:Name="VolumeControls" Grid.Row="4" Margin="8,0,8,8"
+              ColumnDefinitions="Auto,160,Auto" ColumnSpacing="8">
             <Label
                 VerticalAlignment="Center"
                 Content="{x:Static loc:ViewText.Volume}"
@@ -419,7 +464,8 @@
                 Grid.Column="2"
                 VerticalAlignment="Center"
                 Text="{Binding VolumeText}"
-                automation:AutomationProperties.AccessibilityView="Raw" />
+                automation:AutomationProperties.Name="{Binding VolumeText}"
+                automation:AutomationProperties.AutomationId="playback-volume" />
         </Grid>
       </Grid>
     </Grid>
@@ -429,12 +475,16 @@
         <TextBlock
             Text="{Binding AccessibleStatus.StatusMessage}"
             TextWrapping="Wrap"
+            MaxLines="2"
+            TextTrimming="CharacterEllipsis"
             automation:AutomationProperties.Name="{x:Static loc:ViewText.ApplicationStatus}"
             automation:AutomationProperties.AutomationId="application-status"
             automation:AutomationProperties.LiveSetting="Polite" />
         <TextBlock
             Text="{Binding AccessibleStatus.AlertMessage}"
             TextWrapping="Wrap"
+            MaxLines="2"
+            TextTrimming="CharacterEllipsis"
             Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"
             automation:AutomationProperties.Name="{x:Static loc:ViewText.ImportantApplicationMessage}"
             automation:AutomationProperties.AutomationId="application-alert"

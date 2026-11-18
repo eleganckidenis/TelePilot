@@ -43,7 +43,8 @@ import TelePilotRecording
     var paused = false
     var pendingPause = false
     var lastGuideTick = Date()
-    weak var fullscreenFocus: NSResponder?
+    private weak var fullscreenFocus: NSView?
+    private var restoreSplitAfterFullscreen = false
     var recordingActive = false
     var recordingURL: URL?
     var listShown = true
@@ -62,6 +63,7 @@ import TelePilotRecording
     let video = VideoSurface(frame: .zero)
     let volume = NSSlider(value: 80, minValue: 0, maxValue: 100, target: nil, action: nil)
     var pauseButton: NSButton!
+    private var fullscreenButton: NSButton!
     var filterRow: NSStackView!
     var libraryPanel: NSStackView!
     var playerPanel: NSStackView!
@@ -137,17 +139,22 @@ import TelePilotRecording
         for (name, action) in recordingActions {
             let item = NSMenuItem(title: name, action: action, keyEquivalent: ""); item.target = self; record.menu?.addItem(item)
         }
-        let full = button(l("Pełny ekran", "Full Screen"), self, #selector(fullscreen))
+        fullscreenButton = button(l("Pełny ekran", "Full Screen"), self, #selector(fullscreen))
         let back = button(l("Przejdź do listy kanałów", "Go to Channel List"), self, #selector(toggleList))
         let controls = stack([stack([pauseButton, stop, mute]), stack([audio, subtitles, record])], vertical: true)
-        let extra = stack([stack([full, back]), stack([label(l("Głośność:", "Volume:")), volume])], vertical: true)
-        playerControls = [pauseButton, stop, mute, audio, subtitles, record, full, back, volume]
+        let viewControls = stack([fullscreenButton, back])
+        let volumeRow = stack([label(l("Głośność:", "Volume:")), volume])
+        playerControls = [pauseButton, stop, mute, audio, subtitles, record, fullscreenButton, back, volume]
         volume.target = self; volume.action = #selector(volumeChanged); volume.setAccessibilityLabel(l("Głośność w procentach", "Volume in percent")); volume.doubleValue = Double(preferences.volume)
         volume.widthAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
         nowPlaying.font = .systemFont(ofSize: 20, weight: .semibold)
+        nowPlaying.lineBreakMode = .byTruncatingTail
+        programmeLabel.textColor = .secondaryLabelColor
         programmeLabel.lineBreakMode = .byTruncatingTail
-        playerPanel = stack([nowPlaying, programmeLabel, video, controls, extra, recordingLabel], vertical: true)
-        for v in [video, programmeLabel] { v.widthAnchor.constraint(equalTo: playerPanel.widthAnchor).isActive = true }
+        status.textColor = .secondaryLabelColor
+        status.lineBreakMode = .byWordWrapping; status.maximumNumberOfLines = 2
+        playerPanel = stack([nowPlaying, programmeLabel, video, controls, viewControls, volumeRow, recordingLabel], vertical: true)
+        for v in [video, nowPlaying, programmeLabel, volumeRow] { v.widthAnchor.constraint(equalTo: playerPanel.widthAnchor).isActive = true }
         video.heightAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
         video.setContentHuggingPriority(.defaultLow, for: .vertical)
         playerPanel.isHidden = true
@@ -259,6 +266,7 @@ import TelePilotRecording
         section = max(0, min(2, value)); tabs.selectedSegment = section
         search.setAccessibilityLabel(section == 1 ? l("Szukaj ulubionych", "Search Favorites") : l("Szukaj kanałów", "Search Channels"))
         search.placeholderString = section == 1 ? l("Szukaj ulubionych", "Search Favorites") : l("Szukaj kanałów", "Search Channels")
+        restoreSplitAfterFullscreen = false
         listShown = true; updateVisibility(); applyFilter(); archiveBrowser.reloadChannels()
         window?.makeFirstResponder(section == 2 ? archiveBrowser.channelPopup : search)
     }
@@ -275,6 +283,7 @@ import TelePilotRecording
     }
     @objc func toggleList() {
         guard playing != nil else { window?.makeFirstResponder(table); return }
+        restoreSplitAfterFullscreen = false
         listShown.toggle(); updateVisibility()
         window?.makeFirstResponder(listShown ? (section == 2 ? archiveBrowser.channelPopup : table) : pauseButton)
     }
@@ -309,6 +318,7 @@ import TelePilotRecording
             await player.stop(generation: generation)
             guard generation == playbackGeneration else { return }
             playing = nil; playingURL = nil; archiveProgramme = nil; archiveOffset = 0
+            restoreSplitAfterFullscreen = false
             paused = false; pendingPause = false; listShown = true; lastState = -1
             wantedAudioTrack = nil; wantedSubtitleTrack = nil; wantedAudioTrackName = nil; wantedSubtitleTrackName = nil; trackRestoreTicks = 0
             nowPlaying.stringValue = "TelePilot"; programmeLabel.stringValue = ""
@@ -339,12 +349,46 @@ import TelePilotRecording
     @objc func toggleMute() { preferences.muted.toggle(); savePreferences(); Task { await player.mute(preferences.muted) }; setStatus(preferences.muted ? l("Dźwięk wyciszony.", "Audio muted.") : l("Dźwięk włączony.", "Audio unmuted.")) }
     @objc func volumeChanged() { preferences.volume = volume.integerValue; Task { await player.volume(preferences.volume) }; savePreferences() }
     func changeVolume(_ delta: Int) { volume.integerValue = min(100,max(0,preferences.volume + delta)); volumeChanged(); setStatus(l("Głośność \(preferences.volume) procent.", "Volume \(preferences.volume) percent.")) }
-    @objc func fullscreen() { fullscreenFocus = window?.firstResponder; window?.toggleFullScreen(nil) }
-    func windowDidEnterFullScreen(_ notification: Notification) { restoreVisibleFocus(); announce(l("Pełny ekran", "Full Screen"), window: window) }
-    func windowDidExitFullScreen(_ notification: Notification) { restoreVisibleFocus() }
-    func restoreVisibleFocus() {
-        if let v = fullscreenFocus as? NSView, !v.isHiddenOrHasHiddenAncestor { window?.makeFirstResponder(v) }
-        else { window?.makeFirstResponder(playing != nil && !listShown ? pauseButton : section == 2 ? archiveBrowser.programmesTable : table) }
+    @objc func fullscreen() { window?.toggleFullScreen(nil) }
+
+    func windowWillEnterFullScreen(_ notification: Notification) { rememberFullscreenFocus() }
+    func windowWillExitFullScreen(_ notification: Notification) { rememberFullscreenFocus() }
+
+    private func rememberFullscreenFocus() {
+        fullscreenFocus = nil
+        guard let window, let responder = window.firstResponder, let root = window.contentView else { return }
+        fullscreenFocus = focusableViews(root).first { view in
+            view === responder || (view as? NSControl)?.currentEditor() === responder
+        }
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        restoreSplitAfterFullscreen = playing != nil && listShown
+        if restoreSplitAfterFullscreen { listShown = false; updateVisibility() }
+        completeFullscreenTransition(isFullscreen: true)
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        if restoreSplitAfterFullscreen, playing != nil { listShown = true; updateVisibility() }
+        restoreSplitAfterFullscreen = false
+        completeFullscreenTransition(isFullscreen: false)
+    }
+
+    private func completeFullscreenTransition(isFullscreen: Bool) {
+        let title = isFullscreen ? l("Opuść pełny ekran", "Exit Full Screen") : l("Pełny ekran", "Full Screen")
+        fullscreenButton.title = title; fullscreenButton.setAccessibilityLabel(title)
+        window?.contentView?.layoutSubtreeIfNeeded()
+        video.refreshRenderer()
+        if let window {
+            let restored = fullscreenFocus.map { focus in
+                focus.window === window && !focus.isHiddenOrHasHiddenAncestor && window.makeFirstResponder(focus)
+            } ?? false
+            if !restored {
+                window.makeFirstResponder(playing != nil && !listShown ? pauseButton : section == 2 ? archiveBrowser.programmesTable : table)
+            }
+        }
+        fullscreenFocus = nil
+        announce(isFullscreen ? l("Tryb pełnoekranowy.", "Full screen.") : l("Opuszczono pełny ekran.", "Exited full screen."), window: window)
     }
     @objc func audioTracks() { showTracks(subtitles: false) }
     @objc func subtitleTracks() { showTracks(subtitles: true) }
@@ -379,7 +423,7 @@ import TelePilotRecording
             let attempt = playbackAttempt
             var sample = await player.sample()
             guard generation == playbackGeneration, attempt == playbackAttempt else { return }
-            sample.videoEnabled = (sample.knownVideoTrackCount ?? 0) > 0 && !listShown && !playerPanel.isHidden && window?.isMiniaturized == false && window?.isVisible == true
+            sample.videoEnabled = (sample.knownVideoTrackCount ?? 0) > 0 && video.isVisibleForPlayback
             if ["true", "1", "yes"].contains(channel.attributes["radio"]?.lowercased() ?? "") { sample.audioOnly = true }
             let state = sample.state
             if state != lastState {

@@ -46,7 +46,7 @@ if ($asset.state -cne 'uploaded' -or $asset.digest -cne "sha256:$hash" -or (Get-
 $updates = Join-Path $profile 'Updates'
 New-Item -ItemType Directory -Path $updates -Force | Out-Null
 Set-Content -LiteralPath (Join-Path $profile 'preferences.json') -Value '{"language":"en"}' -Encoding UTF8
-# Intentionally do not seed the cache: exercise the real automatic transfer.
+# Intentionally do not seed the cache: exercise the real transfer after consent.
 function Find-Control($Window, [string]$Id) {
     $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty, $Id)
     $Window.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
@@ -58,8 +58,16 @@ function Invoke-Control($Control) {
     }
     $invoke.Invoke()
 }
+function Find-ReleaseNotes($Window) {
+    # The Win32 EDIT supplies the Text pattern and its platform automation ID.
+    $name = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Release notes')
+    $edit = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Edit)
+    $condition = [Windows.Automation.AndCondition]::new([Windows.Automation.Condition[]]@($name, $edit))
+    $Window.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
+}
 $app = Start-Process -FilePath $Executable -WorkingDirectory (Split-Path -Parent $Executable) -PassThru
 $timer = [Diagnostics.Stopwatch]::StartNew()
+$offer = $null
 $notice = $null
 $main = $null
 $windowNames = @()
@@ -77,9 +85,25 @@ try {
             foreach ($window in $windows) {
                 $progressMessage = Find-Control $window 'update-progress-text'
                 if ($null -ne $progressMessage -and -not $window.Current.IsOffscreen) {
-                    $progressVisibleThisPass = $true
-                    $progressSeen = $true
-                    if (-not $progressMessages.Contains($progressMessage.Current.Name)) { $progressMessages.Add($progressMessage.Current.Name) }
+                    if ($null -eq $offer -and $progressMessage.Current.Name -ceq "Version $ExpectedVersion is available. Download the update?") {
+                        $notes = Find-ReleaseNotes $window
+                        $download = Find-Control $window 'update-download'
+                        $later = Find-Control $window 'update-later'
+                        $textPattern = $null
+                        if ($null -ne $notes -and $null -ne $download -and $null -ne $later -and
+                            $notes.TryGetCurrentPattern([Windows.Automation.TextPattern]::Pattern, [ref]$textPattern)) {
+                            $notesText = $textPattern.DocumentRange.GetText(-1)
+                            if ([string]::IsNullOrWhiteSpace($notesText) -or $download.Current.Name -cne 'Download' -or $later.Current.Name -cne 'Later') {
+                                throw 'The pre-download offer did not expose its accessible release notes and actions.'
+                            }
+                            $offer = @{ Message=$progressMessage.Current.Name; Download=$download; NotesLength=$notesText.Length; Consented=$false }
+                        }
+                    }
+                    if ($null -ne (Find-Control $window 'update-progress-bar')) {
+                        $progressVisibleThisPass = $true
+                        $progressSeen = $true
+                        if (-not $progressMessages.Contains($progressMessage.Current.Name)) { $progressMessages.Add($progressMessage.Current.Name) }
+                    }
                 }
                 $message = Find-Control $window 'confirmation-dialog-content'
                 if ($null -ne $message -and $message.Current.Name -ceq "Version $ExpectedVersion has been downloaded. Open the installer?") {
@@ -87,6 +111,16 @@ try {
                     continue
                 }
                 if ($null -ne (Find-Control $window 'tab-live')) { $main = $window }
+            }
+            if ($null -ne $offer -and -not $offer.Consented -and $null -ne $main) {
+                if (-not $main.Current.IsEnabled) { throw 'The pre-download offer disabled its owner.' }
+                Start-Sleep -Milliseconds 500
+                if (@(Get-ChildItem -LiteralPath $updates -Force).Count -ne 0) {
+                    throw 'The updater wrote files before receiving consent.'
+                }
+                Invoke-Control $offer.Download
+                $offer.Consented = $true
+                $nonmodalVerified = $true
             }
             if ($progressVisibleThisPass -and $null -eq $notice -and $null -ne $main) {
                 if (-not $main.Current.IsEnabled) { throw 'The download progress window disabled its owner.' }
@@ -99,7 +133,9 @@ try {
         } catch [Windows.Automation.ElementNotAvailableException] { }
         Start-Sleep -Milliseconds 250
     }
-    if ($null -eq $notice) { throw "Current-source native updater never offered the actual public update; windows: $($windowNames -join ', ')." }
+    if ($null -eq $offer -or -not $offer.Consented -or $null -eq $notice) {
+        throw "Current-source native updater did not complete the offer and consent flow; windows: $($windowNames -join ', ')."
+    }
     if ($notice.Confirm.Current.Name -cne 'Open installer' -or $notice.Cancel.Current.Name -cne 'Later') {
         throw 'The updater did not expose its expected accessible installer controls.'
     }
@@ -111,6 +147,7 @@ try {
         testExecutableVersion=$qaVersion; runtime=$Runtime; processId=$app.Id
         latestPublicVersion=$ExpectedVersion; referenceInstaller=$name; referenceSha256=$hash
         downloadedBytes=(Get-Item -LiteralPath (Join-Path $updates $name)).Length
+        offerMessage=$offer.Message; releaseNotesLength=$offer.NotesLength; cacheEmptyBeforeConsent=$true
         progressObserved=$progressSeen; nonmodalOwnerVerified=$nonmodalVerified; progressMessages=$progressMessages.ToArray()
         sourceCommit=$env:GITHUB_SHA
         actualStartupNotice=$notice.Message; noticeTitle=$notice.Window.Current.Name
@@ -119,7 +156,7 @@ try {
     }
     $evidence | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $EvidenceDirectory "new-updater-native-$Runtime.json") -Encoding UTF8
     Invoke-Control $notice.Cancel
-    Write-Host "PASS: current-source native $Runtime updater offered $ExpectedVersion after $($evidence.elapsedSeconds)s; real transfer, progressObserved=$progressSeen, nonmodal=$nonmodalVerified."
+    Write-Host "PASS: current-source native $Runtime updater offered $ExpectedVersion with release notes and verified the installer after $($evidence.elapsedSeconds)s; progressObserved=$progressSeen, nonmodal=$nonmodalVerified."
 } finally {
     if (-not $app.HasExited) {
         try {

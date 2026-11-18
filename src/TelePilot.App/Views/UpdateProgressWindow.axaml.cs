@@ -9,6 +9,8 @@ public sealed partial class UpdateProgressWindow : Window
     public UpdateProgressWindow()
     {
         InitializeComponent();
+        ReleaseNotesText.PreviousTabTarget = MessageText;
+        ReleaseNotesText.NextTabTarget = DownloadButton;
         Opened += (_, _) => { if (ShowActivated) FocusAction(); };
         KeyDown += (_, args) =>
         {
@@ -17,7 +19,8 @@ public sealed partial class UpdateProgressWindow : Window
     }
     internal void FocusAction()
     {
-        if (DataContext is UpdateProgressViewModel { IsBusy: true }) CancelButton.Focus();
+        if (DataContext is UpdateProgressViewModel { IsOffering: true }) MessageText.Focus();
+        else if (DataContext is UpdateProgressViewModel { IsBusy: true }) CancelButton.Focus();
         else if (DataContext is UpdateProgressViewModel { CanRetry: true }) RetryButton.Focus();
         else CloseButton.Focus();
     }

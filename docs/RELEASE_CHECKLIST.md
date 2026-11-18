@@ -1,6 +1,6 @@
 # Lista kontrolna wydania TelePilot
 
-## Aktualny zakres 2.1.1
+## Aktualny zakres 2.1.2
 
 - Windows x64 i ARM64: pełne testy na właściwych runnerach Windows, natywne syntetyczne
   odtwarzanie, budowanie instalatora, weryfikacja FFmpeg i SHA-256. Wydanie bez
@@ -13,7 +13,7 @@
 - Rzeczywisty zakres ręcznej weryfikacji NVDA/VoiceOver i czystej instalacji zapisz
   uczciwie w raporcie; testy automatyczne nie dowodzą odsłuchu czytnika ekranu.
 
-- Sprawdź pierwszy start, oba języki, ustawienia po restarcie i powrót fokusu z Menedżera playlist. Zweryfikuj automatyczne pobranie na obu platformach oraz odrzucenie uszkodzonej paczki.
+- Sprawdź pierwszy start, oba języki, ustawienia po restarcie i powrót fokusu z Menedżera playlist. Na obu platformach zweryfikuj opis zmian przed pobraniem, odroczenie, zgodę na transfer oraz odrzucenie uszkodzonej paczki.
 - Przed publikacją porównaj wszystkie paczki ze szkicem GitHub. Po publikacji pobierz publiczne załączniki i podaj odpowiedź z `/releases/latest` do `scripts/verify-release-assets.py --published`.
 
 Niższe sekcje zachowują historyczne scenariusze i dawne numery robocze.

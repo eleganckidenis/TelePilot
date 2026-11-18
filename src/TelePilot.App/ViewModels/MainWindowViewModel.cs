@@ -194,6 +194,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             {
                 return;
             }
+            ExitPlaybackFullscreen();
             if (!SetProperty(ref selectedSectionIndex, value))
             {
                 IsChannelListViewVisible = true;
@@ -405,7 +406,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public bool IsChannelListViewVisible
     {
-        get => isChannelListViewVisible;
+        get => isChannelListViewVisible && !IsPlaybackFullscreen;
         private set
         {
             if (SetProperty(ref isChannelListViewVisible, value))
@@ -413,6 +414,21 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 NotifyContentLayoutChanged();
             }
         }
+    }
+
+    public bool IsPlaybackFullscreen { get; private set; }
+
+    internal void SetPlaybackFullscreen(bool fullscreen)
+    {
+        if (IsPlaybackFullscreen == fullscreen)
+        {
+            return;
+        }
+
+        IsPlaybackFullscreen = fullscreen;
+        OnPropertyChanged(nameof(IsPlaybackFullscreen));
+        OnPropertyChanged(nameof(IsChannelListViewVisible));
+        NotifyContentLayoutChanged();
     }
 
     public int ChannelListColumnSpan => IsPlayerViewVisible ? 1 : 2;
@@ -2181,6 +2197,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private void ReturnToChannelList()
     {
+        ExitPlaybackFullscreen();
         // Podczas aktywnego odtwarzania nie ukrywamy natywnego VideoView.
         // Lista pojawia się obok niego, więc fokus nie traci rodzica i LibVLC
         // nie musi przełączać aktywnego uchwytu HWND.
@@ -2188,8 +2205,17 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         focusCoordinator.Request(IsArchiveSection ? FocusTarget.Archive : FocusTarget.ChannelList, lastSelectedChannelId);
     }
 
+    private void ExitPlaybackFullscreen()
+    {
+        if (IsPlaybackFullscreen)
+        {
+            ExitFullscreenRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     private void ShowChannelListOnly()
     {
+        ExitPlaybackFullscreen();
         IsChannelListViewVisible = true;
         IsPlayerViewVisible = false;
         focusCoordinator.Request(IsArchiveSection ? FocusTarget.Archive : FocusTarget.ChannelList, lastSelectedChannelId);
@@ -2197,12 +2223,16 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task ShowPlayerViewAsync(bool requestFocus, int activationGeneration)
     {
+        var keepSplitLayout = IsPlaybackFullscreen;
         IsPlayerViewVisible = true;
         // The logical list view is hidden, but the standard ListBox itself stays
         // mounted underneath the opaque player and is only disabled. Reusing the
         // same ListBoxItem/SelectionItem providers avoids the stale UIA objects
         // that previously caused intermittent silence in NVDA after Stop.
-        IsChannelListViewVisible = false;
+        if (!keepSplitLayout)
+        {
+            IsChannelListViewVisible = false;
+        }
         await Dispatcher.UIThread.InvokeAsync(
             () =>
             {
@@ -2297,7 +2327,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         lastSelectedChannelId = channelId;
         SelectedChannel = Channels.FirstOrDefault(item => item.Id == channelId) ?? SelectedChannel;
         var wasPlayerViewVisible = IsPlayerViewVisible;
-        var wasChannelListViewVisible = IsChannelListViewVisible;
+        var wasChannelListViewVisible = isChannelListViewVisible;
         accessibleStatus.ReportStatus(T($"Łączenie z kanałem {channel.Name}.", $"Connecting to {channel.Name}."));
         try
         {

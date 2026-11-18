@@ -630,6 +630,57 @@ public sealed class MainWindowSectionsTests
     }
 
     [AvaloniaFact]
+    public async Task SplitViewTabCrossesBetweenPlaybackAndAnEmptySectionOrArchive()
+    {
+        using var fixture = new Fixture();
+        await fixture.ViewModel.InitializeAsync();
+        var window = new MainWindow { DataContext = fixture.ViewModel };
+        try
+        {
+            window.Show();
+            window.Activate();
+            await fixture.ViewModel.PlaySelectedCommand.ExecuteAsync(null);
+            fixture.ViewModel.ReturnToChannelListCommand.Execute(null);
+
+            var play = window.FindControl<Button>("PlaySelectedChannelButton")!;
+            var pause = window.FindControl<Button>("PauseResumeButton")!;
+            var volume = window.FindControl<Slider>("VolumeSlider")!;
+            var tabs = window.FindControl<TabControl>("SectionTabs")!;
+            var archive = window.FindControl<ArchiveView>("ArchivePane")!;
+            var group = window.FindControl<AccessibleComboBox>("GroupSelector")!;
+
+            fixture.ViewModel.SelectedGroup = "synthetic empty group";
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+            Assert.Empty(fixture.ViewModel.Channels);
+            Assert.False(play.IsEffectivelyEnabled);
+            Assert.True(volume.Focus());
+            PressKey(window, Key.Tab);
+            Assert.Same(tabs.SelectedItem, window.FocusManager?.GetFocusedElement());
+            Assert.True(pause.Focus());
+            PressKey(window, Key.Tab, RawInputModifiers.Shift);
+            Assert.True(group.IsKeyboardFocusWithin);
+            PressKey(window, Key.Tab);
+            Assert.Same(pause, window.FocusManager?.GetFocusedElement());
+
+            fixture.ViewModel.SelectedSectionIndex = 2;
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+            Assert.False(play.IsEffectivelyVisible);
+            Assert.True(volume.Focus());
+            PressKey(window, Key.Tab);
+            Assert.Same(tabs.SelectedItem, window.FocusManager?.GetFocusedElement());
+            Assert.True(pause.Focus());
+            PressKey(window, Key.Tab, RawInputModifiers.Shift);
+            Assert.True(archive.IsKeyboardFocusWithin);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
     public async Task Sections_SelectLiveFavoritesAndArchiveAndRetainLiveGroupFilter()
     {
         using var fixture = new Fixture();

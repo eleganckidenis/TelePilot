@@ -1,5 +1,23 @@
 # Changelog / Historia zmian
 
+## 2.1.2
+
+### Polski
+
+- Pełny ekran rozszerza obraz odtwarzacza także przy wejściu z widoku dzielonego. Po wyjściu wraca poprzedni układ.
+- W Windows nazwa kanału jest wyróżniona, a audycja i grupa są w osobnym wierszu. Przyciski odtwarzania oraz głośność są widoczne pod obrazem także w małym oknie.
+- Naprawiono przechodzenie klawiszem Tab między odtwarzaczem a pustą listą kanałów lub Archiwum w widoku dzielonym Windows. W macOS poprawiono odświeżanie osadzonego obrazu VLC i powrót fokusu po pełnym ekranie.
+- Aktualizator pokazuje numer wersji i opis zmian przed pobraniem. Wybierz **Pobierz** albo **Później**.
+- Po zamknięciu Menedżera playlist lub innego okna modalnego macOS ogłasza oczekującą ofertę aktualizacji, gdy może ją pokazać.
+
+### English
+
+- Full screen expands the video even when entered from the split view. Exiting restores the previous layout.
+- On Windows, channel names stand out and the programme and group appear on a separate line. Playback buttons and volume stay below the picture, even in a small window.
+- Fixed Tab navigation between the player and an empty channel list or the archive in Windows split view. On macOS, the embedded VLC view refreshes and keyboard focus is restored after full screen.
+- The updater shows the version and release notes before downloading. Choose **Download** or **Later**.
+- On macOS, the app announces a pending update when it can display the offer after Playlist Manager or another modal window closes.
+
 ## 2.1.1
 
 ### Polski

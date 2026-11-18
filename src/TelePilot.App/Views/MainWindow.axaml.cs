@@ -12,6 +12,7 @@ using Avalonia.VisualTree;
 using LibVLCSharp.Shared;
 using TelePilot.App.Accessibility;
 using TelePilot.App.Controls;
+using TelePilot.App.Localization;
 using TelePilot.App.ViewModels;
 using TelePilot.App.Services;
 using TelePilot.Playback;
@@ -52,17 +53,21 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         PropertyChanged += (_, args) =>
         {
+            if (args.Property == WindowStateProperty)
+                UpdateFullscreenPresentation();
             if (args.Property == WindowStateProperty || args.Property == IsVisibleProperty)
                 UpdatePlaybackSurfaceVisibility();
         };
         PlayerView.PropertyChanged += (_, args) =>
         {
-            if (args.Property == IsVisibleProperty) UpdatePlaybackSurfaceVisibility();
+            if (args.Property == IsVisibleProperty)
+            {
+                UpdateFullscreenPresentation();
+                UpdatePlaybackSurfaceVisibility();
+            }
         };
-        ConfigureMainFocusCycleEdges();
-        SearchBox.NextTabTarget = GroupSelector;
         GroupSelector.PreviousTabTarget = SearchBox;
-        GroupSelector.NextTabTarget = ChannelList;
+        ConfigureMainFocusCycleEdges();
         SearchBox.TabNavigationStarting += OnTabNavigationStarting;
         GroupSelector.TabNavigationStarting += OnTabNavigationStarting;
         ChannelList.AddHandler(
@@ -1101,13 +1106,15 @@ public sealed partial class MainWindow : Window
         ConfigureMainFocusCycleEdges();
 
         bool moveBackward = (e.KeyModifiers & KeyModifiers.Shift) != 0;
-        bool channelListVisible = PlaySelectedChannelButton.IsEffectivelyVisible && PlaySelectedChannelButton.IsEffectivelyEnabled;
-        bool playerVisible = ReturnToChannelListButton.IsEffectivelyVisible;
+        bool channelListVisible = CurrentViewModel?.IsChannelListViewVisible
+            ?? (SectionTabs.IsEffectivelyVisible && ChannelListView.IsEffectivelyEnabled);
+        bool playerVisible = PlayerView.IsEffectivelyVisible;
+        Control? lastSectionControl = channelListVisible ? GetLastSectionTabTarget() : null;
         Control? target = null;
 
         if (!moveBackward)
         {
-            if (IsFocusWithin(PlaySelectedChannelButton))
+            if (lastSectionControl is not null && IsFocusWithin(lastSectionControl))
             {
                 target = playerVisible ? PauseResumeButton : SelectedSectionTab();
             }
@@ -1118,11 +1125,11 @@ public sealed partial class MainWindow : Window
         }
         else if (SelectedSectionTab() is { } selectedTab && IsFocusWithin(selectedTab))
         {
-            target = playerVisible ? VolumeSlider : PlaySelectedChannelButton;
+            target = playerVisible ? VolumeSlider : lastSectionControl;
         }
         else if (IsFocusWithin(PauseResumeButton))
         {
-            target = channelListVisible ? PlaySelectedChannelButton : VolumeSlider;
+            target = channelListVisible ? lastSectionControl : VolumeSlider;
         }
 
         if (target is null || !target.IsEffectivelyVisible || !target.IsEffectivelyEnabled)
@@ -1136,11 +1143,53 @@ public sealed partial class MainWindow : Window
         return true;
     }
 
+    private Control? GetLastSectionTabTarget()
+    {
+        if (CurrentViewModel?.IsArchiveSection == true)
+        {
+            return ArchivePane.LastTabTarget;
+        }
+
+        if (PlaySelectedChannelButton.IsEffectivelyVisible && PlaySelectedChannelButton.IsEffectivelyEnabled)
+        {
+            return PlaySelectedChannelButton;
+        }
+
+        if (ManageFavoritesButton.IsEffectivelyVisible && ManageFavoritesButton.IsEffectivelyEnabled)
+        {
+            return ManageFavoritesButton;
+        }
+
+        if (ChannelList.ItemCount > 0)
+        {
+            return ChannelList;
+        }
+
+        return GroupSelector.IsEffectivelyVisible && GroupSelector.IsEffectivelyEnabled
+            ? GroupSelector
+            : SearchBox;
+    }
+
     private void ConfigureMainFocusCycleEdges()
     {
         SearchBox.PreviousTabTarget = SelectedSectionTab();
+        Control? afterChannels = PlayerView.IsEffectivelyVisible && PauseResumeButton.IsEffectivelyEnabled
+            ? PauseResumeButton
+            : SelectedSectionTab();
+        Control? nextFilterTarget = afterChannels;
+        if (ChannelList.ItemCount > 0)
+        {
+            nextFilterTarget = ChannelList;
+        }
+        else if (ManageFavoritesButton.IsEffectivelyVisible && ManageFavoritesButton.IsEffectivelyEnabled)
+        {
+            nextFilterTarget = ManageFavoritesButton;
+        }
+
+        GroupSelector.NextTabTarget = nextFilterTarget;
         SearchBox.NextTabTarget = GroupSelector.IsEffectivelyVisible && GroupSelector.IsEffectivelyEnabled
-            ? GroupSelector : ChannelList;
+            ? GroupSelector
+            : nextFilterTarget;
     }
 
     private bool IsSectionEntryFocused => CurrentViewModel?.IsArchiveSection == true
@@ -1178,6 +1227,10 @@ public sealed partial class MainWindow : Window
         if (target is AccessibleComboBox comboBox)
         {
             return comboBox.FocusSelector();
+        }
+        if (target is AccessibleTextBox editor)
+        {
+            return editor.FocusEditor();
         }
 
         return target.Focus(
@@ -1310,9 +1363,20 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private void UpdateFullscreenPresentation()
+    {
+        var fullscreen = WindowState == WindowState.FullScreen;
+        CurrentViewModel?.SetPlaybackFullscreen(fullscreen && PlayerView.IsVisible);
+        var exitLabel = T("Opuść pełny ekran", "Exit full screen");
+        FullscreenButton.Content = fullscreen ? exitLabel : ViewText.FullScreen2;
+        AutomationProperties.SetName(FullscreenButton, fullscreen ? exitLabel : ViewText.ToggleFullScreen);
+    }
+
     private void RestoreFocusAfterWindowStateChange(bool isFullscreen)
     {
-        var request = GetFocusRequestForCurrentView();
+        var request = isFullscreen && PlayerView.IsVisible
+            ? new FocusRequest(FocusTarget.PlayerControls)
+            : GetFocusRequestForCurrentView();
         CurrentViewModel?.AccessibleStatus.ReportStatus(
             isFullscreen ? T("Tryb pełnoekranowy włączony.", "Full screen on.") : T("Tryb pełnoekranowy wyłączony.", "Full screen off."));
         BeginFocusRecovery(request, forceRequestedTarget: true);

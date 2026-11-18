@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace TelePilot.App.Services;
 
@@ -11,7 +12,7 @@ internal sealed record UpdateAsset(Version Version, string Name, Uri Uri, long S
 
 internal enum UpdateCheckStatus { Available, NoUpdate, Unsupported, Failed, InvalidMetadata }
 internal sealed record UpdateCheckResult(UpdateCheckStatus Status, UpdateAsset? Asset = null,
-    HttpStatusCode? HttpStatus = null, TimeSpan? RetryAfter = null)
+    HttpStatusCode? HttpStatus = null, TimeSpan? RetryAfter = null, string? ReleaseNotes = null)
 {
     internal bool IsTransient => Status == UpdateCheckStatus.Failed
         && (HttpStatus is null or HttpStatusCode.RequestTimeout || (int)HttpStatus >= 500);
@@ -20,12 +21,16 @@ internal sealed record UpdateCheckResult(UpdateCheckStatus Status, UpdateAsset? 
 internal sealed class ReleaseUpdate(HttpClient client, string directory, Architecture architecture)
 {
     internal const long MaximumAssetBytes = 512L * 1024 * 1024;
+    internal const int MaximumReleaseNotesLength = 16 * 1024;
     private const int MaximumMetadataBytes = 1024 * 1024;
     private const int BufferBytes = 64 * 1024;
     private const string Repository = "eleganckidenis/TelePilot";
+    private const string SharedInstallerTable = "| Platform / System | Installer / Instalator |";
     private readonly string? assetSuffix = AssetSuffixFor(architecture);
 
     private static readonly SearchValues<char> HexDigits = SearchValues.Create("0123456789abcdefABCDEF");
+    private static readonly Regex ReleaseNoteMarkup = new(@"\*\*([^\n*]+)\*\*|\[([^\[\]\n]+)\]\([^\s()]+\)",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
 
     internal static Uri LatestReleaseUri { get; } = new($"https://api.github.com/repos/{Repository}/releases/latest");
 
@@ -78,11 +83,58 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory, Archite
                 return new(UpdateCheckStatus.InvalidMetadata);
             if (version <= current) return new(UpdateCheckStatus.NoUpdate);
             var asset = SelectAsset(release, current, assetSuffix);
-            return asset is null ? new(UpdateCheckStatus.InvalidMetadata) : new(UpdateCheckStatus.Available, asset);
+            return asset is null ? new(UpdateCheckStatus.InvalidMetadata)
+                : new(UpdateCheckStatus.Available, asset, ReleaseNotes: ReadReleaseNotes(release.Body));
         }
         catch (JsonException) { return new(UpdateCheckStatus.InvalidMetadata); }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return new(UpdateCheckStatus.Failed); }
         catch (Exception exception) when (exception is HttpRequestException or IOException) { return new(UpdateCheckStatus.Failed); }
+    }
+
+    private static string? ReadReleaseNotes(JsonElement body)
+    {
+        if (body.ValueKind != JsonValueKind.String) return null;
+        string? text;
+        try { text = body.GetString(); }
+        catch (InvalidOperationException) { return null; }
+        if (string.IsNullOrWhiteSpace(text) || text.Length > MaximumReleaseNotesLength
+            || text.Any(character => char.IsControl(character) && character is not ('\n' or '\r' or '\t')))
+            return null;
+        return text.ReplaceLineEndings("\n").Trim();
+    }
+
+    internal static string? SelectReleaseNotes(string? notes, string language)
+    {
+        if (notes is null) return null;
+        var lines = notes.Split('\n');
+        for (var index = 0; index < lines.Length; index++)
+        {
+            var level = HeadingLevel(lines[index], out var heading);
+            if (level is not (2 or 3) || !heading.Equals(language, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var end = index + 1;
+            while (end < lines.Length)
+            {
+                var nextLevel = HeadingLevel(lines[end], out _);
+                if ((nextLevel > 0 && nextLevel <= level)
+                    || lines[end].TrimStart().StartsWith(SharedInstallerTable, StringComparison.OrdinalIgnoreCase)) break;
+                end++;
+            }
+            var section = string.Join('\n', lines, index + 1, end - index - 1).Trim();
+            return section.Length == 0 ? null : ReleaseNoteMarkup.Replace(section, "$1$2");
+        }
+        return ReleaseNoteMarkup.Replace(notes, "$1$2");
+    }
+
+    private static int HeadingLevel(string line, out ReadOnlySpan<char> heading)
+    {
+        var text = line.AsSpan().Trim();
+        var level = 0;
+        while (level < text.Length && text[level] == '#') level++;
+        heading = default;
+        if (level is < 1 or > 6 || level == text.Length || !char.IsWhiteSpace(text[level])) return 0;
+        heading = text[level..].Trim().TrimEnd('#').TrimEnd();
+        return level;
     }
 
     private static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
@@ -314,7 +366,8 @@ internal sealed class ReleaseUpdate(HttpClient client, string directory, Archite
         [property: JsonPropertyName("tag_name")] string? Tag,
         [property: JsonPropertyName("draft")] bool? Draft,
         [property: JsonPropertyName("prerelease")] bool? Prerelease,
-        [property: JsonPropertyName("assets")] Asset?[]? Assets);
+        [property: JsonPropertyName("assets")] Asset?[]? Assets,
+        [property: JsonPropertyName("body")] JsonElement Body);
 
     private sealed record Asset(
         [property: JsonPropertyName("name")] string? Name,

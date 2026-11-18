@@ -427,6 +427,69 @@ public sealed class MainWindowPlaybackNavigationTests
     }
 
     [AvaloniaFact]
+    public async Task FullscreenFromSplitExpandsTheSameVideoHostAndRestoresSplitLayout()
+    {
+        var coordinator = new FocusCoordinator();
+        var channelName = string.Concat(Enumerable.Repeat("Long synthetic channel name ", 50)).TrimEnd();
+        using var model = CreateSearchViewModel(coordinator, channelName);
+        var window = new MainWindow { DataContext = model, Width = 780, Height = 560 };
+        coordinator.FocusRequested += typeof(MainWindow).GetMethod("OnFocusRequested", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .CreateDelegate<EventHandler<FocusRequest>>(window);
+        try
+        {
+            window.Show();
+            window.Activate();
+            await model.InitializeAsync();
+            await model.PlaySelectedCommand.ExecuteAsync(null);
+            model.ReturnToChannelListCommand.Execute(null);
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+
+            var player = window.FindControl<Grid>("PlayerView")!;
+            var list = window.FindControl<ListBox>("ChannelList")!;
+            var video = window.FindControl<AccessibleVideoView>("VideoView")!;
+            var fullscreen = window.FindControl<Button>("FullscreenButton")!;
+            var displayName = player.Children.OfType<StackPanel>().Single().Children.OfType<TextBlock>().First();
+            var toolbar = window.FindControl<ScrollViewer>("PlaybackControlsScroll")!;
+            var volume = window.FindControl<Grid>("VolumeControls")!;
+            var splitWidth = video.Bounds.Width;
+            Assert.True(list.IsKeyboardFocusWithin);
+            Assert.True(video.Bounds.Height > 0, $"Video {video.Bounds}, player {player.Bounds}, toolbar {toolbar.Bounds}, volume {volume.Bounds}.");
+            Assert.True(volume.Bounds.Y >= toolbar.Bounds.Bottom);
+            Assert.True(volume.Bounds.Bottom <= player.Bounds.Height);
+            Assert.Equal(channelName, AutomationProperties.GetName(displayName));
+
+            window.KeyPress(Key.F11, RawInputModifiers.None, PhysicalKey.F11, null);
+            window.KeyRelease(Key.F11, RawInputModifiers.None, PhysicalKey.F11, null);
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+
+            Assert.Equal(WindowState.FullScreen, window.WindowState);
+            Assert.True(model.IsPlaybackFullscreen);
+            Assert.False(model.IsChannelListViewVisible);
+            Assert.Same(video, window.FindControl<AccessibleVideoView>("VideoView"));
+            Assert.Equal(window.FindControl<Grid>("MainContent")!.Bounds.Width, video.Bounds.Width, 1);
+            Assert.True(video.Bounds.Width > splitWidth);
+            Assert.True(player.IsKeyboardFocusWithin);
+            Assert.Equal(fullscreen.Content, AutomationProperties.GetName(fullscreen));
+
+            window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            window.KeyRelease(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+
+            Assert.Equal(WindowState.Normal, window.WindowState);
+            Assert.False(model.IsPlaybackFullscreen);
+            Assert.True(model.IsChannelListViewVisible);
+            Assert.Equal(splitWidth, video.Bounds.Width);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
     public async Task RapidPageNavigationAndVideoOutputChangesKeepPlayerControlsFocused()
     {
         var coordinator = new FocusCoordinator();

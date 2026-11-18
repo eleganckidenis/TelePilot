@@ -32,6 +32,7 @@ struct UpdateAsset: Sendable {
     let url: URL
     let size: Int
     let sha256: String
+    let notes: String?
 }
 
 struct ReleaseUpdate {
@@ -85,7 +86,8 @@ struct ReleaseUpdate {
 
         let hex = digest.dropFirst(7).utf8
         guard hex.count == 64, hex.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }) else { return nil }
-        return UpdateAsset(version: version, name: name, url: url, size: match.size, sha256: String(digest.dropFirst(7)).lowercased())
+        return UpdateAsset(version: version, name: name, url: url, size: match.size,
+                           sha256: String(digest.dropFirst(7)).lowercased(), notes: release.body)
     }
 
     func download(_ asset: UpdateAsset, session: URLSession, progress: (@Sendable (Int, Int) -> Void)? = nil) async throws -> URL {
@@ -203,10 +205,20 @@ struct ReleaseUpdate {
         let draft: Bool
         let prerelease: Bool
         let assets: [Asset]
+        let body: String?
 
         enum CodingKeys: String, CodingKey {
             case tagName = "tag_name"
-            case draft, prerelease, assets
+            case draft, prerelease, assets, body
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            tagName = try values.decode(String.self, forKey: .tagName)
+            draft = try values.decode(Bool.self, forKey: .draft)
+            prerelease = try values.decode(Bool.self, forKey: .prerelease)
+            assets = try values.decode([Asset].self, forKey: .assets)
+            body = try? values.decode(String.self, forKey: .body)
         }
     }
 
@@ -234,6 +246,53 @@ struct ReleaseUpdate {
             guard let error = error as? URLError else { return false }
             return [.timedOut, .notConnectedToInternet, .cannotConnectToHost, .networkConnectionLost, .dnsLookupFailed].contains(error.code)
         }
+    }
+}
+
+enum ReleaseNotes {
+    private static let maximumCodeUnits = 16_384
+
+    static func text(_ body: String?, language: Language) -> String? {
+        guard let body else { return nil }
+        let lines = body.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+        let headings = lines.indices.compactMap { index -> (index: Int, level: Int, title: String)? in
+            let line = lines[index].trimmingCharacters(in: .whitespaces)
+            let level = line.prefix(while: { $0 == "#" }).count
+            guard (1...6).contains(level), line.dropFirst(level).first?.isWhitespace == true else { return nil }
+            let title = line.dropFirst(level).trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: "#")))
+            return (index, level, title.lowercased())
+        }
+        let preferred = language.resolve() == .polish ? "polski" : "english"
+        let alternate = preferred == "polski" ? "english" : "polski"
+        let localized = headings.filter { $0.title == preferred || $0.title == alternate }
+        let platformTable = lines.firstIndex {
+            $0.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("| platform / system | installer / instalator |")
+        }
+        for title in [preferred, alternate] {
+            guard let start = localized.first(where: { $0.title == title }) else { continue }
+            let headingEnd = headings.first { $0.index > start.index && $0.level <= start.level }?.index ?? lines.count
+            let tableEnd = platformTable.flatMap { $0 > start.index ? $0 : nil } ?? lines.count
+            let end = min(headingEnd, tableEnd)
+            if let text = plainText(lines[(start.index + 1)..<end].joined(separator: "\n")) { return text }
+        }
+        return localized.isEmpty ? plainText(lines[..<(platformTable ?? lines.count)].joined(separator: "\n")) : nil
+    }
+
+    private static func plainText(_ text: String) -> String? {
+        var excerpt = String.UnicodeScalarView()
+        var length = 0
+        var truncated = false
+        for scalar in text.unicodeScalars where scalar == "\n" || !CharacterSet.controlCharacters.contains(scalar) {
+            let width = scalar.value > 0xFFFF ? 2 : 1
+            guard length + width < maximumCodeUnits else { truncated = true; break }
+            excerpt.append(scalar)
+            length += width
+        }
+        let source = String(excerpt)
+        let rendered = try? AttributedString(markdown: source, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+        let value = (rendered.map { String($0.characters) } ?? source).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+        return truncated ? value + "…" : value
     }
 }
 

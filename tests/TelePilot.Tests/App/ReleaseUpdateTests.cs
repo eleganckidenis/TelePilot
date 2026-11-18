@@ -39,6 +39,63 @@ public sealed class ReleaseUpdateTests
     }
 
     [Theory]
+    [InlineData("##", "English", "- New controls.\n### Details\nPress Enter.")]
+    [InlineData("##", "Polski", "- Nowe sterowanie.")]
+    [InlineData("###", "Polski", "- Nowe sterowanie.")]
+    public async Task LocalizesReleaseNotesWithoutShowingSharedInstallerInstructions(string level, string language, string expected)
+    {
+        var body = $"{level} English\r\n\r\n- **New** [controls](https://example.com/details).\r\n"
+            + (level == "##" ? "### Details\r\nPress Enter.\r\n\r\n" : "\r\n")
+            + $"{level} Polski\r\n\r\n- Nowe sterowanie.\r\n\r\n"
+            + "| Platform / System | Installer / Instalator |\r\n| Windows | Installer |\r\n## Verification / Weryfikacja";
+        using var client = new HttpClient(new MockHttp(_ => TextResponse(Release().Insert(1, "\"body\":" + JsonSerializer.Serialize(body) + ","))));
+
+        var result = await new ReleaseUpdate(client, "", Architecture.X64).CheckDetailedAsync(new(2, 0, 2), CancellationToken.None);
+
+        Assert.Equal(UpdateCheckStatus.Available, result.Status);
+        Assert.Equal(expected, ReleaseUpdate.SelectReleaseNotes(result.ReleaseNotes, language));
+    }
+
+    [Fact]
+    public async Task DisplaysUnsectionedNotesAsPlainText()
+    {
+        const string body = "  - **New controls**\r\n- [User guide](https://example.com)   ";
+        using var client = new HttpClient(new MockHttp(_ => TextResponse(Release().Insert(1, "\"body\":" + JsonSerializer.Serialize(body) + ","))));
+        var result = await new ReleaseUpdate(client, "", Architecture.X64).CheckDetailedAsync(new(2, 0, 2), CancellationToken.None);
+        Assert.Equal("- New controls\n- User guide", ReleaseUpdate.SelectReleaseNotes(result.ReleaseNotes, "Polski"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("null")]
+    [InlineData("42")]
+    [InlineData("{\"English\":\"news\"}")]
+    [InlineData("\" \\t\"")]
+    [InlineData("\"unexpected\\u0000character\"")]
+    [InlineData("\"\\uD800\"")]
+    public async Task MissingOrMalformedNotesDoNotInvalidateTheInstallAsset(string? bodyJson)
+    {
+        var metadata = Release();
+        if (bodyJson is not null) metadata = metadata.Insert(1, $"\"body\":{bodyJson},");
+        using var client = new HttpClient(new MockHttp(_ => TextResponse(metadata)));
+        var result = await new ReleaseUpdate(client, "", Architecture.X64).CheckDetailedAsync(new(2, 0, 2), CancellationToken.None);
+        Assert.Equal(UpdateCheckStatus.Available, result.Status);
+        Assert.Equal(Name, result.Asset!.Name);
+        Assert.Null(result.ReleaseNotes);
+    }
+
+    [Fact]
+    public async Task OversizedNotesDoNotInvalidateTheInstallAsset()
+    {
+        var body = new string('x', ReleaseUpdate.MaximumReleaseNotesLength + 1);
+        using var client = new HttpClient(new MockHttp(_ => TextResponse(Release().Insert(1, "\"body\":" + JsonSerializer.Serialize(body) + ","))));
+        var result = await new ReleaseUpdate(client, "", Architecture.X64).CheckDetailedAsync(new(2, 0, 2), CancellationToken.None);
+        Assert.Equal(UpdateCheckStatus.Available, result.Status);
+        Assert.Equal(Name, result.Asset!.Name);
+        Assert.Null(result.ReleaseNotes);
+    }
+
+    [Theory]
     [InlineData("current")]
     [InlineData("older")]
     [InlineData("prerelease")]

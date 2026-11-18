@@ -57,7 +57,7 @@ struct UpdateFeedbackTests {
     func automaticProgressRequiresManualOptInToKeyboardFocus() throws {
         _ = NSApplication.shared
         var cancelled = 0; var retried = 0
-        let panel = UpdateProgressWindow(cancel: { cancelled += 1 }, retry: { retried += 1 })
+        let panel = UpdateProgressWindow(download: {}, cancel: { cancelled += 1 }, retry: { retried += 1 })
         defer { panel.closeWithoutCancelling() }
         panel.downloading(version: try #require(UpdateVersion("2.1.1")))
         panel.show(active: false)
@@ -72,6 +72,47 @@ struct UpdateFeedbackTests {
         #expect(retried == 1)
         panel.closeWithoutCancelling()
         #expect(cancelled == 1)
+    }
+
+    @MainActor
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TELEPILOT_RUN_APPKIT_INTEGRATION"] == "1"))
+    func offerShowsReadOnlyChangesAndRequiresTheDownloadAction() throws {
+        _ = NSApplication.shared
+        var downloads = 0
+        var dismissals = 0
+        let panel = UpdateProgressWindow(download: { downloads += 1 }, cancel: { dismissals += 1 }, retry: {})
+        defer { panel.closeWithoutCancelling() }
+        let version = try #require(UpdateVersion("2.10.0"))
+        panel.offer(version: version, notes: "Playback changes")
+        #expect(panel.window?.isVisible == false)
+        var passiveOffers = 0
+        panel.show(active: false) {
+            #expect(panel.window?.isVisible == true)
+            #expect(panel.window?.canBecomeKey == false)
+            passiveOffers += 1
+        }
+        #expect(passiveOffers == 1)
+        panel.show(active: true)
+        #expect(panel.notesText.string == "Playback changes")
+        #expect(panel.notesText.isEditable == false)
+        #expect(panel.notesText.isAutomaticLinkDetectionEnabled == false)
+        #expect(panel.window?.firstResponder === panel.notesText)
+        #expect(panel.progressBar.isHidden)
+        #expect(downloads == 0)
+
+        panel.cancelButton.performClick(nil)
+        #expect(dismissals == 1)
+        #expect(downloads == 0)
+
+        panel.offer(version: version, notes: nil)
+        panel.show(active: true)
+        #expect(panel.notesText.string == l("Brak opisu zmian dla tej wersji.", "No release notes are available for this version."))
+        panel.downloadButton.performClick(nil)
+        panel.acceptDownload()
+        #expect(downloads == 1)
+        panel.downloading(version: version)
+        #expect(panel.downloadButton.isHidden)
+        #expect(!panel.progressBar.isHidden)
     }
 
     @MainActor @Test func feedbackUsesSafeCategoriesInsteadOfRawNetworkDiagnostics() {

@@ -26,7 +26,7 @@ public sealed partial class ArchiveView : UserControl
 
     public bool IsChannelFocusWithin => ChannelPicker.IsKeyboardFocusWithin;
     public bool FocusInitialControl() => ChannelPicker.FocusSelector();
-    public bool FocusLastControl() => GetTabTarget(ChannelPicker, backward: true)?.Focus(NavigationMethod.Tab, KeyModifiers.Shift) == true;
+    internal Control LastTabTarget => GetTabTarget(ChannelPicker, backward: true) ?? ChannelPicker;
 
     private void OnTabNavigationStarting(object? sender, EventArgs e)
     {

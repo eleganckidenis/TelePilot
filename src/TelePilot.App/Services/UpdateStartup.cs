@@ -70,6 +70,7 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
     private int revealGeneration = -1;
     private UpdateProgressWindow? progressWindow;
     private UpdateProgressViewModel? progress;
+    private TaskCompletionSource? downloadConsent;
     private ConfirmationDialog? confirmation;
     private bool running, manual, stopped, closingProgress, waitingForOwner;
     private int generation;
@@ -102,41 +103,62 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
                     // its owner rather than create another busy panel.
                     if (owner.IsVisible && owner.IsEnabled) owner.Activate();
                 }
-                else { EnsureProgress(); progressWindow?.Activate(); progressWindow?.FocusAction(); }
+                else ActivateProgress();
             }
             return;
         }
         this.manual = manual;
         waitingForOwner = false;
+        downloadConsent = null;
         var id = ++generation;
         cancellation = new CancellationTokenSource();
         running = true;
-        if (manual) { EnsureProgress(); progress!.Busy(T("Sprawdzanie aktualizacji…", "Checking for updates…")); progressWindow?.Activate(); progressWindow?.FocusAction(); }
+        if (manual)
+        {
+            EnsureProgress();
+            progress!.Busy(T("Sprawdzanie aktualizacji…", "Checking for updates…"));
+            ActivateProgress();
+        }
         operation = RunAsync(id, cancellation);
     }
     private bool Current(int id) => !stopped && id == generation;
     private void EnsureProgress()
     {
-        if (stopped) return;
-        if (progressWindow is not null) { RevealProgress(); return; }
+        if (stopped || progressWindow is not null) return;
         var window = new UpdateProgressWindow { ShowActivated = manual };
-        var model = new UpdateProgressViewModel(Cancel, () => Request(manual: true), OpenDownloadPage, window.Close);
+        var model = new UpdateProgressViewModel(
+            () => { if (ReferenceEquals(progressWindow, window)) downloadConsent?.TrySetResult(); },
+            Cancel, () => Request(manual: true), OpenDownloadPage, window.Close);
         window.DataContext = model;
+        var restoreOwner = false;
+        window.Closing += (_, _) => restoreOwner = window.IsActive;
         window.Closed += (_, _) =>
         {
             if (!ReferenceEquals(progressWindow, window)) return;
             progressWindow = null; progress = null; revealGeneration = -1;
-            if (!closingProgress) cancellation?.Cancel();
+            if (!closingProgress)
+            {
+                cancellation?.Cancel();
+                if (restoreOwner && !stopped && OwnerCanActivate) owner.Activate();
+            }
         };
         progressWindow = window; progress = model;
-        RevealProgress();
     }
-    private bool OwnerCanPresent => owner.IsActive && owner.IsVisible && owner.IsEnabled
+    private void ActivateProgress()
+    {
+        EnsureProgress();
+        RevealProgress();
+        if (progressWindow is not { IsVisible: true } window) return;
+        window.Activate();
+        window.FocusAction();
+    }
+    private bool OwnerCanActivate => owner.IsVisible && owner.IsEnabled
         && !owner.OwnedWindows.Any(window => window.IsVisible && window.IsDialog);
+    private bool OwnerCanPresent => owner.IsActive && OwnerCanActivate;
     private void RevealProgress()
     {
         if (progressWindow is not { } window || window.IsVisible || stopped) return;
-        if (OwnerCanPresent) { window.Show(owner); return; }
+        if (OwnerCanPresent) { ShowProgress(window); return; }
         if (revealGeneration != generation)
         {
             revealGeneration = generation;
@@ -147,8 +169,20 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
     {
         while (Current(id) && ReferenceEquals(progressWindow, window) && !window.IsVisible)
         {
-            if (OwnerCanPresent) { window.Show(owner); return; }
+            if (OwnerCanPresent) { ShowProgress(window); return; }
             await Task.Delay(TimeSpan.FromMilliseconds(250));
+        }
+    }
+    private void ShowProgress(UpdateProgressWindow window)
+    {
+        window.ShowActivated = manual;
+        window.Show(owner);
+        if (!manual && progress is { IsOffering: true, OfferedVersion: { } offeredVersion }
+            && owner.DataContext is MainWindowViewModel main)
+        {
+            main.AccessibleStatus.AnnounceStatus(T(
+                $"Dostępna jest wersja TelePilot {offeredVersion}. W menu Pomoc wybierz Sprawdź aktualizacje, aby przeczytać historię zmian.",
+                $"TelePilot {offeredVersion} is available. Choose Check for Updates in the Help menu to read the release notes."));
         }
     }
     private void Cancel()
@@ -204,6 +238,8 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
                     progress?.Complete(result.Status == UpdateCheckStatus.NoUpdate
                         ? T("Masz najnowszą wersję TelePilot.", "TelePilot is up to date.")
                         : T("Brak aktualizacji dla tej architektury.", "Updates are not available for this architecture."));
+                    RevealProgress();
+                    if (progressWindow?.IsActive == true) progressWindow.FocusAction();
                 }
                 return;
             }
@@ -220,8 +256,18 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
                             "Could not check for updates. Check your connection and retry, or open the official download page."));
                 return;
             }
+            var consent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            downloadConsent = consent;
             EnsureProgress();
+            progress?.Offer(asset.Version, ReleaseUpdate.SelectReleaseNotes(result.ReleaseNotes, T("Polski", "English")));
+            RevealProgress();
+            if (progressWindow?.IsActive == true) progressWindow.FocusAction();
+            await consent.Task.WaitAsync(token);
+            token.ThrowIfCancellationRequested();
+            if (!Current(id)) return;
+            downloadConsent = null;
             progress?.Busy(T($"Dostępna wersja {asset.Version}. Pobieranie aktualizacji…", $"Version {asset.Version} is available. Downloading the update…"), 0);
+            if (progressWindow?.IsActive == true) progressWindow.FocusAction();
             var reported = new Progress<int>(percent =>
             {
                 if (Current(id) && !token.IsCancellationRequested)
@@ -233,8 +279,7 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
             var updaterWasActive = progressWindow?.IsActive == true;
             waitingForOwner = true;
             CloseProgress();
-            if (updaterWasActive && owner.IsVisible && owner.IsEnabled
-                && !owner.OwnedWindows.Any(window => window.IsVisible && window.IsDialog)) owner.Activate();
+            if (updaterWasActive && OwnerCanActivate) owner.Activate();
             while (!OwnerCanPresent)
                 await Task.Delay(TimeSpan.FromMilliseconds(250), token);
             token.ThrowIfCancellationRequested();
@@ -258,7 +303,7 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
         }
         finally
         {
-            if (id == generation) { running = false; cancellation = null; waitingForOwner = false; }
+            if (id == generation) { running = false; cancellation = null; waitingForOwner = false; downloadConsent = null; }
             lifetime.Dispose();
         }
     }
@@ -266,6 +311,7 @@ internal sealed class UpdateStartupSession : IAsyncDisposable
     {
         EnsureProgress();
         progress?.Complete(message, retry: true, openPage: true);
+        RevealProgress();
         if (manual && (progressWindow?.IsActive == true || OwnerCanPresent)) progressWindow?.FocusAction();
     }
     private async Task OfferInstallerAsync(UpdateAsset asset, string path, CancellationToken token)

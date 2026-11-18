@@ -127,7 +127,7 @@ public sealed class MainWindowCurrentProgramRefreshTests
         Assert.Same(item, Assert.Single(fixture.ViewModel.Channels));
         Assert.Same(item, fixture.ViewModel.SelectedChannel);
         Assert.Equal("Druga audycja", item.CurrentProgram);
-        Assert.Equal([nameof(item.CurrentProgram), nameof(item.AccessibleName)], itemChanges);
+        Assert.Equal([nameof(item.CurrentProgram), nameof(item.AccessibleName), nameof(item.DetailsText)], itemChanges);
         Assert.Equal(0, collectionChanges);
         Assert.Empty(fixture.FocusRequests);
         Assert.Empty(fixture.Status.Messages);

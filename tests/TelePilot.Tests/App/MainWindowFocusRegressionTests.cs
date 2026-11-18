@@ -204,9 +204,7 @@ public sealed class MainWindowFocusRegressionTests
             playButton.Command = new RelayCommand(static () => { });
 
             Grid channelListView = Assert.IsType<Grid>(channelList.Parent);
-            Grid playerView = Assert.Single(
-                returnButton.GetVisualAncestors().OfType<Grid>(),
-                grid => grid.Children.OfType<WrapPanel>().Any(panel => panel == returnButton.Parent));
+            Grid playerView = Assert.IsType<Grid>(window.FindControl<Grid>("PlayerView"));
             channelListView.IsVisible = true;
             playerView.IsVisible = false;
 
@@ -248,9 +246,7 @@ public sealed class MainWindowFocusRegressionTests
             Button returnButton = Assert.IsType<Button>(window.FindControl<Button>("ReturnToChannelListButton"));
             playButton.Command = new RelayCommand(static () => { });
 
-            Grid playerView = Assert.Single(
-                returnButton.GetVisualAncestors().OfType<Grid>(),
-                grid => grid.Children.OfType<WrapPanel>().Any(panel => panel == returnButton.Parent));
+            Grid playerView = Assert.IsType<Grid>(window.FindControl<Grid>("PlayerView"));
             playerView.IsVisible = false;
 
             window.Show();
@@ -293,9 +289,7 @@ public sealed class MainWindowFocusRegressionTests
             Button returnButton = Assert.IsType<Button>(window.FindControl<Button>("ReturnToChannelListButton"));
             playButton.Command = new RelayCommand(static () => { });
 
-            Grid playerView = Assert.Single(
-                returnButton.GetVisualAncestors().OfType<Grid>(),
-                grid => grid.Children.OfType<WrapPanel>().Any(panel => panel == returnButton.Parent));
+            Grid playerView = Assert.IsType<Grid>(window.FindControl<Grid>("PlayerView"));
             playerView.IsVisible = false;
 
             window.Show();
@@ -348,9 +342,7 @@ public sealed class MainWindowFocusRegressionTests
             returnButton.Command = new RelayCommand(static () => { });
 
             Grid channelListView = Assert.IsType<Grid>(channelList.Parent);
-            Grid playerView = Assert.Single(
-                returnButton.GetVisualAncestors().OfType<Grid>(),
-                grid => grid.Children.OfType<WrapPanel>().Any(panel => panel == returnButton.Parent));
+            Grid playerView = Assert.IsType<Grid>(window.FindControl<Grid>("PlayerView"));
             channelListView.IsVisible = true;
             channelListView.IsEnabled = false;
             window.FindControl<TabControl>("SectionTabs")!.IsVisible = false;
@@ -394,9 +386,7 @@ public sealed class MainWindowFocusRegressionTests
             returnButton.Command = new RelayCommand(static () => { });
 
             Grid channelListView = Assert.IsType<Grid>(channelList.Parent);
-            Grid playerView = Assert.Single(
-                returnButton.GetVisualAncestors().OfType<Grid>(),
-                grid => grid.Children.OfType<WrapPanel>().Any(panel => panel == returnButton.Parent));
+            Grid playerView = Assert.IsType<Grid>(window.FindControl<Grid>("PlayerView"));
             channelListView.IsVisible = true;
             playerView.IsVisible = true;
 
@@ -472,9 +462,7 @@ public sealed class MainWindowFocusRegressionTests
             window.UpdateLayout();
 
             Grid channelListView = Assert.IsType<Grid>(channelList.Parent);
-            Grid playerView = Assert.Single(
-                returnButton.GetVisualAncestors().OfType<Grid>(),
-                grid => grid.Children.OfType<WrapPanel>().Any(panel => panel == returnButton.Parent));
+            Grid playerView = Assert.IsType<Grid>(window.FindControl<Grid>("PlayerView"));
 
             channelListView.IsVisible = true;
             playerView.IsVisible = true;
@@ -516,9 +504,7 @@ public sealed class MainWindowFocusRegressionTests
             Button returnButton = Assert.IsType<Button>(window.FindControl<Button>("ReturnToChannelListButton"));
             pauseButton.Command = new RelayCommand(static () => { });
             returnButton.Command = new RelayCommand(static () => { });
-            Grid playerView = Assert.Single(
-                returnButton.GetVisualAncestors().OfType<Grid>(),
-                grid => grid.Children.OfType<WrapPanel>().Any(panel => panel == returnButton.Parent));
+            Grid playerView = Assert.IsType<Grid>(window.FindControl<Grid>("PlayerView"));
             Grid root = Assert.IsType<Grid>(window.Content);
             Menu menu = Assert.Single(root.Children.OfType<Menu>());
             MenuItem staleMenuFocus = Assert.IsType<MenuItem>(menu.Items[3]);
@@ -649,9 +635,7 @@ public sealed class MainWindowFocusRegressionTests
             Button returnButton = Assert.IsType<Button>(window.FindControl<Button>("ReturnToChannelListButton"));
             pauseButton.Command = new RelayCommand(static () => { });
             returnButton.Command = new RelayCommand(static () => { });
-            Grid playerView = Assert.Single(
-                returnButton.GetVisualAncestors().OfType<Grid>(),
-                grid => grid.Children.OfType<WrapPanel>().Any(panel => panel == returnButton.Parent));
+            Grid playerView = Assert.IsType<Grid>(window.FindControl<Grid>("PlayerView"));
             Grid root = Assert.IsType<Grid>(window.Content);
             Menu menu = Assert.Single(root.Children.OfType<Menu>());
             MenuItem staleMenuFocus = Assert.IsType<MenuItem>(menu.Items[3]);
@@ -696,9 +680,7 @@ public sealed class MainWindowFocusRegressionTests
             Grid channelListView = Assert.IsType<Grid>(channelList.Parent);
             Grid playerView = Assert.IsType<Grid>(window.FindControl<Grid>("PlayerView"));
             Button pauseButton = Assert.IsType<Button>(window.FindControl<Button>("PauseResumeButton"));
-            Button stopButton = Assert.Single(
-                playerView.GetVisualDescendants().OfType<Button>(),
-                button => AutomationProperties.GetAutomationId(button) == "stop-playback");
+            Button stopButton = Assert.IsType<Button>(window.FindControl<Button>("StopPlaybackButton"));
             pauseButton.Command = new RelayCommand(static () => { });
             stopButton.Command = new RelayCommand(static () => { });
             Menu mainMenu = Assert.IsType<Menu>(window.FindControl<Menu>("MainMenu"));

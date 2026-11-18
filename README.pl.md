@@ -18,7 +18,7 @@ Instalator Windows nie jest podpisany cyfrowo. Aplikacja na Maca ma podpis ad-ho
 2. W **Plik → Menedżer playlist** dodaj playlistę z pliku lub adresu internetowego. To okno otwiera się automatycznie przy pierwszym uruchomieniu.
 3. Wybierz kanał i naciśnij **Enter**. Listę skrótów znajdziesz w menu **Pomoc**.
 
-TelePilot sprawdza aktualizacje przy uruchomieniu i weryfikuje pobrany instalator. Możesz też wybrać **Pomoc → Sprawdź aktualizacje**. Okno aktualizacji pokazuje postęp pobierania i pozwala je anulować lub ponowić. Na Macu kliknij **OK** po pobraniu, aby otworzyć obraz instalacyjny i zamknąć TelePilota.
+TelePilot sprawdza aktualizacje przy uruchomieniu. Możesz też wybrać **Pomoc → Sprawdź aktualizacje**. Gdy aktualizacja jest dostępna, okno podaje numer wersji i opis zmian przed wyborem **Pobierz** lub **Później**. Pobieranie można anulować lub ponowić, a TelePilot weryfikuje pobrany instalator. Na Macu kliknij **OK** po pobraniu, aby otworzyć obraz instalacyjny i zamknąć TelePilota.
 
 Starsze wersje, w tym 2.0.2, pokazują komunikat dopiero po pobraniu całego instalatora. Jeśli komunikat się nie pojawia, możesz zainstalować bieżącą wersję ze [strony pobierania](https://github.com/eleganckidenis/TelePilot/releases/latest).
 
