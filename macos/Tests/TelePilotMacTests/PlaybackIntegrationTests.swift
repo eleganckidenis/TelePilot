@@ -19,6 +19,21 @@ actor NativePlaybackTestGate {
 }
 
 struct PlaybackIntegrationTests {
+    @Test func volumePercentTracksLinearGainAcrossTheSlider() {
+        var previous: Int32 = 0
+        for percent in 0...100 {
+            let native = PlaybackAudio(volume: percent, muted: false, revision: 0).vlcVolume
+            let factor = Double(native) / 100
+            let gain = factor * factor * factor
+            #expect(native >= previous)
+            #expect(abs(gain - Double(percent) / 100) < 0.015)
+            previous = native
+        }
+        #expect(PlaybackAudio(volume: -1, muted: false, revision: 0).vlcVolume == 0)
+        #expect(PlaybackAudio(volume: 50, muted: true, revision: 0).vlcVolume == 79)
+        #expect(PlaybackAudio(volume: 110, muted: false, revision: 0).vlcVolume == 100)
+    }
+
     @Test func oldPreferencesKeepLibraryAndReceiveBufferDefaults() throws {
         let original = Preferences(volume: 42, favorites: ["synthetic-favorite"])
         var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])

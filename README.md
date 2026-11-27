@@ -20,7 +20,7 @@ The Windows installer is unsigned. The Mac app is signed ad hoc and has no Apple
 
 TelePilot checks for a new release at startup. You can also use **Help → Check for Updates**. When an update is available, the window shows the version and release notes before you choose **Download** or **Later**. TelePilot verifies the downloaded package and lets you cancel or retry the transfer.
 
-On Windows, TelePilot closes after downloading the update. Windows may ask for administrator approval. A progress window shows the installation and TelePilot reopens when it completes. Upgrading to 2.1.4 from an older version uses the older version's installation flow once. On Mac, click **OK** when the download is ready to open the disk image and quit TelePilot.
+On Windows, TelePilot closes after downloading the update. Windows may ask for administrator approval. A progress window shows the installation and TelePilot reopens when it completes. Updates from 2.1.3 or earlier use that version's installation flow once. On Mac, click **OK** when the download is ready to open the disk image and quit TelePilot.
 
 Older versions, including 2.0.2, show a notification only after downloading the complete installer. If no notification appears, you can install the latest version from the [download page](https://github.com/eleganckidenis/TelePilot/releases/latest).
 

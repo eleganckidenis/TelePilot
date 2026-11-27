@@ -177,17 +177,27 @@ struct OnboardingTests {
             // Cold LibVLC plugin discovery is separate from opening the stream.
             await controller.playbackTask?.value
             try await waitForPlaying(controller, phase: "Second before full screen")
+            try await waitForNativeAudio(player, volume: 0, muted: true)
+            controller.volume.integerValue = 35
+            controller.volumeChanged()
+            try await waitForNativeAudio(player, volume: 70, muted: true)
             try await exerciseNativeFullscreen(controller)
 
             controller.stopPlayback()
             await controller.playbackTask?.value
             #expect(controller.playing == nil)
             #expect(controller.video.softwareFrame == nil)
+            controller.changeVolume(15)
+            let savedAudio = try Preferences.load(from: root.appendingPathComponent("preferences.json"))
+            #expect(savedAudio.volume == 50)
+            #expect(savedAudio.muted)
             controller.table.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
             controller.table.keyDown(with: enter)
             #expect(controller.playing?.name == "Third")
             await controller.playbackTask?.value
             try await waitForPlaying(controller, phase: "Third after Stop")
+            try await waitForNativeAudio(player, volume: 79, muted: true)
+            #expect(controller.volume.integerValue == 50)
             #expect(mainWindow.firstResponder === controller.pauseButton)
             #expect(controller.cycleFocus(in: mainWindow, backward: false))
             let focused = mainWindow.firstResponder as? NSButton
@@ -430,6 +440,16 @@ struct OnboardingTests {
             try await Task.sleep(for: .milliseconds(50))
         }
         try #require(window.styleMask.contains(.fullScreen) == enabled && button.title == title)
+    }
+
+    private func waitForNativeAudio(_ player: Player, volume: Int32, muted: Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(2)
+        repeat {
+            let audio = await player.nativeAudio()
+            if audio?.volume == volume, audio?.muted == muted { return }
+            try await Task.sleep(for: .milliseconds(50))
+        } while ContinuousClock.now < deadline
+        Issue.record("Expected VLC volume \(volume) with mute set to \(muted).")
     }
 
     @MainActor

@@ -293,10 +293,26 @@ TVLC *tvlc_create(const char *library, const char *plugins) {
     v->core = dlopen(core,RTLD_NOW|RTLD_GLOBAL);
     v->library = dlopen(library,RTLD_NOW|RTLD_GLOBAL);
     if (!v->library || !v->core) { tvlc_destroy(v); return NULL; }
-    const char *required[] = {"libvlc_new","libvlc_release","libvlc_log_set","libvlc_media_player_new","libvlc_media_player_release","libvlc_media_new_location","libvlc_media_release","libvlc_media_player_set_media","libvlc_media_player_set_nsobject","libvlc_media_player_play","libvlc_media_player_stop","libvlc_media_player_set_pause","libvlc_media_player_can_pause","libvlc_media_player_get_state","libvlc_audio_set_volume","libvlc_audio_set_mute","libvlc_audio_get_track_description","libvlc_video_get_spu_description","libvlc_track_description_list_release","libvlc_audio_get_track","libvlc_video_get_spu","libvlc_audio_set_track","libvlc_video_set_spu","libvlc_media_player_get_time","libvlc_media_player_set_time","libvlc_media_player_is_seekable","libvlc_media_player_event_manager","libvlc_event_attach","libvlc_event_detach"};
+    const char *required[] = {
+        "libvlc_new", "libvlc_release", "libvlc_log_set",
+        "libvlc_media_player_new", "libvlc_media_player_release",
+        "libvlc_media_new_location", "libvlc_media_release",
+        "libvlc_media_player_set_media", "libvlc_media_player_set_nsobject",
+        "libvlc_media_player_play", "libvlc_media_player_stop",
+        "libvlc_media_player_set_pause", "libvlc_media_player_can_pause", "libvlc_media_player_get_state",
+        "libvlc_audio_set_volume", "libvlc_audio_get_volume", "libvlc_audio_set_mute", "libvlc_audio_get_mute",
+        "libvlc_audio_get_track_description", "libvlc_video_get_spu_description", "libvlc_track_description_list_release",
+        "libvlc_audio_get_track", "libvlc_video_get_spu", "libvlc_audio_set_track", "libvlc_video_set_spu",
+        "libvlc_media_player_get_time", "libvlc_media_player_set_time", "libvlc_media_player_is_seekable",
+        "libvlc_media_player_event_manager", "libvlc_event_attach", "libvlc_event_detach"
+    };
     for (unsigned i=0;i<sizeof(required)/sizeof(required[0]);i++) if (!dlsym(v->library,required[i])) {tvlc_destroy(v);return NULL;}
-    const char *args[] = {"--quiet","--no-osd","--no-video-title-show","--no-media-library","--no-plugins-cache"};
-    v->instance = FN(void *(*)(int,const char *const *),"libvlc_new")(5,args);
+    // A fresh AUHAL output starts silent until the player applies saved gain and mute.
+    const char *args[] = {
+        "--quiet", "--no-osd", "--no-video-title-show", "--no-media-library", "--no-plugins-cache",
+        "--auhal-volume=0", "--no-volume-save"
+    };
+    v->instance = FN(void *(*)(int,const char *const *),"libvlc_new")((int)(sizeof(args) / sizeof(args[0])),args);
     if (!v->instance) {tvlc_destroy(v);return NULL;}
     FN(void (*)(void *,void (*)(void *,int,const void *,const char *,va_list),void *),"libvlc_log_set")(v->instance,discard,NULL);
     v->player = FN(void *(*)(void *),"libvlc_media_player_new")(v->instance);
@@ -398,8 +414,21 @@ int tvlc_state(TVLC *v){
     if(v->ambiguous_since==0)v->ambiguous_since=now;
     return now-v->ambiguous_since>=1 ? 7 : 1;
 }
-void tvlc_volume(TVLC *v,int x){if(v)FN(int (*)(void *,int),"libvlc_audio_set_volume")(v->player,x);}
-void tvlc_mute(TVLC *v,int x){if(v)FN(void (*)(void *,int),"libvlc_audio_set_mute")(v->player,x);}
+int tvlc_set_audio(TVLC *v, int volume, int muted) {
+    if (!v) return -1;
+    void (*set_mute)(void *, int) = FN(void (*)(void *, int), "libvlc_audio_set_mute");
+    // Set gain while muted before unmuting, and mute before raising the gain.
+    if (muted) set_mute(v->player, 1);
+    int result = FN(int (*)(void *, int), "libvlc_audio_set_volume")(v->player, volume);
+    if (!muted) set_mute(v->player, 0);
+    return result;
+}
+int tvlc_audio_volume(TVLC *v) {
+    return v ? FN(int (*)(void *), "libvlc_audio_get_volume")(v->player) : -1;
+}
+int tvlc_audio_muted(TVLC *v) {
+    return v ? FN(int (*)(void *), "libvlc_audio_get_mute")(v->player) : -1;
+}
 static Track *tracks(TVLC *v,int s){return v?FN(Track *(*)(void *),s?"libvlc_video_get_spu_description":"libvlc_audio_get_track_description")(v->player):NULL;}
 static void release(TVLC *v,Track *t){if(t)FN(void (*)(Track *),"libvlc_track_description_list_release")(t);}
 int tvlc_track_count(TVLC *v,int s){Track *a=tracks(v,s),*t=a;int n=0;for(;t;t=t->next)n++;release(v,a);return n;}

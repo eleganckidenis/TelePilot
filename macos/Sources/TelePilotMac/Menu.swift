@@ -30,7 +30,7 @@ extension MainController {
         favoritesMenu.removeAllItems(); favoritesMenu.addItem(menuItem(l("Dodaj odtwarzany kanał", "Add Current Channel"),#selector(favoritePlaying)))
         favoritesMenu.addItem(menuItem(l("Lista ulubionych", "Favorites List"),#selector(favoritesSection))); favoritesMenu.addItem(menuItem(l("Zarządzaj ulubionymi…", "Manage Favorites…"),#selector(manageFavorites)))
         favoritesMenu.addItem(.separator())
-        for c in allChannels.filter({preferences.favorites.contains($0.id)}) {
+        for c in favoriteChannels {
             let i = menuItem(c.name,#selector(playFavorite(_:))); i.representedObject = c.id; favoritesMenu.addItem(i)
         }
     }
@@ -48,7 +48,7 @@ extension MainController {
     @objc func retry() { if let playing { if let p = archiveProgramme { playArchive(playing,programme:p) } else { play(playing) } } }
     @objc func checkForUpdates() { if let window { UpdateStartup.check(window: window) } }
     @objc func about() {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.4"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.5"
         alert("TelePilot — macOS", l("Natywna aplikacja AppKit. Wersja \(version).\nNa podstawie TelePilot dla Windows, GPL-3.0-or-later.\nNie zawiera playlist IPTV.", "Native AppKit app. Version \(version).\nBased on TelePilot for Windows, GPL-3.0-or-later.\nIPTV playlists are supplied by the user."),window:window) }
     @objc func shortcuts() { alert(l("Skróty klawiszowe", "Keyboard Shortcuts"), l("⌘⇧L — Menedżer playlist\n⌘O — playlista z pliku; ⌘U — z URL\nEnter na liście — odtwarzanie\n⌘S — stop; ⌘L — lista / odtwarzacz\n⌘M — wyciszenie; ⌘↑ / ⌘↓ — głośność\n⌘T — dźwięk; ⌘⇧T — napisy\n⌘E — EPG; F5 — odświeżanie\n⌘1 / 2 / 3 lub Control+Tab — zakładki\nF11 lub ⌘Control+F — pełny ekran\nPage Up/Down na odtwarzaczu — kanały\nHome/End na odtwarzaczu — głośność\n⌘← / ⌘→ w archiwum — przewiń o 30 sekund\nEscape — wyjście z pełnego ekranu\n⌘, — ustawienia; ⌘Q — zakończenie\nSkróty Ctrl+litera także działają.", "⌘⇧L — Playlist Manager\n⌘O — add from file; ⌘U — add from URL\nEnter on the list — play\n⌘S — stop; ⌘L — channel list / player\n⌘M — mute; ⌘↑ / ⌘↓ — volume\n⌘T — audio; ⌘⇧T — subtitles\n⌘E — TV guide; F5 — refresh\n⌘1 / 2 / 3 or Control+Tab — tabs\nF11 or ⌘Control+F — full screen\nPage Up/Down in the player — change channels\nHome/End in the player — volume\n⌘← / ⌘→ during catch-up — seek by 30 seconds\nEscape — exit full screen\n⌘, — settings; ⌘Q — quit\nControl + letter shortcuts also work."),window:window) }
     @objc func openRecordings() { let u = URL(fileURLWithPath:preferences.recordingsDirectory); do { try FileManager.default.createDirectory(at:u,withIntermediateDirectories:true);NSWorkspace.shared.open(u) } catch { alert(l("Nie otwarto folderu", "Could Not Open Folder"),l("Sprawdź ścieżkę folderu nagrań.", "Check the path to the recordings folder."),window:window) } }

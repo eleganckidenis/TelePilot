@@ -36,6 +36,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
                 return
+            if self.path in ["/playlist-declared.m3u", "/playlist-undeclared.m3u", "/playlist-stalled.m3u"]:
+                stalled = self.path == "/playlist-stalled.m3u"
+                chunk = b" " * (8 * 1024)
+                self.send_response(200)
+                if self.path != "/playlist-undeclared.m3u":
+                    self.send_header("Content-Length", str(3 * len(chunk)))
+                self.end_headers()
+                self.wfile.write(chunk)
+                self.wfile.flush()
+                if stalled:
+                    time.sleep(10)
+                self.wfile.write(chunk * 2)
+                return
             if self.path.endswith(".m3u8"):
                 if self.path == "/slow.m3u8":
                     time.sleep(1.5)

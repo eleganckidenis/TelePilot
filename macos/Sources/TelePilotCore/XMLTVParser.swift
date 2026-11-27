@@ -34,6 +34,7 @@ public struct TVGuide: Sendable {
     }
     public func matchingID(for channel: Channel) -> String? {
         if let id = channel.tvgID, ids.contains(id) { return id }
+        guard !byName.isEmpty else { return nil }
         let candidates = (byName[normalized(channel.name)] ?? []).union(byName[normalized(channel.tvgName ?? "")] ?? [])
         return candidates.count == 1 ? candidates.first : nil
     }

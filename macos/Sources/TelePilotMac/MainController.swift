@@ -10,6 +10,10 @@ import TelePilotRecording
     let dataDirectory: URL
     let persistExternalGuide: (String?) throws -> Void
     var preferences: Preferences
+    private var audioRevision = 0
+    var playbackAudio: PlaybackAudio {
+        PlaybackAudio(volume: preferences.volume, muted: preferences.muted, revision: audioRevision)
+    }
     var sources: [PlaylistSource] = []
     var playlists: [UUID: Playlist] = [:]
     var guides: [UUID: TVGuide] = [:]
@@ -111,8 +115,15 @@ import TelePilotRecording
     var selectedSource: PlaylistSource? { sources.first { $0.id == preferences.selectedPlaylistID } ?? sources.first }
     var selectedChannel: Channel? { rows.indices.contains(table.selectedRow) ? rows[table.selectedRow] : nil }
     var activeChannel: Channel? { playing ?? selectedChannel }
-    func guide(for channel: Channel) -> TVGuide { guides[channel.sourceID] ?? TVGuide(programmes: []) }
+    private static let emptyGuide = TVGuide(programmes: [])
+    func guide(for channel: Channel) -> TVGuide { guides[channel.sourceID] ?? Self.emptyGuide }
     var allChannels: [Channel] { sources.flatMap { playlists[$0.id]?.channels ?? [] } }
+    var favoriteChannels: [Channel] {
+        guard !preferences.favorites.isEmpty else { return [] }
+        return sources.flatMap { source in
+            (playlists[source.id]?.channels ?? []).filter { preferences.favorites.contains($0.id) }
+        }
+    }
     func buildUI() {
         tabs.target = self; tabs.action = #selector(changeSection); tabs.selectedSegment = 0
         tabs.setAccessibilityLabel(l("Widok biblioteki", "Library view"))
@@ -205,23 +216,43 @@ import TelePilotRecording
         if !sources.isEmpty { await loadSources() }
     }
     func loadSources() async {
-        for source in sources {
+        guard let selectedSource else { return }
+        let orderedSources = [selectedSource] + sources.filter { $0.id != selectedSource.id }
+        var needsLibraryUpdate = false
+        for source in orderedSources {
             do {
                 playlists[source.id] = try await repository.loadCached(source)
-                if source.id == selectedSource?.id { libraryDidChange() }
-            } catch is CancellationError { return }
+                if source.id == self.selectedSource?.id {
+                    libraryDidChange()
+                    needsLibraryUpdate = false
+                } else { needsLibraryUpdate = true }
+            } catch is CancellationError { break }
             catch { setPlaylistStatus(l("Nie udało się wczytać zapisanej kopii playlisty.", "Could not load the saved copy of a playlist.")) }
         }
-        for source in sources {
-            do { playlists[source.id] = try await repository.load(source) }
-            catch is CancellationError { break }
+        // Make every saved copy available before starting network refreshes.
+        if needsLibraryUpdate { libraryDidChange() }
+        guard !Task.isCancelled else { return }
+        needsLibraryUpdate = false
+        for source in orderedSources {
+            do {
+                let update = try await repository.refresh(source, reusing: playlists[source.id])
+                guard update.changed else { continue }
+                playlists[source.id] = update.playlist
+                if source.id == self.selectedSource?.id {
+                    libraryDidChange()
+                    needsLibraryUpdate = false
+                } else { needsLibraryUpdate = true }
+            } catch is CancellationError { break }
             catch { setPlaylistStatus(l("Nie udało się odświeżyć jednej z playlist. Zachowano dostępną kopię.", "Could not refresh a playlist. Its saved copy is still available.")) }
         }
-        libraryDidChange()
+        if needsLibraryUpdate { libraryDidChange() }
         refreshEPG()
     }
     func libraryDidChange() {
-        updateGroups(); applyFilter(); archiveBrowser.reloadChannels()
+        updateGroups()
+        applyFilter()
+        updateFavoritesMenu()
+        if section == 2 { archiveBrowser.reloadChannels() }
         (guideWindow?.contentViewController as? GuideBrowser)?.reloadChannels()
         playlistManager?.reloadSources()
     }
@@ -247,7 +278,11 @@ import TelePilotRecording
     func updateGroups() {
         let old = groupPopup.titleOfSelectedItem
         groupPopup.removeAllItems(); groupPopup.addItem(withTitle: l("Wszystkie grupy", "All Groups"))
-        groupPopup.addItems(withTitles: Set((playlists[selectedSource?.id ?? UUID()]?.channels ?? []).map(\.group).filter { !$0.isEmpty }).sorted())
+        let channels = selectedSource.flatMap { playlists[$0.id]?.channels } ?? []
+        let groups = channels.reduce(into: Set<String>()) { groups, channel in
+            if !channel.group.isEmpty { groups.insert(channel.group) }
+        }
+        groupPopup.addItems(withTitles: groups.sorted())
         if let old { groupPopup.selectItem(withTitle: old) }
     }
     @objc func filterChanged() { applyFilter() }
@@ -258,32 +293,44 @@ import TelePilotRecording
     }
     func applyFilter() {
         let id = selectedChannel?.id
-        let channels = section == 1 ? allChannels.filter { preferences.favorites.contains($0.id) } : (selectedSource.flatMap { playlists[$0.id]?.channels } ?? [])
+        let channels = section == 1 ? favoriteChannels : (selectedSource.flatMap { playlists[$0.id]?.channels } ?? [])
         let query = searchKey(search.stringValue)
-        rows = channels.filter { c in
-            let text = searchKey("\(c.name) \(c.group) \(c.tvgID ?? "")")
-            return (query.isEmpty || text.contains(query)) && (section == 1 || groupPopup.indexOfSelectedItem <= 0 || c.group == groupPopup.titleOfSelectedItem)
+        let group = section == 1 || groupPopup.indexOfSelectedItem <= 0 ? nil : groupPopup.titleOfSelectedItem
+        if group == nil && query.isEmpty {
+            rows = channels
+        } else {
+            rows = channels.filter { channel in
+                guard group == nil || channel.group == group else { return false }
+                return query.isEmpty || searchKey("\(channel.name) \(channel.group) \(channel.tvgID ?? "")").contains(query)
+            }
         }
         if preferences.sortOrder == 1 { rows.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending } }
-        if preferences.sortOrder == 2 { rows.sort { ($0.group + $0.name).localizedStandardCompare($1.group + $1.name) == .orderedAscending } }
+        if preferences.sortOrder == 2 {
+            rows = rows.map { ($0.group + $0.name, $0) }
+                .sorted { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
+                .map { $0.1 }
+        }
         table.reloadData()
         if !rows.isEmpty { table.selectRowIndexes(IndexSet(integer: rows.firstIndex { $0.id == id } ?? 0), byExtendingSelection: false) }
         if sources.isEmpty && section == 0 {
             setStatus(l("Otwórz Menedżer playlist z menu Plik, aby dodać playlistę.",
                         "Open Playlist Manager from the File menu to add a playlist."))
         } else { setStatus(l("Kanały: \(rows.count).", "Channels: \(rows.count).")) }
-        updateFavoritesMenu()
     }
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         guard rows.indices.contains(row) else { return nil }; let c = rows[row]
         let text = "\(c.name) — \(guide(for: c).current(for: c)?.title ?? l("brak danych EPG", "no guide data"))\(playing?.id == c.id ? l(" — odtwarzanie", " — playing") : "") — \(c.group)"
-        let cell = NSTextField(labelWithString: text); cell.lineBreakMode = .byTruncatingTail
-        cell.setAccessibilityLabel(text); return cell
+        let identifier = NSUserInterfaceItemIdentifier("channelLabel")
+        let cell = (tableView.makeView(withIdentifier: identifier, owner: self) as? NSTextField) ?? NSTextField(labelWithString: "")
+        cell.identifier = identifier; cell.lineBreakMode = .byTruncatingTail
+        cell.stringValue = text; cell.setAccessibilityLabel(text); return cell
     }
     func jump(_ prefix: String) {
-        let matches = rows.indices.filter { searchKey(rows[$0].name).hasPrefix(searchKey(prefix)) }
-        guard let index = matches.first(where: { $0 > table.selectedRow }) ?? matches.first else { return }
+        let key = searchKey(prefix)
+        let next = min(table.selectedRow + 1, rows.count)
+        let matches: (Channel) -> Bool = { searchKey($0.name).hasPrefix(key) }
+        guard let index = rows[next...].firstIndex(where: matches) ?? rows[..<next].firstIndex(where: matches) else { return }
         table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false); table.scrollRowToVisible(index)
     }
     @objc func changeSection() { selectSection(tabs.selectedSegment) }
@@ -292,7 +339,8 @@ import TelePilotRecording
         search.setAccessibilityLabel(section == 1 ? l("Szukaj ulubionych", "Search Favorites") : l("Szukaj kanałów", "Search Channels"))
         search.placeholderString = section == 1 ? l("Szukaj ulubionych", "Search Favorites") : l("Szukaj kanałów", "Search Channels")
         restoreSplitAfterFullscreen = false
-        listShown = true; updateVisibility(); applyFilter(); archiveBrowser.reloadChannels()
+        listShown = true; updateVisibility(); applyFilter()
+        if section == 2 { archiveBrowser.reloadChannels() }
         window?.makeFirstResponder(section == 2 ? archiveBrowser.channelPopup : search)
     }
     func updateVisibility() {
@@ -383,8 +431,21 @@ import TelePilotRecording
             guard generation == playbackGeneration, attempt == playbackAttempt else { return }
             if accepted { paused.toggle(); recovery?.resetObservation(now: ProcessInfo.processInfo.systemUptime); setStatus(paused ? l("Wstrzymano odtwarzanie.", "Playback paused.") : l("Wznowiono odtwarzanie.", "Playback resumed.")) } else { setStatus(l("Ta transmisja nie obsługuje pauzy.", "This stream does not support pausing.")) } }
     }
-    @objc func toggleMute() { preferences.muted.toggle(); savePreferences(); Task { await player.mute(preferences.muted) }; setStatus(preferences.muted ? l("Dźwięk wyciszony.", "Audio muted.") : l("Dźwięk włączony.", "Audio unmuted.")) }
-    @objc func volumeChanged() { preferences.volume = volume.integerValue; Task { await player.volume(preferences.volume) }; savePreferences() }
+    @objc func toggleMute() {
+        preferences.muted.toggle()
+        savePlaybackAudio()
+        setStatus(preferences.muted ? l("Dźwięk wyciszony.", "Audio muted.") : l("Dźwięk włączony.", "Audio unmuted."))
+    }
+    @objc func volumeChanged() {
+        preferences.volume = volume.integerValue
+        savePlaybackAudio()
+    }
+    private func savePlaybackAudio() {
+        audioRevision += 1
+        let audio = playbackAudio
+        Task { await player.setAudio(audio) }
+        savePreferences()
+    }
     func changeVolume(_ delta: Int) { volume.integerValue = min(100,max(0,preferences.volume + delta)); volumeChanged(); setStatus(l("Głośność \(preferences.volume) procent.", "Volume \(preferences.volume) percent.")) }
     @objc func fullscreen() { window?.toggleFullScreen(nil) }
 

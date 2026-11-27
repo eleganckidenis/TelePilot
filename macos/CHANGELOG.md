@@ -1,5 +1,9 @@
 # Historia zmian — TelePilot dla Apple Silicon
 
+## 2.1.5
+
+[Release notes in English and Polish / opis zmian po angielsku i po polsku](../CHANGELOG.md#215).
+
 ## 2.1.4
 
 - Po pobraniu aktualizacji wybierz **OK**, aby otworzyć obraz DMG i zamknąć TelePilota. Przeciągnij aplikację do folderu Aplikacje, aby ukończyć instalację.

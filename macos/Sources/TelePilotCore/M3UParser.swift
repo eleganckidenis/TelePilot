@@ -4,6 +4,7 @@ import CoreFoundation
 public enum M3UParser {
     public static let maximumBytes = 32 * 1024 * 1024
     public static func parse(_ data: Data, sourceID: UUID, baseURL: URL) throws -> Playlist {
+        try Task.checkCancellation()
         guard data.count <= maximumBytes else { throw TelePilotError.tooLarge }
         var warnings: [String] = []
         let text: String
@@ -17,46 +18,53 @@ public enum M3UParser {
         }
         var channels: [Channel] = []; var epgURLs: [URL] = []
         var pending: (name: String, attributes: [String: String])?
-        var occurrences: [String: Int] = [:]; var inspected = false; var headerAttributes: [String: String] = [:]
+        let sourceIdentity = sourceID.uuidString
+        var occurrences: [String: Int] = [:]; var inspected = false
+        var streamDefaults: [String: String] = [:]
+        var dispatcharr = false
         for (index, raw) in text.replacingOccurrences(of: "\u{feff}", with: "").components(separatedBy: .newlines).enumerated() {
             if index % 256 == 0 { try Task.checkCancellation() }
             let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !line.isEmpty else { continue }
-            let upper = line.uppercased()
+            let prefix = line.hasPrefix("#") ? line.prefix(8).uppercased() : ""
             if !inspected {
                 inspected = true
-                if !upper.hasPrefix("#EXTM3U") { warnings.append("Brak nagłówka #EXTM3U.") }
+                if !prefix.hasPrefix("#EXTM3U") { warnings.append("Brak nagłówka #EXTM3U.") }
             }
-            if upper.hasPrefix("#EXTM3U") {
+            if prefix.hasPrefix("#EXTM3U") {
                 let attrs = attributes(String(line.dropFirst(7)))
-                headerAttributes.merge(attrs) { _, new in new }
+                streamDefaults.merge(attrs.filter { $0.key.hasPrefix("catchup") || $0.key == "timeshift" }) { _, new in new }
+                if let timezone = attrs["catchup-timezone"] {
+                    dispatcharr = !timezone.trimmingCharacters(in: .whitespaces).isEmpty
+                }
                 for key in ["x-tvg-url", "url-tvg"] {
                     for candidate in (attrs[key] ?? "").split(whereSeparator: { $0 == "," || $0 == ";" }) {
-                        if let url = location(String(candidate), baseURL: baseURL), !epgURLs.contains(url) { epgURLs.append(url) }
+                        let value = String(candidate).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let url = location(value, baseURL: baseURL), !epgURLs.contains(url) { epgURLs.append(url) }
                     }
                 }
-            } else if upper.hasPrefix("#EXTINF:") {
+            } else if prefix.hasPrefix("#EXTINF:") {
                 if pending != nil { warnings.append("Pominięto wpis kanału bez adresu strumienia.") }
                 let payload = String(line.dropFirst(8)); let comma = unquotedComma(payload)
                 let metadata = comma.map { String(payload[..<$0]) } ?? payload
                 if comma == nil { warnings.append("Niepełne metadane kanału.") }
                 pending = (comma.map { String(payload[payload.index(after: $0)...]).trimmingCharacters(in: .whitespaces) } ?? "", attributes(metadata))
-            } else if upper.hasPrefix("#EXTGRP:"), pending != nil {
+            } else if prefix.hasPrefix("#EXTGRP:"), pending != nil {
                 if pending?.attributes["group-title"] == nil { pending?.attributes["group-title"] = String(line.dropFirst(8)).trimmingCharacters(in: .whitespaces) }
             } else if line.hasPrefix("#") { continue }
             else {
                 guard let url = location(line, baseURL: baseURL) else {
                     warnings.append("Pominięto nieprawidłowy adres strumienia."); pending = nil; continue
                 }
-                var attrs = headerAttributes.filter { $0.key.hasPrefix("catchup") || $0.key == "timeshift" }
+                var attrs = streamDefaults
                 attrs.merge(pending?.attributes ?? [:]) { previous, new in new.isEmpty ? previous : new }
                 // Match the reference client's playlist-wide Dispatcharr hint.
-                if !(headerAttributes["catchup-timezone"] ?? "").trimmingCharacters(in: .whitespaces).isEmpty { attrs["_dispatcharr"] = "1" }
+                if dispatcharr { attrs["_dispatcharr"] = "1" }
                 let name = [pending?.name, attrs["tvg-name"]].compactMap { $0 }.first { !$0.isEmpty } ?? "Kanał \(channels.count + 1)"
                 let group = attrs["group-title"] ?? ""
                 let identity = attrs["tvg-id"].flatMap { $0.isEmpty ? nil : "tvg-id:\($0)" } ?? "name:\(normalized(name))|group:\(normalized(group))"
                 let occurrence = occurrences[identity, default: 0]; occurrences[identity] = occurrence + 1
-                channels.append(Channel(id: stableID("\(sourceID)|\(identity)|\(occurrence)"), sourceID: sourceID, name: name, group: group, tvgID: attrs["tvg-id"], tvgName: attrs["tvg-name"], streamURL: url, attributes: attrs))
+                channels.append(Channel(id: stableID("\(sourceIdentity)|\(identity)|\(occurrence)"), sourceID: sourceID, name: name, group: group, tvgID: attrs["tvg-id"], tvgName: attrs["tvg-name"], streamURL: url, attributes: attrs))
                 pending = nil
             }
         }
@@ -64,8 +72,7 @@ public enum M3UParser {
         if !inspected { warnings.append("Playlista jest pusta.") }
         return Playlist(channels: channels, epgURLs: epgURLs, warnings: warnings)
     }
-    private static func location(_ raw: String, baseURL: URL) -> URL? {
-        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    private static func location(_ value: String, baseURL: URL) -> URL? {
         guard !value.isEmpty, !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
               let url = URL(string: value, relativeTo: baseURL)?.absoluteURL, url.scheme != nil else { return nil }
         if ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host == nil { return nil }

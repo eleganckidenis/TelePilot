@@ -11,23 +11,21 @@ public enum HTTPDataLoader {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 30; configuration.timeoutIntervalForResource = 90
         configuration.urlCache = nil; configuration.httpCookieStorage = nil
-        let delegate = RedirectPolicy()
+        let delegate = BoundedHTTPResponse(maximumBytes: maximumBytes)
         let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         do {
             var request = URLRequest(url: url)
             request.setValue("TelePilot-macOS/1.1.2", forHTTPHeaderField: "User-Agent")
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), let finalURL = http.url, validHTTP(finalURL) else { throw TelePilotError.networkFailed }
-            guard response.expectedContentLength <= Int64(maximumBytes) else { throw TelePilotError.tooLarge }
-            var data = Data(); data.reserveCapacity(min(maximumBytes, 64 * 1024))
-            for try await byte in bytes {
-                if data.count % 16_384 == 0 { try Task.checkCancellation() }
-                guard data.count < maximumBytes else { throw TelePilotError.tooLarge }
-                data.append(byte)
+            try Task.checkCancellation()
+            let task = session.dataTask(with: request)
+            let response = try await withTaskCancellationHandler {
+                try await delegate.start(task)
+            } onCancel: {
+                task.cancel()
             }
             try Task.checkCancellation()
-            return (data, finalURL)
+            return response
         } catch {
             if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
             if let safe = error as? TelePilotError { throw safe }
@@ -38,11 +36,75 @@ public enum HTTPDataLoader {
         ["http", "https"].contains(url.scheme?.lowercased() ?? "") && !(url.host ?? "").isEmpty
     }
 }
-private final class RedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    private let lock = NSLock(); private var redirects = 0
+private final class BoundedHTTPResponse: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private typealias Response = (data: Data, url: URL)
+    private let maximumBytes: Int
+    // URLSession uses a serial delegate queue. The lock also allows a cancel-before-start
+    // completion to arrive before the awaiting task installs its continuation.
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Response, any Error>?
+    private var completed: Result<Response, any Error>?
+    private var redirects = 0
+    private var finalURL: URL?
+    private var data = Data()
+    private var failure: TelePilotError?
+
+    init(maximumBytes: Int) { self.maximumBytes = maximumBytes }
+
+    func start(_ task: URLSessionDataTask) async throws -> (data: Data, url: URL) {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.lock()
+            let completed = self.completed
+            if completed == nil { self.continuation = continuation }
+            lock.unlock()
+            if let completed { continuation.resume(with: completed) }
+            else { task.resume() }
+        }
+    }
+
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
-        lock.lock(); redirects += 1; let allowed = redirects <= 10; lock.unlock()
-        completionHandler(allowed && request.url.map(HTTPDataLoader.validHTTP) == true ? request : nil)
+        redirects += 1
+        completionHandler(redirects <= 10 && request.url.map(HTTPDataLoader.validHTTP) == true ? request : nil)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void) {
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let url = http.url, HTTPDataLoader.validHTTP(url) else {
+            failure = .networkFailed
+            completionHandler(.cancel)
+            return
+        }
+        guard response.expectedContentLength <= Int64(maximumBytes) else {
+            failure = .tooLarge
+            completionHandler(.cancel)
+            return
+        }
+        finalURL = url
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive bytes: Data) {
+        guard failure == nil else { return }
+        guard bytes.count <= maximumBytes - data.count else {
+            failure = .tooLarge
+            dataTask.cancel()
+            return
+        }
+        data.append(bytes)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+        let result: Result<Response, any Error>
+        if let failure { result = .failure(failure) }
+        else if let error { result = .failure(error) }
+        else if let finalURL { result = .success((data, finalURL)) }
+        else { result = .failure(TelePilotError.networkFailed) }
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        if continuation == nil { completed = result }
+        lock.unlock()
+        continuation?.resume(with: result)
     }
 }
 
@@ -84,21 +146,28 @@ public actor PlaylistRepository {
     }
     public func sources() -> [PlaylistSource] { items }
     public func addFile(_ url: URL) async throws -> PlaylistSource {
+        try importFile(url).source
+    }
+    package func importFile(_ url: URL) throws -> (source: PlaylistSource, playlist: Playlist) {
         try Task.checkCancellation()
         guard url.isFileURL else { throw TelePilotError.invalidURL }
         let data = try readFile(url)
         let source = PlaylistSource(name: url.deletingPathExtension().lastPathComponent)
-        _ = try M3UParser.parse(data, sourceID: source.id, baseURL: url)
+        let playlist = try M3UParser.parse(data, sourceID: source.id, baseURL: url)
+        try Task.checkCancellation()
         try insert(source, payload: Payload(originalURL: url, remote: false, data: data))
-        return source
+        return (source, playlist)
     }
     public func addURL(_ url: URL, name: String) async throws -> PlaylistSource {
+        try await importURL(url, name: name).source
+    }
+    package func importURL(_ url: URL, name: String) async throws -> (source: PlaylistSource, playlist: Playlist) {
         let response = try await HTTPDataLoader.loadResponse(url)
-        try Task.checkCancellation()
         let source = PlaylistSource(name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Playlista" : name)
-        _ = try M3UParser.parse(response.data, sourceID: source.id, baseURL: response.url)
+        let playlist = try M3UParser.parse(response.data, sourceID: source.id, baseURL: response.url)
+        try Task.checkCancellation()
         try insert(source, payload: Payload(originalURL: url, remote: true, data: response.data, resolvedURL: response.url))
-        return source
+        return (source, playlist)
     }
     /// Reads the last successfully imported/refreshed copy without contacting the
     /// provider or reopening the original file. Relative locations retain their original base.
@@ -109,8 +178,16 @@ public actor PlaylistRepository {
         return try M3UParser.parse(payload.data, sourceID: source.id, baseURL: payload.baseURL)
     }
     public func load(_ source: PlaylistSource) async throws -> Playlist {
+        try await refresh(source, reusing: nil).playlist
+    }
+    /// Reuse the controller's current parsed copy when the saved payload is unchanged.
+    /// The controller serializes imports, refreshes and removals with its playlist task.
+    package func refresh(_ source: PlaylistSource, reusing cached: Playlist?) async throws -> (playlist: Playlist, changed: Bool) {
+        try Task.checkCancellation()
         guard items.contains(where: { $0.id == source.id }) else { throw TelePilotError.sourceUnavailable }
         var payload = try readPayload(source.id)
+        let previousData = payload.data
+        let previousResolvedURL = payload.resolvedURL
         if payload.remote {
             let response = try await HTTPDataLoader.loadResponse(payload.originalURL)
             payload.data = response.data
@@ -121,9 +198,12 @@ public actor PlaylistRepository {
         try Task.checkCancellation()
         // An import can be removed while the actor is suspended for an HTTP request.
         guard items.contains(where: { $0.id == source.id }) else { throw TelePilotError.sourceUnavailable }
+        let changed = previousResolvedURL != payload.resolvedURL || previousData != payload.data
+        if !changed, let cached { return (cached, false) }
         let playlist = try M3UParser.parse(payload.data, sourceID: source.id, baseURL: payload.baseURL)
-        try writePayload(payload, id: source.id)
-        return playlist
+        try Task.checkCancellation()
+        if changed { try writePayload(payload, id: source.id) }
+        return (playlist, true)
     }
     public func remove(_ id: UUID) throws {
         if items.contains(where: { $0.id == id }) {

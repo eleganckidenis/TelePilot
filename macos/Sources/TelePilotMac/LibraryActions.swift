@@ -31,9 +31,9 @@ extension MainController {
             var last: UUID?
             for url in urls {
                 do {
-                    let source = try await self.repository.addFile(url)
-                    last = source.id
-                    try await self.readCommittedImport(source)
+                    let imported = try await self.repository.importFile(url)
+                    last = imported.source.id
+                    self.playlists[imported.source.id] = imported.playlist
                 } catch is CancellationError { break }
                 catch { failures += 1 }
             }
@@ -50,10 +50,10 @@ extension MainController {
             self.setPlaylistStatus(l("Pobieranie playlisty…", "Downloading playlist…"))
             var id: UUID?
             do {
-                let source = try await self.repository.addURL(url, name: name)
-                id = source.id
-                try await self.readCommittedImport(source)
-                await self.finishImport(select: source.id)
+                let imported = try await self.repository.importURL(url, name: name)
+                id = imported.source.id
+                self.playlists[imported.source.id] = imported.playlist
+                await self.finishImport(select: id)
                 self.setPlaylistStatus(l("Dodano playlistę.", "Playlist added."))
             } catch is CancellationError {
                 await self.finishImport(select: id)
@@ -64,11 +64,6 @@ extension MainController {
                                          "Could not add the playlist. Check your connection and the address."))
             }
         }
-    }
-    private func readCommittedImport(_ source: PlaylistSource) async throws {
-        // Once persisted, a playlist belongs in the UI even if the batch was canceled.
-        let read = Task { try await repository.loadCached(source) }
-        playlists[source.id] = try await read.value
     }
     func finishImport(select id: UUID?) async {
         sources = await repository.sources()
@@ -89,8 +84,11 @@ extension MainController {
         runPlaylistTask {
             self.setPlaylistStatus(l("Wczytywanie playlisty…", "Loading playlist…"))
             do {
-                self.playlists[source.id] = try await self.repository.load(source)
-                self.libraryDidChange()
+                let update = try await self.repository.refresh(source, reusing: self.playlists[source.id])
+                if update.changed {
+                    self.playlists[source.id] = update.playlist
+                    self.libraryDidChange()
+                }
                 self.refreshEPG()
                 self.setPlaylistStatus(l("Odświeżono playlistę.", "Playlist refreshed."))
             } catch is CancellationError { self.reportCancelledPlaylistTask() }
@@ -139,10 +137,18 @@ extension MainController {
         let generation = epgGeneration
         let sources = sources; let playlists = playlists
         let external = preferences.externalEPG.flatMap { URL(string: $0) }
+        let hasGuideURLs = sources.contains { external != nil || !(playlists[$0.id]?.epgURLs.isEmpty ?? true) }
+        if !hasGuideURLs && guides.isEmpty {
+            guideSourceURLs.removeAll()
+            epgTask = nil
+            return
+        }
         epgTask = Task {
+            var updatedGuides = guides
+            var updatedURLs = guideSourceURLs
             var failures = 0; var loaded = 0; var programmeCount = 0
             var oversized = false
-            if sources.contains(where: { external != nil || !(playlists[$0.id]?.epgURLs.isEmpty ?? true) }) {
+            if hasGuideURLs {
                 setStatus(l("Wczytywanie programu TV…", "Loading TV Guide…"))
             }
             for source in sources {
@@ -165,17 +171,20 @@ extension MainController {
                     }
                 }
                 guard !Task.isCancelled, generation == epgGeneration else { return }
-                if successful || urls.isEmpty {
-                    guides[source.id] = TVGuide(programmes: programmes, channelNames: names)
-                    guideSourceURLs[source.id] = urls
-                } else if guideSourceURLs[source.id] != urls {
+                if successful {
+                    updatedGuides[source.id] = TVGuide(programmes: programmes, channelNames: names)
+                    updatedURLs[source.id] = urls
+                } else if urls.isEmpty || updatedURLs[source.id] != urls {
                     // A changed source must not show the old provider's programmes.
-                    guides[source.id] = nil; guideSourceURLs[source.id] = urls
+                    updatedGuides[source.id] = nil
+                    updatedURLs[source.id] = urls.isEmpty ? nil : urls
                 }
                 // Preserve the last successful guide when the same source temporarily fails.
-                programmeCount += guides[source.id]?.programmes.count ?? 0
+                programmeCount += updatedGuides[source.id]?.programmes.count ?? 0
             }
             guard !Task.isCancelled, generation == epgGeneration else { return }
+            guides = updatedGuides
+            guideSourceURLs = updatedURLs
             table.reloadData(); archiveBrowser.reloadProgrammes()
             (guideWindow?.contentViewController as? GuideBrowser)?.reloadProgrammes()
             if failures > 0 {
@@ -196,14 +205,15 @@ extension MainController {
     @objc func toggleFavorite() {
         guard let c = selectedChannel ?? playing else { return }
         if preferences.favorites.contains(c.id) { preferences.favorites.remove(c.id) } else { preferences.favorites.insert(c.id) }
-        savePreferences(); applyFilter(); setStatus(preferences.favorites.contains(c.id) ? l("Dodano do ulubionych: \(c.name).", "Added to favorites: \(c.name).") : l("Usunięto z ulubionych: \(c.name).", "Removed from favorites: \(c.name)."))
+        savePreferences(); applyFilter(); updateFavoritesMenu()
+        setStatus(preferences.favorites.contains(c.id) ? l("Dodano do ulubionych: \(c.name).", "Added to favorites: \(c.name).") : l("Usunięto z ulubionych: \(c.name).", "Removed from favorites: \(c.name)."))
     }
     @objc func favoritePlaying() {
         guard let c = playing else { toggleFavorite(); return }
         preferences.favorites.insert(c.id); savePreferences(); updateFavoritesMenu(); setStatus(l("Dodano do ulubionych: \(c.name).", "Added to favorites: \(c.name)."))
     }
     @objc func manageFavorites() {
-        let channels = allChannels.filter { preferences.favorites.contains($0.id) }
+        let channels = favoriteChannels
         guard !channels.isEmpty else { alert(l("Ulubione", "Favorites"), l("Nie masz jeszcze ulubionych kanałów.", "You do not have any favorite channels yet."), window: window); return }
         let checks = channels.map { c -> NSButton in let b = NSButton(checkboxWithTitle: c.name, target: nil, action: nil); b.setAccessibilityLabel(l("Usuń z ulubionych: \(c.name)", "Remove from favorites: \(c.name)")); return b }
         let body = stack(checks, vertical: true)
@@ -211,7 +221,7 @@ extension MainController {
         body.frame = NSRect(x:0,y:0,width:470,height:channels.count*30)
         if form(l("Zaznacz kanały do usunięcia z ulubionych", "Select Channels to Remove from Favorites"), views: [scroll], confirm: l("Usuń zaznaczone", "Remove Selected")) {
             for (index,c) in channels.enumerated() where checks[index].state == .on { preferences.favorites.remove(c.id) }
-            savePreferences(); applyFilter()
+            savePreferences(); applyFilter(); updateFavoritesMenu()
         }
         window?.makeFirstResponder(table)
     }

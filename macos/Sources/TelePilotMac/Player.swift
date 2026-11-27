@@ -9,6 +9,22 @@ struct SoftwareVideoFrame: Sendable {
     let displayAspect: Double
 }
 
+struct PlaybackAudio: Sendable {
+    let volume: Int
+    let muted: Bool
+    let revision: Int
+
+    var vlcVolume: Int32 {
+        // VLC's AUHAL and software mixers cube their native volume before applying gain.
+        let gain = Double(min(100, max(0, volume))) / 100
+        return Int32((100 * cbrt(gain)).rounded())
+    }
+
+    func matches(_ observed: (volume: Int32, muted: Bool)?) -> Bool {
+        observed?.volume == vlcVolume && observed?.muted == muted
+    }
+}
+
 private final class VLCHandle: @unchecked Sendable {
     let pointer: OpaquePointer
     init(_ pointer: OpaquePointer) { self.pointer = pointer }
@@ -19,13 +35,18 @@ actor Player {
     private var commandGeneration = 0
     private var commandAttempt = 0
     private var softwareOutput = false
+    private var audio: PlaybackAudio?
+    private var audioPending = false
     private let library: URL
     private let plugins: URL
     init(library: URL, plugins: URL) { self.library = library; self.plugins = plugins }
-    func play(_ url: URL, viewAddress: UInt, generation: Int, attempt: Int = 0, options: [String], softwareVideo: Bool = false) throws {
+    func play(_ url: URL, viewAddress: UInt, generation: Int, attempt: Int = 0, options: [String],
+              softwareVideo: Bool = false, audio: PlaybackAudio? = nil) throws {
         guard generation > commandGeneration || (generation == commandGeneration && attempt >= commandAttempt), !Task.isCancelled else { return }
         commandGeneration = generation; commandAttempt = attempt
         softwareOutput = false
+        audioPending = false
+        if let audio, audio.revision >= (self.audio?.revision ?? 0) { self.audio = audio }
         if handle == nil {
             guard let p = tvlc_create(library.path, plugins.path) else { throw PlayerError.unavailable }
             handle = VLCHandle(p)
@@ -39,6 +60,8 @@ actor Player {
         }
         guard result == 0 else { throw PlayerError.playback }
         softwareOutput = softwareVideo
+        audioPending = self.audio != nil
+        applyPendingAudio()
     }
     func copySoftwareFrame(after previousSequence: UInt64, generation: Int, attempt: Int) -> SoftwareVideoFrame? {
         guard softwareOutput, generation == commandGeneration, attempt == commandAttempt,
@@ -58,18 +81,22 @@ actor Player {
     func stop(generation: Int) {
         guard generation >= commandGeneration, !Task.isCancelled else { return }; commandGeneration = generation
         softwareOutput = false
+        audioPending = false
         if let handle { tvlc_stop(handle.pointer) }
     }
-    func shutdown() { softwareOutput = false; handle = nil }
+    func shutdown() { softwareOutput = false; audioPending = false; handle = nil }
     func state() -> Int32 { handle.map { tvlc_state($0.pointer) } ?? 0 }
     func sample() -> PlaybackSample {
         guard let handle else { return PlaybackSample(state: 0) }
+        let state = tvlc_state(handle.pointer)
+        // An audio output can also be recreated while the same input is playing.
+        if (1...4).contains(state) { applyPendingAudio(verify: true) }
         var stats = TVLCProgress()
         let progress = tvlc_progress(handle.pointer, &stats) != 0 ? PlaybackProgress(
             readBytes: Int(stats.read_bytes), decodedVideo: Int(stats.decoded_video), displayedVideo: Int(stats.displayed_video),
             decodedAudio: Int(stats.decoded_audio), playedAudio: Int(stats.played_audio)) : nil
         let videoTracks = tvlc_video_track_count(handle.pointer)
-        return PlaybackSample(state: tvlc_state(handle.pointer), time: Double(tvlc_time(handle.pointer)) / 1000,
+        return PlaybackSample(state: state, time: Double(tvlc_time(handle.pointer)) / 1000,
                               length: Double(tvlc_length(handle.pointer)) / 1000, progress: progress, audioOnly: tvlc_audio_only(handle.pointer) != 0, audioEnabled: tvlc_current_track(handle.pointer, 0) != -1, knownVideoTrackCount: videoTracks >= 0 ? Int(videoTracks) : nil)
     }
     func pause(_ paused: Bool, generation: Int? = nil, attempt: Int? = nil) -> Bool {
@@ -77,8 +104,32 @@ actor Player {
         guard let handle, tvlc_can_pause(handle.pointer) != 0 else { return false }
         tvlc_pause(handle.pointer, paused ? 1 : 0); return true
     }
-    func volume(_ value: Int) { if let handle { tvlc_volume(handle.pointer, Int32(value)) } }
-    func mute(_ muted: Bool) { if let handle { tvlc_mute(handle.pointer, muted ? 1 : 0) } }
+    func setAudio(_ settings: PlaybackAudio) {
+        guard settings.revision >= (audio?.revision ?? 0) else { return }
+        audio = settings
+        audioPending = true
+        applyPendingAudio()
+    }
+
+    func restoreAudioIfNeeded(generation: Int, attempt: Int) -> Bool {
+        guard generation == commandGeneration, attempt == commandAttempt, !Task.isCancelled else { return true }
+        applyPendingAudio()
+        return !audioPending
+    }
+
+    private func applyPendingAudio(verify: Bool = false) {
+        guard let audio, let handle, audioPending || (verify && !audio.matches(nativeAudio())) else { return }
+        let result = tvlc_set_audio(handle.pointer, audio.vlcVolume, audio.muted ? 1 : 0)
+        audioPending = result != 0 || !audio.matches(nativeAudio())
+    }
+
+    func nativeAudio() -> (volume: Int32, muted: Bool)? {
+        guard let handle else { return nil }
+        let volume = tvlc_audio_volume(handle.pointer)
+        let muted = tvlc_audio_muted(handle.pointer)
+        guard volume >= 0, muted >= 0 else { return nil }
+        return (volume, muted != 0)
+    }
     func tracks(subtitles: Bool) -> [MediaTrack] {
         guard let handle else { return [] }; let s: Int32 = subtitles ? 1 : 0
         let current = tvlc_current_track(handle.pointer, s)

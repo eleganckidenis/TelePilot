@@ -59,4 +59,14 @@ func normalized(_ value: String) -> String {
         .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
         .unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(String.init).joined()
 }
-func stableID(_ value: String) -> String { SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined() }
+private let lowercaseHex = Array("0123456789abcdef".utf8)
+
+func stableID(_ value: String) -> String {
+    var encoded: [UInt8] = []
+    encoded.reserveCapacity(64)
+    for byte in SHA256.hash(data: Data(value.utf8)) {
+        encoded.append(lowercaseHex[Int(byte >> 4)])
+        encoded.append(lowercaseHex[Int(byte & 0x0f)])
+    }
+    return String(decoding: encoded, as: UTF8.self)
+}

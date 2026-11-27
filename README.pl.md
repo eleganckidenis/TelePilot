@@ -20,7 +20,7 @@ Instalator Windows nie jest podpisany cyfrowo. Aplikacja na Maca ma podpis ad-ho
 
 TelePilot sprawdza aktualizacje przy uruchomieniu. Możesz też wybrać **Pomoc → Sprawdź aktualizacje**. Gdy aktualizacja jest dostępna, okno podaje numer wersji i opis zmian przed wyborem **Pobierz** lub **Później**. Pobieranie można anulować lub ponowić, a TelePilot weryfikuje pobraną paczkę.
 
-Na Windows po pobraniu aktualizacji TelePilot się zamknie. Windows może poprosić o zgodę administratora. Okno pokaże postęp instalacji, po której TelePilot uruchomi się ponownie. Przejście ze starszej wersji na 2.1.4 korzysta jednorazowo z dotychczasowego instalatora. Na Macu kliknij **OK** po pobraniu, aby otworzyć obraz instalacyjny i zamknąć TelePilota.
+Na Windows po pobraniu aktualizacji TelePilot się zamknie. Windows może poprosić o zgodę administratora. Okno pokaże postęp instalacji, po której TelePilot uruchomi się ponownie. Aktualizacja z wersji 2.1.3 lub starszej korzysta jednorazowo z jej dotychczasowego instalatora. Na Macu kliknij **OK** po pobraniu, aby otworzyć obraz instalacyjny i zamknąć TelePilota.
 
 Starsze wersje, w tym 2.0.2, pokazują komunikat dopiero po pobraniu całego instalatora. Jeśli komunikat się nie pojawia, możesz zainstalować bieżącą wersję ze [strony pobierania](https://github.com/eleganckidenis/TelePilot/releases/latest).
 

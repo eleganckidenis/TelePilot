@@ -2,7 +2,7 @@
 #define AppExeName "TelePilot.exe"
 
 #ifndef AppVersion
-  #define AppVersion "2.1.4"
+  #define AppVersion "2.1.5"
 #endif
 
 #ifndef Runtime

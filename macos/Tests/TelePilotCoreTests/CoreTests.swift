@@ -26,6 +26,7 @@ struct CoreTests {
         #expect(first.channels[0].streamURL.absoluteString == "https://example.invalid/lists/streams/one.m3u8?token=synthetic&profile=main")
         #expect(first.epgURLs.map(\.lastPathComponent) == ["guide.xml.gz", "second.xml"])
         #expect(first.channels.map(\.id) == second.channels.map(\.id))
+        #expect(first.channels[0].id == "f1efaf7505d4acfd7a9e8a9975270d2d7624fa746bf78382b2dc718d4b57488c")
         #expect(Set(first.channels.map(\.id)).count == 2)
         #expect(!first.warnings.isEmpty)
         #expect(!first.warnings.joined().contains("synthetic"))
@@ -39,6 +40,21 @@ struct CoreTests {
         let plain = try M3UParser.parse(Data("https://example.invalid/one\n".utf8), sourceID: source, baseURL: base)
         #expect(plain.channels.first?.name == "Kanał 1")
         #expect(!plain.warnings.isEmpty)
+    }
+    @Test func largePlaylistPreservesOrderGroupsAndDuplicateIDs() throws {
+        let count = 20_000
+        let text = "#extm3u catchup-timezone='UTC'\r\n" +
+            (0..<count).map { index in
+                "#extinf:-1 tvg-id='duplicate' group-title='Grupa \(index % 20)',Kanał \(index)\r\nstreams/\(index).ts\r\n"
+            }.joined()
+        let playlist = try M3UParser.parse(Data(text.utf8), sourceID: source, baseURL: base)
+        #expect(playlist.channels.count == count)
+        #expect(Set(playlist.channels.map(\.id)).count == count)
+        #expect(playlist.channels.first?.name == "Kanał 0")
+        #expect(playlist.channels.last?.name == "Kanał 19999")
+        #expect(playlist.channels.last?.group == "Grupa 19")
+        #expect(playlist.channels.last?.attributes["_dispatcharr"] == "1")
+        #expect(playlist.channels.last?.streamURL == URL(string: "https://example.invalid/lists/streams/19999.ts"))
     }
     @Test func xmlDatesAndMalformedInput() throws {
         #expect(XMLTVParser.date("20261025013000 +0200") == XMLTVParser.date("20261024233000Z"))
@@ -133,13 +149,22 @@ struct CoreTests {
         let directory = root.appendingPathComponent("managed")
         let key = Data(repeating: 8, count: 32)
         let repository = try PlaylistRepository(directory: directory, keyData: key)
-        let added = try await repository.addFile(original)
+        let imported = try await repository.importFile(original)
+        let added = imported.source
+        let sealedURL = directory.appendingPathComponent("\(added.id.uuidString).sealed")
+        let sealedData = try Data(contentsOf: sealedURL)
+        let unchanged = try await repository.refresh(added, reusing: imported.playlist)
+        #expect(!unchanged.changed)
+        #expect(unchanged.playlist.channels == imported.playlist.channels)
+        #expect(try Data(contentsOf: sealedURL) == sealedData)
         try Data(first.replacingOccurrences(of: "Cached", with: "Refreshed").utf8).write(to: original)
         let cached = try await repository.loadCached(added)
         #expect(cached.channels.first?.name == "Cached")
         #expect(cached.channels.first?.streamURL == root.appendingPathComponent("streams/first.ts"))
         #expect(cached.epgURLs.first == root.appendingPathComponent("guide.xml"))
-        #expect(try await repository.load(added).channels.first?.name == "Refreshed")
+        let refreshed = try await repository.refresh(added, reusing: cached)
+        #expect(refreshed.changed)
+        #expect(refreshed.playlist.channels.first?.name == "Refreshed")
         try FileManager.default.removeItem(at: original)
         let reopened = try PlaylistRepository(directory: directory, keyData: key)
         #expect(try await reopened.loadCached(added).channels.first?.name == "Refreshed")
@@ -164,6 +189,34 @@ struct CoreTests {
         let refreshed = try await reopened.load(added)
         #expect(refreshed.channels.first?.streamURL == base.appendingPathComponent("cdn/streams/channel.ts"))
         #expect(refreshed.epgURLs == imported.epgURLs)
+    }
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TELEPILOT_TEST_HTTP_BASE"] != nil))
+    func httpLoaderBoundsDeclaredAndUndeclaredLengths() async throws {
+        let address = try #require(ProcessInfo.processInfo.environment["TELEPILOT_TEST_HTTP_BASE"])
+        let base = try #require(URL(string: address))
+        let declared = base.appendingPathComponent("playlist-declared.m3u")
+        let undeclared = base.appendingPathComponent("playlist-undeclared.m3u")
+        let limit = 24 * 1024
+        let contents = try await HTTPDataLoader.load(undeclared, maximumBytes: limit)
+        #expect(contents == Data(repeating: 0x20, count: limit))
+        for url in [declared, undeclared] {
+            do {
+                _ = try await HTTPDataLoader.load(url, maximumBytes: limit - 1)
+                Issue.record("Responses larger than the limit must be rejected")
+            } catch TelePilotError.tooLarge {}
+        }
+    }
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TELEPILOT_TEST_HTTP_BASE"] != nil))
+    func httpLoaderCancelsDespiteStalledResponseBody() async throws {
+        let address = try #require(ProcessInfo.processInfo.environment["TELEPILOT_TEST_HTTP_BASE"])
+        let base = try #require(URL(string: address))
+        let url = base.appendingPathComponent("playlist-stalled.m3u")
+        let download = Task { try await HTTPDataLoader.load(url) }
+        try await Task.sleep(for: .milliseconds(500))
+        let started = ContinuousClock.now
+        download.cancel()
+        await #expect(throws: CancellationError.self) { try await download.value }
+        #expect(started.duration(to: .now) < .seconds(4))
     }
     @Test func orphanCleanupOnlyRemovesUnreferencedManagedCopies() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

@@ -30,11 +30,16 @@ import TelePilotCore
             recovery?.beginAttempt(now: ProcessInfo.processInfo.systemUptime, applied: applied)
             do {
                 try await player.play(resolved, viewAddress: address, generation: generation, attempt: attempt,
-                                      options: mediaOptions, softwareVideo: softwareVideo)
+                                      options: mediaOptions, softwareVideo: softwareVideo, audio: playbackAudio)
                 guard generation == playbackGeneration, attempt == playbackAttempt, !Task.isCancelled else { return }
                 if softwareVideo { startSoftwareVideo(generation: generation, attempt: attempt) }
                 playbackReady = true; lastState = -1
-                await player.volume(preferences.volume); await player.mute(preferences.muted)
+                // Stop releases VLC's audio output. Give its replacement time to
+                // appear, then let normal playback polling handle slower starts.
+                for _ in 0..<20 {
+                    if await player.restoreAudioIfNeeded(generation: generation, attempt: attempt) { break }
+                    do { try await Task.sleep(for: .milliseconds(25)) } catch { return }
+                }
             } catch {
                 guard generation == playbackGeneration, attempt == playbackAttempt, !Task.isCancelled else { return }
                 // The same bounded recovery handles a failed open and a later dropout.
