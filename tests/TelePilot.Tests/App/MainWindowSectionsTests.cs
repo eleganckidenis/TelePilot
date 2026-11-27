@@ -727,6 +727,43 @@ public sealed class MainWindowSectionsTests
     }
 
     [AvaloniaFact]
+    public async Task PlaylistRefresh_PreservesGroupAndSelectedRowUntilTheGroupDisappears()
+    {
+        using var fixture = new Fixture();
+        var model = fixture.ViewModel;
+        await model.InitializeAsync();
+        var window = new MainWindow { DataContext = model };
+        try
+        {
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var group = Assert.IsType<AccessibleComboBox>(window.FindControl<AccessibleComboBox>("GroupSelector"));
+            model.SelectedGroup = "Wiadomości";
+            var selected = Assert.Single(model.Channels);
+            var resets = 0;
+            model.Channels.CollectionChanged += (_, _) => resets++;
+
+            await model.RefreshSourceCommand.ExecuteAsync(null);
+
+            Assert.Equal("Wiadomości", group.SelectedItem);
+            Assert.Same(selected, model.SelectedChannel);
+            Assert.Equal(0, resets);
+
+            model.SelectedSource = model.Sources.Single(item => item.Source.Id == fixture.SecondSource.Id);
+            await model.ActivateSourceCommand.ExecuteAsync(null);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(MainWindowViewModel.AllGroupsLabel, group.SelectedItem);
+            Assert.Equal(fixture.SecondChannel.Id.ToString(), model.SelectedChannel?.Id);
+            Assert.Equal(1, resets);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    [AvaloniaFact]
     public async Task FavoritesSection_ShowsAllSourcesAndUnavailableSavedEntriesWithNameSearch()
     {
         using var fixture = new Fixture();

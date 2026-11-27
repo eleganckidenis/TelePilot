@@ -346,6 +346,38 @@ public sealed class M3uPlaylistParserTests
     }
 
     [Fact]
+    public void Parse_PreservesEscapedQuotesAndLiteralBackslashesInAttributes()
+    {
+        const string text = """
+            #EXTM3U
+            #EXTINF:-1 tvg-name="News, \"World\"" group-title='News, \'World\'' x-path="C:\folder\channel",Test
+            https://example.invalid/live
+            """;
+
+        var result = _parser.Parse(text, new PlaylistParseContext(SourceId));
+
+        var channel = Assert.Single(result.Channels);
+        Assert.Equal("News, \"World\"", channel.TvgName);
+        Assert.Equal("News, 'World'", channel.GroupTitle);
+        Assert.Equal(@"C:\folder\channel", channel.Attributes["x-path"]);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_UnicodeSeparatorsInsideExtInfRemainPartOfTheChannel()
+    {
+        const string text = "#EXTM3U\r\n#EXTINF:-1 tvg-name=\"News\u2028World\",News\u0085Channel\nhttps://example.invalid/live";
+
+        var result = _parser.Parse(text, new PlaylistParseContext(SourceId));
+
+        var channel = Assert.Single(result.Channels);
+        Assert.Equal("News\u2028World", channel.TvgName);
+        Assert.Equal("News\u0085Channel", channel.Name);
+        Assert.Equal("https://example.invalid/live", channel.StreamUrl);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
     public void Parse_SkipsMalformedAttributeWithoutLosingFollowingValidAttributes()
     {
         const string text = """

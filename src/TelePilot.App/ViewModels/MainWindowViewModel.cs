@@ -34,13 +34,15 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private readonly IRecordingCoordinator recordingCoordinator;
     private readonly DispatcherTimer currentProgramRefreshTimer;
     private readonly object playbackSnapshotGate = new();
-    private readonly List<Channel> allChannels = [];
-    private readonly Dictionary<string, Channel> channelsById = new(StringComparer.Ordinal);
+    private IReadOnlyList<Channel> allChannels = [];
+    private ChannelListItemViewModel[] allChannelItems = [];
+    private Dictionary<string, Channel> channelsById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Channel> playbackChannelsById = new(StringComparer.Ordinal);
     private readonly Dictionary<int, Channel> pendingPlaybackChannels = [];
-    private readonly Dictionary<string, ChannelListItemViewModel> channelItemsById = new(StringComparer.Ordinal);
+    private Dictionary<string, ChannelListItemViewModel> channelItemsById = new(StringComparer.Ordinal);
     private CancellationTokenSource? playlistLoadCancellation;
     private CancellationTokenSource? epgLoadCancellation;
+    private Task epgConfiguration = Task.CompletedTask;
     private IReadOnlyList<string> loadedPlaylistEpgUrls = [];
     private Uri? loadedPlaylistBaseUri;
     private PlaylistSourceId? loadedSourceId;
@@ -49,11 +51,14 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private ChannelListItemViewModel? selectedChannel;
     private string searchText = string.Empty;
     private string selectedGroup = AllGroupsLabel;
+    private bool rebuildingGroups;
     private ChannelSortOption selectedSort;
     private string currentChannelName = T("Nic nie jest odtwarzane", "Nothing is playing");
     private string currentProgramName = T("Brak danych o bieżącej audycji", "No data for the current program");
     private string playbackStateText = T("Zatrzymano", "Stopped");
     private int volume = 100;
+    private int volumeRequestGeneration;
+    private bool volumeChangePending;
     private bool isMuted;
     private bool isLoading;
     private bool isPlayerViewVisible;
@@ -160,6 +165,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         CloseApplicationCommand = new AsyncRelayCommand(RequestCloseAsync);
 
         playbackService.StateChanged += OnPlaybackStateChanged;
+        var initialPlayback = playbackService.Current;
+        if (initialPlayback.Volume is >= 0 and <= 100)
+        {
+            volume = initialPlayback.Volume;
+        }
+        isMuted = initialPlayback.IsMuted;
         this.recordingCoordinator.ProgressChanged += OnRecordingProgressChanged;
     }
 
@@ -175,7 +186,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     public ResettableObservableCollection<ChannelListItemViewModel> Channels { get; }
 
-    public ObservableCollection<string> Groups { get; }
+    public ResettableObservableCollection<string> Groups { get; }
 
     public ObservableCollection<FavoriteChannelPreference> FavoriteChannels { get; }
 
@@ -285,6 +296,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         get => selectedGroup;
         set
         {
+            if (rebuildingGroups)
+            {
+                return;
+            }
+
             var effective = string.IsNullOrWhiteSpace(value) ? AllGroupsLabel : value;
             if (SetProperty(ref selectedGroup, effective))
             {
@@ -697,27 +713,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             accessibleStatus.ReportStatus(T("Zapisano ustawienia.", "Settings saved."));
             if (!string.Equals(previousEpgUrl, preferencesService.Current.ExternalEpgUrl, StringComparison.Ordinal))
             {
-                // The already loaded playlist remains authoritative even when
-                // the source selector points at a different, unrefreshed entry.
-                playlistLoadCancellation?.Cancel();
-                try
-                {
-                    await ConfigureEpgAsync(loadedPlaylistEpgUrls, loadedPlaylistBaseUri);
-                    RefreshCurrentProgramItems(DateTimeOffset.Now);
-                    Archive.UpdateChannels(GetConfiguredArchiveChannels());
-                    archiveUpdated = true;
-                    accessibleStatus.ReportStatus(epgService.Status.State == EpgServiceState.Failed
-                        ? T("Zapisano ustawienia. Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.", "Settings saved. The TV guide could not load; the channels are still available.")
-                        : T("Zapisano ustawienia i zaktualizowano program telewizyjny.", "Settings saved and TV guide updated."));
-                }
-                catch (OperationCanceledException)
-                {
-                    // A newer source load now owns the EPG configuration.
-                }
-                catch (Exception)
-                {
-                    accessibleStatus.ReportError(T("Zapisano ustawienia. Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.", "Settings saved. The TV guide could not load; the channels are still available."));
-                }
+                epgConfiguration = ConfigureEpgAsync(reportSettingsStatus: true);
+                await epgConfiguration;
+                archiveUpdated = true;
             }
             if (archiveSettingsChanged && !archiveUpdated)
             {
@@ -1089,7 +1087,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         terminalReturnCancellation?.Dispose();
         terminalReturnCancellation = null;
         playlistLoadCancellation?.Cancel();
-        playlistLoadCancellation?.Dispose();
         playlistLoadCancellation = null;
         epgLoadCancellation?.Cancel();
         pendingPlaybackChannels.Clear();
@@ -1298,9 +1295,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         loadedPlaylistEpgUrls = [];
         loadedPlaylistBaseUri = null;
         Archive.UpdateChannels([]);
+        playlistLoadCancellation?.Cancel();
         epgLoadCancellation?.Cancel();
         currentProgramRefreshTimer.Stop();
-        allChannels.Clear();
+        allChannels = [];
+        allChannelItems = [];
         channelsById.Clear();
         channelItemsById.Clear();
         lastSelectedChannelId = null;
@@ -1308,9 +1307,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         Channels.Clear();
         OnPropertyChanged(nameof(ChannelCountText));
 
-        Groups.Clear();
-        Groups.Add(AllGroupsLabel);
-        SelectedGroup = AllGroupsLabel;
+        RebuildGroups();
 
         try
         {
@@ -1333,8 +1330,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     private async Task LoadSourceAsync(PlaylistSource source, bool refreshLocalFile = false, CancellationToken cancellationToken = default)
     {
         playlistLoadCancellation?.Cancel();
-        playlistLoadCancellation?.Dispose();
-        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         playlistLoadCancellation = cancellation;
         var token = cancellation.Token;
 
@@ -1356,35 +1352,17 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            var epgWarning = string.Empty;
-            try
-            {
-                await ConfigureEpgAsync(
-                    result.Playlist.Header.EpgUrls,
-                    CreateSourceBaseUri(source),
-                    token);
-                if (epgService.Status.State == EpgServiceState.Failed)
-                {
-                    epgWarning = T(" Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.", " Couldn't load the TV guide; the channels are still available.");
-                }
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception)
-            {
-                epgWarning = T(" Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.", " Couldn't load the TV guide; the channels are still available.");
-            }
-
-            token.ThrowIfCancellationRequested();
+            var baseUri = source.GetResolutionBaseUri();
+            var epgUrls = result.Playlist.Header.EpgUrls;
+            var guideChanged = loadedSourceId != source.Id ||
+                preferencesService.Current.ExternalEpgUrl is null &&
+                (loadedPlaylistBaseUri != baseUri || !loadedPlaylistEpgUrls.SequenceEqual(epgUrls));
             loadedSourceId = source.Id;
             OnPropertyChanged(nameof(ActivePlaylistName));
-            loadedPlaylistEpgUrls = result.Playlist.Header.EpgUrls.ToArray();
-            loadedPlaylistBaseUri = CreateSourceBaseUri(source);
-            allChannels.Clear();
-            allChannels.AddRange(result.Playlist.Channels);
-            RebuildChannelItems();
+            loadedPlaylistEpgUrls = epgUrls;
+            loadedPlaylistBaseUri = baseUri;
+            allChannels = result.Playlist.Channels;
+            RebuildChannelItems(guideChanged);
             RebuildGroups();
             ApplyChannelFilter();
             currentProgramRefreshTimer.Start();
@@ -1392,7 +1370,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             var skipped = result.Playlist.SkippedEntryCount == 0
                 ? string.Empty
                 : T($" Pominięto wpisy: {result.Playlist.SkippedEntryCount}.", $" Skipped entries: {result.Playlist.SkippedEntryCount}.");
-            accessibleStatus.ReportStatus(T($"Wczytano {allChannels.Count} kanałów ze źródła {source.Name}.{skipped}{epgWarning}", $"Channels loaded from {source.Name}: {allChannels.Count}.{skipped}{epgWarning}"));
+            accessibleStatus.ReportStatus(T($"Wczytano {allChannels.Count} kanałów ze źródła {source.Name}.{skipped}", $"Channels loaded from {source.Name}: {allChannels.Count}.{skipped}"));
+
+            // Playlists are usable while the TV guide downloads and indexes its data.
+            epgConfiguration = ConfigureEpgAsync();
+            Archive.UpdateChannels(GetConfiguredArchiveChannels(), epgConfiguration);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -1413,6 +1395,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         {
             if (ReferenceEquals(playlistLoadCancellation, cancellation))
             {
+                playlistLoadCancellation = null;
                 IsLoading = false;
             }
         }
@@ -1423,22 +1406,49 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         playlistLoadCancellation?.Cancel();
     }
 
-    private async Task ConfigureEpgAsync(
-        IReadOnlyList<string> playlistEpgUrls,
-        Uri? baseUri,
-        CancellationToken cancellationToken = default)
+    private async Task ConfigureEpgAsync(bool reportSettingsStatus = false)
     {
         epgLoadCancellation?.Cancel();
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var cancellation = new CancellationTokenSource();
         epgLoadCancellation = cancellation;
+        var failed = false;
         try
         {
             var externalUrl = preferencesService.Current.ExternalEpgUrl;
-            await epgService.SetSourcesAsync(
-                externalUrl is null ? playlistEpgUrls : [externalUrl],
-                externalUrl is null ? baseUri : null,
-                cancellation.Token);
+            try
+            {
+                await epgService.SetSourcesAsync(
+                    externalUrl is null ? loadedPlaylistEpgUrls : [externalUrl],
+                    externalUrl is null ? loadedPlaylistBaseUri : null,
+                    cancellation.Token);
+                failed = epgService.Status.State == EpgServiceState.Failed;
+            }
+            catch (Exception) when (!cancellation.IsCancellationRequested)
+            {
+                failed = true;
+            }
+
             cancellation.Token.ThrowIfCancellationRequested();
+            UpdateCurrentProgramItems(DateTimeOffset.Now, clearProgrammeItems: failed);
+            if (reportSettingsStatus)
+            {
+                Archive.UpdateChannels(GetConfiguredArchiveChannels());
+                accessibleStatus.ReportStatus(failed
+                    ? T("Zapisano ustawienia. Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.", "Settings saved. The TV guide could not load; the channels are still available.")
+                    : T("Zapisano ustawienia i zaktualizowano program telewizyjny.", "Settings saved and TV guide updated."));
+            }
+            else if (failed)
+            {
+                accessibleStatus.ReportStatus(T("Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.", "Couldn't load the TV guide; the channels are still available."));
+            }
+        }
+        catch (Exception) when (cancellation.IsCancellationRequested)
+        {
+            // A newer EPG configuration, removal, or disposal owns the result.
+        }
+        catch (Exception)
+        {
+            accessibleStatus.ReportStatus(T("Nie udało się wczytać programu telewizyjnego; kanały są nadal dostępne.", "Couldn't load the TV guide; the channels are still available."));
         }
         finally
         {
@@ -1449,34 +1459,44 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
-    private static Uri? CreateSourceBaseUri(PlaylistSource source)
-        => source.GetResolutionBaseUri();
-
-    private void RebuildChannelItems()
+    private void RebuildChannelItems(bool guideChanged)
     {
-        channelsById.Clear();
-        channelItemsById.Clear();
-        foreach (var channel in allChannels)
+        var previousItems = channelItemsById;
+        var previousChannels = channelsById;
+        var favorites = preferencesService.Current.Favorites
+            .Select(favorite => (favorite.PlaylistSourceId, favorite.ChannelId))
+            .ToHashSet();
+        var noGroup = T("Bez grupy", "No group");
+        channelsById = new(allChannels.Count, StringComparer.Ordinal);
+        channelItemsById = new(allChannels.Count, StringComparer.Ordinal);
+        allChannelItems = new ChannelListItemViewModel[allChannels.Count];
+        for (var index = 0; index < allChannels.Count; index++)
         {
+            var channel = allChannels[index];
             var id = channel.Id.ToString();
-            channelsById[id] = channel;
-            channelItemsById[id] = new ChannelListItemViewModel(
-                id,
-                channel.Name,
-                channel.GroupTitle ?? T("Bez grupy", "No group"))
+            var group = channel.GroupTitle ?? noGroup;
+            if (!previousItems.TryGetValue(id, out var item) || item.Name != channel.Name || item.Group != group)
             {
-                IsFavorite = IsFavorite(channel),
-            };
-            var currentProgramme = epgService.GetCurrentProgramme(channel, DateTimeOffset.Now);
-            if (currentProgramme is not null)
-            {
-                channelItemsById[id].CurrentProgram = currentProgramme.Title;
+                item = new ChannelListItemViewModel(id, channel.Name, group);
             }
+            else if (guideChanged || previousChannels.TryGetValue(id, out var previousChannel) &&
+                     (previousChannel.TvgId != channel.TvgId || previousChannel.TvgName != channel.TvgName))
+            {
+                item.CurrentProgram = string.Empty;
+            }
+
+            item.IsFavorite = favorites.Contains((channel.PlaylistSourceId.Value, channel.Id.Value));
+            item.PlaybackState = id == playbackChannelItemId ? PlaybackStateText : string.Empty;
+            channelsById[id] = channel;
+            channelItemsById[id] = item;
+            allChannelItems[index] = item;
         }
-        Archive.UpdateChannels(GetConfiguredArchiveChannels());
     }
 
     private void RefreshCurrentProgramItems(DateTimeOffset now)
+        => UpdateCurrentProgramItems(now, clearProgrammeItems: false);
+
+    private void UpdateCurrentProgramItems(DateTimeOffset now, bool clearProgrammeItems)
     {
         foreach ((string id, ChannelListItemViewModel item) in channelItemsById)
         {
@@ -1485,19 +1505,19 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
                 continue;
             }
 
-            item.CurrentProgram = epgService.GetCurrentProgramme(channel, now)?.Title ?? string.Empty;
+            item.CurrentProgram = clearProgrammeItems ? string.Empty : epgService.GetCurrentProgramme(channel, now)?.Title ?? string.Empty;
         }
 
         if (FindPlaybackChannel(playbackService.Current.ChannelId?.ToString() ?? playbackChannelItemId) is { } playbackChannel)
         {
-            CurrentProgramName = archivePlaybackProgramme?.Title ?? epgService.GetCurrentProgramme(playbackChannel, now)?.Title
+            CurrentProgramName = archivePlaybackProgramme?.Title ?? (clearProgrammeItems ? null : epgService.GetCurrentProgramme(playbackChannel, now)?.Title)
                 ?? T("Brak danych o bieżącej audycji", "No data for the current program");
         }
     }
 
     private void OnCurrentProgramRefreshTimerTick(object? sender, EventArgs e)
     {
-        if (!disposed)
+        if (!disposed && epgConfiguration.IsCompleted)
         {
             RefreshCurrentProgramItems(DateTimeOffset.Now);
         }
@@ -1505,19 +1525,28 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private void RebuildGroups()
     {
-        Groups.Clear();
-        Groups.Add(AllGroupsLabel);
-        foreach (var group in allChannels
-                     .Select(channel => channel.GroupTitle ?? T("Bez grupy", "No group"))
+        var allGroups = AllGroupsLabel;
+        var noGroup = T("Bez grupy", "No group");
+        var groups = allChannels.Select(channel => channel.GroupTitle ?? noGroup)
                      .Distinct(StringComparer.CurrentCultureIgnoreCase)
-                     .OrderBy(value => value, StringComparer.CurrentCultureIgnoreCase))
-        {
-            Groups.Add(group);
-        }
+                     .OrderBy(value => value, StringComparer.CurrentCultureIgnoreCase)
+                     .Prepend(allGroups);
 
-        if (!Groups.Contains(SelectedGroup))
+        rebuildingGroups = true;
+        try
         {
-            SelectedGroup = AllGroupsLabel;
+            Groups.ReplaceAll(groups);
+            if (!Groups.Contains(selectedGroup))
+            {
+                selectedGroup = allGroups;
+            }
+
+            OnPropertyChanged(nameof(SelectedGroup));
+            OnPropertyChanged(nameof(GroupSelectorAccessibleName));
+        }
+        finally
+        {
+            rebuildingGroups = false;
         }
     }
 
@@ -1526,10 +1555,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         var selectedId = SelectedChannel?.Id ?? lastSelectedChannelId;
         if (IsFavoritesOnly)
         {
+            var search = ChannelTextNormalizer.NormalizeForSearch(SearchText);
             var favorites = FavoriteChannels
-                .Where(item => string.IsNullOrWhiteSpace(SearchText)
+                .Where(item => search.Length == 0
                     || ChannelTextNormalizer.NormalizeForSearch(item.ChannelName)
-                        .Contains(ChannelTextNormalizer.NormalizeForSearch(SearchText), StringComparison.Ordinal))
+                        .Contains(search, StringComparison.Ordinal))
                 .Select(item => channelItemsById.GetValueOrDefault(item.ChannelId.ToString("D"))
                     ?? new ChannelListItemViewModel(item.ChannelId.ToString("D"), item.ChannelName, T("Ulubione", "Favorites")) { IsFavorite = true })
                 .ToArray();
@@ -1538,22 +1568,19 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(ChannelCountText));
             return;
         }
-        var channelsToFilter = SelectedGroup == T("Bez grupy", "No group")
-            ? allChannels.Where(channel => string.IsNullOrWhiteSpace(channel.GroupTitle))
-            : allChannels;
-        var group = (SelectedGroup == AllGroupsLabel || SelectedGroup == T("Bez grupy", "No group")) ? null : SelectedGroup;
-        var filtered = ChannelFilter.Apply(
-            channelsToFilter,
-            new ChannelFilterCriteria(SearchText, group, SelectedSort.Mode));
-        if (IsFavoritesOnly)
+        ChannelListItemViewModel[] filteredItems = allChannelItems;
+        var allGroups = SelectedGroup == AllGroupsLabel;
+        if (!allGroups || !string.IsNullOrWhiteSpace(SearchText) || SelectedSort.Mode != ChannelSortMode.SourceOrder)
         {
-            filtered = filtered.Where(IsFavorite).ToArray();
+            var noGroup = SelectedGroup == T("Bez grupy", "No group");
+            var channelsToFilter = noGroup ? allChannels.Where(channel => channel.GroupTitle is null) : allChannels;
+            var group = allGroups || noGroup ? null : SelectedGroup;
+            filteredItems = ChannelFilter.Apply(channelsToFilter, new ChannelFilterCriteria(SearchText, group, SelectedSort.Mode))
+                .Select(channel => channelItemsById[channel.Id.ToString()])
+                .ToArray();
         }
 
         var previousCount = Channels.Count;
-        ChannelListItemViewModel[] filteredItems = filtered
-            .Select(channel => channelItemsById[channel.Id.ToString()])
-            .ToArray();
         Channels.ReplaceAll(filteredItems);
 
         SelectedChannel = selectedId is not null
@@ -2121,14 +2148,41 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
+        var request = ++volumeRequestGeneration;
+        volumeChangePending = true;
+        Volume = target;
         try
         {
             await playbackService.SetVolumeAsync(target);
-            accessibleStatus.ReportStatus(T($"Głośność {target} procent.", $"Volume {target} percent."));
+            if (request == volumeRequestGeneration)
+            {
+                accessibleStatus.ReportStatus(T($"Głośność {target} procent.", $"Volume {target} percent."));
+            }
         }
         catch (Exception exception)
         {
-            await ReportFailureAsync(T("Nie udało się zmienić głośności", "Could not change the volume"), exception.Message);
+            if (request == volumeRequestGeneration)
+            {
+                await ReportFailureAsync(T("Nie udało się zmienić głośności", "Could not change the volume"), exception.Message);
+            }
+        }
+        finally
+        {
+            if (request == volumeRequestGeneration)
+            {
+                volumeChangePending = false;
+                ApplyPlaybackVolume();
+            }
+        }
+    }
+
+    private void ApplyPlaybackVolume()
+    {
+        // An older snapshot can reach the dispatcher after a slider or key
+        // request. Keep showing the latest request until it has finished.
+        if (!volumeChangePending && playbackService.Current.Volume is >= 0 and <= 100 and var currentVolume)
+        {
+            Volume = currentVolume;
         }
     }
 
@@ -2255,11 +2309,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task OpenProgramGuideAsync()
     {
-        var channelItems = allChannels
-            .Select(channel => channelItemsById[channel.Id.ToString()])
-            .ToArray();
         var viewModel = new ProgramGuideViewModel(
-            channelItems,
+            allChannelItems,
             LoadProgrammesAsync,
             PlayChannelByIdAsync,
             async cancellationToken =>
@@ -2296,6 +2347,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         string? search,
         CancellationToken cancellationToken)
     {
+        await epgConfiguration.WaitAsync(cancellationToken);
         if (!channelsById.TryGetValue(channelId, out var channel))
         {
             return [];
@@ -2459,7 +2511,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             {
                 // Volume/mute copies keep the terminal identity. Apply their
                 // current values without repeating navigation or announcements.
-                if (current.Volume is >= 0 and <= 100) Volume = current.Volume;
+                ApplyPlaybackVolume();
                 IsMuted = current.IsMuted;
                 return;
             }
@@ -2476,7 +2528,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(PlaybackHeading));
         }
         CurrentChannelName = snapshot.ChannelName ?? T("Nic nie jest odtwarzane", "Nothing is playing");
-        CurrentProgramName = archivePlaybackProgramme?.Title ?? (snapshot.ChannelId is { } currentChannelId
+        CurrentProgramName = archivePlaybackProgramme?.Title ?? (epgConfiguration.IsCompleted && snapshot.ChannelId is { } currentChannelId
             && FindPlaybackChannel(currentChannelId.ToString()) is { } currentChannel
             && epgService.GetCurrentProgramme(currentChannel, DateTimeOffset.Now) is { } currentProgramme
                 ? currentProgramme.Title
@@ -2491,14 +2543,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
             PlaybackState.Error => T("Błąd odtwarzania", "Playback error"),
             _ => snapshot.State.ToString(),
         };
-        // LibVLC reports -1 while the native audio output is being created.
-        // Keep the last valid value instead of exposing "minus one percent"
-        // through the UI and its live accessibility text.
-        if (snapshot.Volume is >= 0 and <= 100)
-        {
-            Volume = snapshot.Volume;
-        }
-
+        ApplyPlaybackVolume();
         IsMuted = snapshot.IsMuted;
 
         var currentPlaybackChannelId = snapshot.ChannelId?.ToString();

@@ -15,6 +15,7 @@ public sealed class AppDataPaths
         RootDirectory = Path.Combine(baseDirectory, applicationName);
         SettingsFile = Path.Combine(RootDirectory, "settings.json");
         PreferencesFile = Path.Combine(RootDirectory, "preferences.json");
+        PlaybackAudioSettingsFile = Path.Combine(RootDirectory, "playback-audio.json");
         ScheduledRecordingsFile = Path.Combine(RootDirectory, "scheduled-recordings.json");
         CacheDirectory = Path.Combine(RootDirectory, "cache");
         LogDirectory = Path.Combine(RootDirectory, "logs");
@@ -26,6 +27,8 @@ public sealed class AppDataPaths
     public string SettingsFile { get; }
 
     public string PreferencesFile { get; }
+
+    public string PlaybackAudioSettingsFile { get; }
 
     public string ScheduledRecordingsFile { get; }
 

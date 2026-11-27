@@ -121,14 +121,27 @@ public sealed class XmlTvEpgService : IEpgSourceManager, IDisposable
             throw new ArgumentException("The EPG base URI must be absolute.", nameof(baseUri));
         }
 
-        IEpgDataSource[] resolvedSources = ResolveSources(sources, baseUri);
-        await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // Resolve and parse the guide off the caller's dispatcher even when its data is already buffered.
+        await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
         {
-            Volatile.Write(ref _sources, resolvedSources);
+            cancellationToken.ThrowIfCancellationRequested();
+            Volatile.Write(ref _sources, []);
             Volatile.Write(ref _snapshot, null);
             Volatile.Write(ref _status, new EpgServiceStatus(EpgServiceState.Empty));
 
+            IEpgDataSource[] resolvedSources;
+            try
+            {
+                resolvedSources = ResolveSources(sources, baseUri);
+            }
+            catch (Exception)
+            {
+                SetFailedStatus("EPG source configuration failed.");
+                throw;
+            }
+
+            Volatile.Write(ref _sources, resolvedSources);
             if (resolvedSources.Length > 0)
             {
                 await RefreshCoreAsync(resolvedSources, Status, cancellationToken).ConfigureAwait(false);
@@ -326,7 +339,9 @@ public sealed class XmlTvEpgService : IEpgSourceManager, IDisposable
                 merged.Channels.Count,
                 merged.Programmes.Count,
                 failures.Count == 0 ? null : "Some EPG sources could not be refreshed.");
-            Volatile.Write(ref _snapshot, new EpgSnapshot(merged));
+            EpgSnapshot snapshot = new(merged, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            Volatile.Write(ref _snapshot, snapshot);
             Volatile.Write(
                 ref _status,
                 new EpgServiceStatus(
@@ -447,7 +462,7 @@ public sealed class XmlTvEpgService : IEpgSourceManager, IDisposable
         return snapshot.MappingCache.GetOrAdd(
             cacheKey,
             _ => new ChannelMappingCacheEntry(
-                _matcher.Match(channel, snapshot.Document.Channels, _manualMappings))).Mapping;
+                _matcher.Match(channel, snapshot.ChannelIndex, _manualMappings))).Mapping;
     }
 
     private static int FindLastProgrammeStartingAtOrBefore(
@@ -598,9 +613,10 @@ public sealed class XmlTvEpgService : IEpgSourceManager, IDisposable
     {
         private readonly Dictionary<string, Programme[]> _programmesByChannel;
 
-        public EpgSnapshot(XmlTvDocument document)
+        public EpgSnapshot(XmlTvDocument document, CancellationToken cancellationToken)
         {
             Document = document;
+            ChannelIndex = new ChannelEpgMatcher.ChannelIndex(document.Channels, cancellationToken);
             _programmesByChannel = document.Programmes
                 .GroupBy(static programme => programme.ChannelId, StringComparer.Ordinal)
                 .ToDictionary(
@@ -610,6 +626,8 @@ public sealed class XmlTvEpgService : IEpgSourceManager, IDisposable
         }
 
         public XmlTvDocument Document { get; }
+
+        public ChannelEpgMatcher.ChannelIndex ChannelIndex { get; }
 
         public ConcurrentDictionary<ChannelMappingCacheKey, ChannelMappingCacheEntry> MappingCache { get; } = new();
 

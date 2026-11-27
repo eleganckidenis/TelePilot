@@ -28,14 +28,15 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
-        return source.Kind switch
+        // File opening and parsing can both run synchronously even when the reads are asynchronous.
+        return Task.Run(() => source.Kind switch
         {
             PlaylistSourceKind.File => LoadFileAsync(source, cancellationToken),
             PlaylistSourceKind.Url => LoadUrlAsync(source, cancellationToken),
             _ => Task.FromResult(Failure(
                 PlaylistLoadErrorCode.InvalidSource,
                 T("Nieznany rodzaj źródła playlisty.", "Unknown playlist source type."))),
-        };
+        }, cancellationToken);
     }
 
     private async Task<PlaylistLoadResult> LoadFileAsync(
@@ -64,7 +65,8 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
                 FileShare.Read,
                 bufferSize: 81_920,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
-            if (stream.Length > _options.MaximumContentBytes)
+            var length = stream.Length;
+            if (length > _options.MaximumContentBytes)
             {
                 return TooLargeFailure();
             }
@@ -72,6 +74,7 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
             var content = await ReadLimitedAsync(
                 stream,
                 _options.MaximumContentBytes,
+                (int)length,
                 cancellationToken).ConfigureAwait(false);
             var baseUri = source.GetResolutionBaseUri() ?? new Uri(fullPath, UriKind.Absolute);
             var parsed = _parser.Parse(
@@ -140,8 +143,8 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
                     (int)response.StatusCode));
             }
 
-            if (response.Content.Headers.ContentLength is { } length &&
-                length > _options.MaximumContentBytes)
+            var length = response.Content.Headers.ContentLength;
+            if (length > _options.MaximumContentBytes)
             {
                 return TooLargeFailure();
             }
@@ -152,6 +155,7 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
             var content = await ReadLimitedAsync(
                 stream,
                 _options.MaximumContentBytes,
+                (int)Math.Clamp(length ?? 0, 0, 1024 * 1024),
                 linkedSource.Token).ConfigureAwait(false);
             var finalUri = response.RequestMessage?.RequestUri ?? requestUri;
             var declaredEncoding = response.Content.Headers.ContentType?.CharSet;
@@ -239,12 +243,13 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
         }
     }
 
-    private static async Task<byte[]> ReadLimitedAsync(
+    private static async Task<ReadOnlyMemory<byte>> ReadLimitedAsync(
         Stream stream,
         long maximumBytes,
+        int initialCapacity,
         CancellationToken cancellationToken)
     {
-        using var output = new MemoryStream();
+        using var output = new MemoryStream(initialCapacity);
         var buffer = new byte[81_920];
         while (true)
         {
@@ -259,10 +264,10 @@ public sealed class PlaylistLoader : IPlaylistLoader, IPlaylistService
                 throw new ContentTooLargeException();
             }
 
-            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            output.Write(buffer.AsSpan(0, read));
         }
 
-        return output.ToArray();
+        return output.GetBuffer().AsMemory(0, (int)output.Length);
     }
 
     private static string DescribeHttpFailure(HttpStatusCode statusCode) => statusCode switch

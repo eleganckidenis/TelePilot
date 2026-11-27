@@ -240,6 +240,30 @@ public sealed class XmlTvEpgServiceTests
     }
 
     [Fact]
+    public async Task SetSourcesAsync_UnsupportedReplacementClearsPreviousGuideAndProgrammeMatches()
+    {
+        var channel = CreateChannel("Test");
+        var source = new SwitchingDataSource("""
+            <tv><channel id="test"><display-name>Test</display-name></channel>
+            <programme channel="test" start="20260730100000 +0000"><title>Previous guide</title></programme></tv>
+            """);
+        using var service = new XmlTvEpgService(source, displayTimeZone: TimeZoneInfo.Utc);
+        var token = TestContext.Current.CancellationToken;
+        var at = new DateTimeOffset(2026, 7, 30, 10, 30, 0, TimeSpan.Zero);
+        await service.RefreshAsync(token);
+        Assert.Equal("Previous guide", service.GetCurrentProgramme(channel, at)?.Title);
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.SetSourcesAsync(["ftp://example.invalid/guide.xml"], cancellationToken: token));
+
+        Assert.Equal(EpgServiceState.Failed, service.Status.State);
+        Assert.Empty(service.Sources);
+        Assert.Empty(service.Channels);
+        Assert.Null(service.GetCurrentProgramme(channel, at));
+        Assert.Empty(await service.GetProgrammesAsync(channel, DateOnly.FromDateTime(at.Date), cancellationToken: token));
+    }
+
+    [Fact]
     public async Task RefreshAsync_CancelStalledReadReleasesGateForNextRefresh()
     {
         var source = new StalledDataSource();

@@ -77,6 +77,8 @@ public sealed record PlaybackError(
     string Message,
     string? TechnicalCode = null);
 
+public sealed record PlaybackAudioSettings(int Volume = 100, bool IsMuted = false);
+
 public sealed record PlaybackSnapshot(
     PlaybackState State,
     ChannelId? ChannelId,

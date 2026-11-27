@@ -7,14 +7,14 @@
 - TelePilot przywraca ostatnią głośność i stan wyciszenia po ponownym uruchomieniu oraz przy przełączaniu kanałów. Ściszanie suwakiem i klawiaturą działa łagodniej.
 - Kanały na Windows pojawiają się przed wczytaniem programu TV. Przyspieszono odczyt dużych playlist i dopasowywanie kanałów do programu.
 - Na macOS wybrana playlista otwiera się w pierwszej kolejności z zapisanej kopii. Przyspieszono pobieranie i odczyt list oraz odświeżanie widoku kanałów.
-- Na Windows komunikat o błędzie odtwarzania ma pierwszeństwo przed oczekującymi komunikatami stanu.
+- Na Windows szybkie przesunięcie suwaka w obie strony zachowuje ostatnią wartość. Komunikat o błędzie odtwarzania lub rozpoczęciu kolejnego wczytywania zastępuje wcześniejszy oczekujący komunikat.
 
 ### English
 
 - TelePilot restores the last volume and mute state after restarting and when switching channels. The slider and keyboard shortcuts lower the volume more gradually.
 - On Windows, channels appear while the TV guide loads. Large playlists load faster and guide entries are matched more quickly.
 - On macOS, the selected playlist opens first from its saved copy. Playlist downloads, parsing and channel list updates are faster.
-- On Windows, a playback error takes priority over queued status announcements.
+- On Windows, the volume slider keeps the final value when moved quickly in both directions. Playback errors and new playlist loads replace older queued status announcements.
 
 ## 2.1.4
 

@@ -18,10 +18,6 @@ public sealed record ChannelEpgMapping(
 
 public sealed class ChannelEpgMatcher
 {
-    [SuppressMessage(
-        "Performance",
-        "CA1822:Mark members as static",
-        Justification = "The instance API allows this stateless matcher to be registered and replaced as an application service.")]
     public ChannelEpgMapping? Match(
         Channel channel,
         IEnumerable<EpgChannel> epgChannels,
@@ -30,43 +26,34 @@ public sealed class ChannelEpgMatcher
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentNullException.ThrowIfNull(epgChannels);
 
-        EpgChannel[] availableChannels = [.. epgChannels];
+        return Match(channel, new ChannelIndex(epgChannels), manualMappings);
+    }
 
-        EpgChannel? byId = FindUnique(
-            availableChannels.Where(candidate =>
-                channel.TvgId is not null &&
-                candidate.Id.Equals(channel.TvgId, StringComparison.Ordinal)));
-        if (byId is not null)
+    [SuppressMessage(
+        "Performance",
+        "CA1822:Mark members as static",
+        Justification = "The instance API allows the matcher to be supplied to the EPG service.")]
+    internal ChannelEpgMapping? Match(
+        Channel channel,
+        ChannelIndex epgChannels,
+        IReadOnlyDictionary<ChannelId, string>? manualMappings)
+    {
+        if (channel.TvgId is { } tvgId && epgChannels.FindUniqueId(tvgId) is { } byId)
         {
             return new ChannelEpgMapping(channel, byId, EpgMatchMethod.ExactTvgId);
         }
 
-        HashSet<string> normalizedNames = new(StringComparer.Ordinal);
-        AddNormalizedName(normalizedNames, channel.TvgName);
-        AddNormalizedName(normalizedNames, channel.Name);
-
-        if (normalizedNames.Count > 0)
+        if (epgChannels.FindUniqueName(channel.TvgName, channel.Name) is { } byName)
         {
-            EpgChannel? byName = FindUnique(
-                availableChannels.Where(candidate => candidate.DisplayNames.Any(displayName =>
-                    normalizedNames.Contains(EpgNameNormalizer.Normalize(displayName.Value)))));
-            if (byName is not null)
-            {
-                return new ChannelEpgMapping(channel, byName, EpgMatchMethod.ExactNormalizedName);
-            }
+            return new ChannelEpgMapping(channel, byName, EpgMatchMethod.ExactNormalizedName);
         }
 
         if (manualMappings is not null &&
             manualMappings.TryGetValue(channel.Id, out string? mappedId) &&
-            !string.IsNullOrWhiteSpace(mappedId))
+            !string.IsNullOrWhiteSpace(mappedId) &&
+            epgChannels.FindUniqueId(mappedId) is { } manual)
         {
-            EpgChannel? manual = FindUnique(
-                availableChannels.Where(candidate =>
-                    candidate.Id.Equals(mappedId, StringComparison.Ordinal)));
-            if (manual is not null)
-            {
-                return new ChannelEpgMapping(channel, manual, EpgMatchMethod.Manual);
-            }
+            return new ChannelEpgMapping(channel, manual, EpgMatchMethod.Manual);
         }
 
         return null;
@@ -80,10 +67,11 @@ public sealed class ChannelEpgMatcher
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(epgChannels);
 
-        EpgChannel[] availableChannels = [.. epgChannels];
+        var availableChannels = new ChannelIndex(epgChannels);
         List<ChannelEpgMapping> result = [];
         foreach (Channel channel in channels)
         {
+            ArgumentNullException.ThrowIfNull(channel);
             ChannelEpgMapping? mapping = Match(channel, availableChannels, manualMappings);
             if (mapping is not null)
             {
@@ -94,24 +82,48 @@ public sealed class ChannelEpgMatcher
         return result.AsReadOnly();
     }
 
-    private static EpgChannel? FindUnique(IEnumerable<EpgChannel> candidates)
+    internal sealed class ChannelIndex
     {
-        using IEnumerator<EpgChannel> enumerator = candidates.GetEnumerator();
-        if (!enumerator.MoveNext())
+        private readonly Dictionary<string, EpgChannel?> byId = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, (EpgChannel? Channel, int Position)> byName = new(StringComparer.Ordinal);
+
+        public ChannelIndex(IEnumerable<EpgChannel> channels, CancellationToken cancellationToken = default)
         {
-            return null;
+            int position = 0;
+            foreach (EpgChannel channel in channels)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!byId.TryAdd(channel.Id, channel))
+                {
+                    byId[channel.Id] = null;
+                }
+
+                foreach (EpgLocalizedText displayName in channel.DisplayNames)
+                {
+                    string name = EpgNameNormalizer.Normalize(displayName.Value);
+                    if (name.Length > 0 && !byName.TryAdd(name, (channel, position)) && byName[name].Position != position)
+                    {
+                        // Different channel entries make a name ambiguous. Aliases from one entry do not.
+                        byName[name] = (null, -1);
+                    }
+                }
+
+                position++;
+            }
         }
 
-        EpgChannel result = enumerator.Current;
-        return enumerator.MoveNext() ? null : result;
-    }
+        public EpgChannel? FindUniqueId(string id) => byId.GetValueOrDefault(id);
 
-    private static void AddNormalizedName(HashSet<string> names, string? value)
-    {
-        string normalized = EpgNameNormalizer.Normalize(value);
-        if (normalized.Length > 0)
+        public EpgChannel? FindUniqueName(string? tvgName, string name)
         {
-            names.Add(normalized);
+            bool hasTvgMatch = byName.TryGetValue(EpgNameNormalizer.Normalize(tvgName), out var tvgMatch);
+            bool hasNameMatch = byName.TryGetValue(EpgNameNormalizer.Normalize(name), out var nameMatch);
+            if (hasTvgMatch && hasNameMatch && !ReferenceEquals(tvgMatch.Channel, nameMatch.Channel))
+            {
+                return null;
+            }
+
+            return hasTvgMatch ? tvgMatch.Channel : nameMatch.Channel;
         }
     }
 }

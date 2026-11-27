@@ -14,6 +14,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
 {
     private readonly Lazy<NativePlayerResources> _nativeResources;
     private readonly ILogger<LibVlcPlaybackService> _logger;
+    private readonly IPlaybackAudioSettingsStore? _audioSettingsStore;
     private readonly Channel<Func<Task>> _commandQueue;
     private readonly Task _commandWorker;
     private readonly Lock _stateLock = new();
@@ -25,6 +26,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
     private CoreChannel? _channel;
     private PlaybackOptions _options = new();
     private int _metadataRefreshQueued;
+    private bool _restoringNativeAudio;
     private long _retryGeneration;
     private volatile bool _disposed;
     private PlaybackRecoveryPolicy? _recovery;
@@ -39,14 +41,20 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
     private readonly HashSet<MediaTrackKind> _tracksToRestore = [];
     private static double MonotonicNow => System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency;
 
-    public LibVlcPlaybackService(ILogger<LibVlcPlaybackService> logger)
-        : this(logger, LibVlcNativeBootstrapper.Initialize)
+    public LibVlcPlaybackService(
+        ILogger<LibVlcPlaybackService> logger,
+        IPlaybackAudioSettingsStore? audioSettingsStore = null)
+        : this(logger, LibVlcNativeBootstrapper.Initialize, audioSettingsStore)
     {
     }
 
-    internal LibVlcPlaybackService(ILogger<LibVlcPlaybackService> logger, Action initializeNativeLibraries)
+    internal LibVlcPlaybackService(
+        ILogger<LibVlcPlaybackService> logger,
+        Action initializeNativeLibraries,
+        IPlaybackAudioSettingsStore? audioSettingsStore = null)
     {
         _logger = logger;
+        _audioSettingsStore = audioSettingsStore;
         _nativeResources = new Lazy<NativePlayerResources>(() => CreateNativeResources(initializeNativeLibraries));
         _commandQueue = System.Threading.Channels.Channel.CreateUnbounded<Func<Task>>(new UnboundedChannelOptions
         {
@@ -54,6 +62,10 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             SingleWriter = false,
             AllowSynchronousContinuations = false,
         });
+        if (audioSettingsStore is not null)
+        {
+            _commandQueue.Writer.TryWrite(() => LoadAudioSettingsAsync(audioSettingsStore));
+        }
         _commandWorker = Task.Run(ProcessCommandsAsync);
     }
 
@@ -172,10 +184,11 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
                 });
                 _mediaPlayer.Stop();
                 _channel = null;
+                var audio = Current;
                 UpdateCurrent(PlaybackSnapshot.Initial with
                 {
-                    Volume = ReadKnownVolume(),
-                    IsMuted = _mediaPlayer.Mute,
+                    Volume = audio.Volume,
+                    IsMuted = audio.IsMuted,
                     StatusMessage = T("Odtwarzanie zatrzymane.", "Playback stopped."),
                 });
             },
@@ -212,10 +225,17 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
         ArgumentOutOfRangeException.ThrowIfGreaterThan(volume, 100);
 
         await EnqueueAsync(
-            () =>
+            async () =>
             {
-                _mediaPlayer.Volume = volume;
-                UpdateCurrent(Current with { Volume = volume });
+                var snapshot = Current with { Volume = volume };
+                if (_nativeResources.IsValueCreated)
+                {
+                    _restoringNativeAudio = true;
+                    _mediaPlayer.Volume = NativeVolume(snapshot);
+                }
+
+                UpdateCurrent(snapshot);
+                await SaveAudioSettingsAsync().ConfigureAwait(false);
             },
             cancellationToken).ConfigureAwait(false);
     }
@@ -224,10 +244,17 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         await EnqueueAsync(
-            () =>
+            async () =>
             {
-                _mediaPlayer.Mute = isMuted;
-                UpdateCurrent(Current with { IsMuted = isMuted });
+                var snapshot = Current with { IsMuted = isMuted };
+                if (_nativeResources.IsValueCreated)
+                {
+                    _restoringNativeAudio = true;
+                    ApplyNativeAudioSettings(_mediaPlayer, snapshot);
+                }
+
+                UpdateCurrent(snapshot);
+                await SaveAudioSettingsAsync().ConfigureAwait(false);
             },
             cancellationToken).ConfigureAwait(false);
     }
@@ -314,7 +341,12 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
     private NativePlayerResources CreateNativeResources(Action initializeNativeLibraries)
     {
         initializeNativeLibraries();
-        var libVlc = new LibVLC("--no-video-title-show", "--quiet");
+        // Stop discards aout. A new Windows output starts silent until we
+        // can apply the selected volume, including on streams with late audio.
+        var libVlc = OperatingSystem.IsWindows()
+            ? new LibVLC("--no-video-title-show", "--quiet", "--no-volume-save",
+                "--mmdevice-volume=0", "--directx-volume=0", "--waveout-volume=0")
+            : new LibVLC("--no-video-title-show", "--quiet");
         MediaPlayer? player = null;
         try
         {
@@ -325,6 +357,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
                 EnableKeyInput = false,
                 EnableMouseInput = false,
             };
+            ApplyNativeAudioSettings(player, Current);
             SubscribePlayerEvents(player);
             return new NativePlayerResources(libVlc, player);
         }
@@ -346,12 +379,14 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
         var attemptGeneration = Interlocked.Increment(ref _playbackSessionGeneration);
         _nativeAttemptSignals.BeginAttempt(attemptGeneration);
         BindNativeAttemptEvents(attemptGeneration);
+        var audio = Current;
+        _restoringNativeAudio = true;
         UpdateCurrent(new PlaybackSnapshot(
             PlaybackState.Connecting,
             channel.Id,
             channel.Name,
-            ReadKnownVolume(),
-            _mediaPlayer.Mute,
+            audio.Volume,
+            audio.IsMuted,
             false,
             T($"Łączenie z kanałem {channel.Name}.", $"Connecting to {channel.Name}.")));
 
@@ -373,12 +408,55 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
         return PlaybackCommandResult.Success();
     }
 
-    private int ReadKnownVolume()
+    private async Task LoadAudioSettingsAsync(IPlaybackAudioSettingsStore store)
     {
-        var nativeVolume = _mediaPlayer.Volume;
-        return nativeVolume is >= 0 and <= 100
-            ? nativeVolume
-            : Current.Volume;
+        var settings = await store.LoadAsync().ConfigureAwait(false);
+        UpdateCurrent(Current with { Volume = Math.Clamp(settings.Volume, 0, 100), IsMuted = settings.IsMuted });
+    }
+
+    private Task SaveAudioSettingsAsync()
+    {
+        var snapshot = Current;
+        return _audioSettingsStore?.SaveAsync(new PlaybackAudioSettings(snapshot.Volume, snapshot.IsMuted))
+            ?? Task.CompletedTask;
+    }
+
+    private static void ApplyNativeAudioSettings(MediaPlayer player, PlaybackSnapshot snapshot)
+    {
+        if (snapshot.IsMuted)
+        {
+            player.Mute = true;
+        }
+
+        player.Volume = NativeVolume(snapshot);
+        if (!snapshot.IsMuted)
+        {
+            player.Mute = false;
+        }
+    }
+
+    private static int NativeVolume(PlaybackSnapshot snapshot) => snapshot.IsMuted
+        ? 0
+        : OperatingSystem.IsWindows() ? ToNativeWindowsVolume(snapshot.Volume) : snapshot.Volume;
+
+    // VLC 3.0's default Windows output applies cubic gain to this percentage.
+    internal static int ToNativeWindowsVolume(int volume) => (int)Math.Round(100 * Math.Cbrt(volume / 100d));
+
+    private void RestoreNativeAudioSettings()
+    {
+        if (!_restoringNativeAudio || _channel is null || _mediaPlayer.AudioTrack < 0)
+        {
+            return;
+        }
+
+        var snapshot = Current;
+        if (_mediaPlayer.Volume == NativeVolume(snapshot) && _mediaPlayer.Mute == snapshot.IsMuted)
+        {
+            _restoringNativeAudio = false;
+            return;
+        }
+
+        ApplyNativeAudioSettings(_mediaPlayer, snapshot);
     }
 
     private void SubscribePlayerEvents(MediaPlayer player)
@@ -388,7 +466,8 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
         player.Stopped += OnStopped;
         player.ESAdded += OnTracksChanged;
         player.ESDeleted += OnTracksChanged;
-        player.ESSelected += OnTracksChanged;
+        player.ESSelected += OnTrackSelected;
+        player.AudioDevice += OnAudioDeviceChanged;
     }
 
     private void UnsubscribePlayerEvents()
@@ -401,7 +480,8 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
         UnbindNativeAttemptEvents();
         _mediaPlayer.ESAdded -= OnTracksChanged;
         _mediaPlayer.ESDeleted -= OnTracksChanged;
-        _mediaPlayer.ESSelected -= OnTracksChanged;
+        _mediaPlayer.ESSelected -= OnTrackSelected;
+        _mediaPlayer.AudioDevice -= OnAudioDeviceChanged;
     }
 
     private void OnPlaying(object? sender, EventArgs eventArgs) => QueuePlaybackEvent(ApplyPlaying);
@@ -420,6 +500,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
         {
             _restoringPause = false; _mediaPlayer.SetPause(true);
         }
+        RestoreNativeAudioSettings();
         UpdateCurrent(snapshot with
         {
             State = PlaybackState.Playing,
@@ -499,6 +580,31 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
 
     private void OnTracksChanged(object? sender, EventArgs eventArgs) => QueuePlayerMetadataRefresh();
 
+    private void OnTrackSelected(object? sender, MediaPlayerESSelectedEventArgs eventArgs)
+    {
+        if (eventArgs.Type == TrackType.Audio)
+        {
+            QueuePlaybackEvent(RestartNativeAudioRestore);
+        }
+        QueuePlayerMetadataRefresh();
+    }
+
+    private void OnAudioDeviceChanged(object? sender, MediaPlayerAudioDeviceEventArgs eventArgs) =>
+        QueuePlaybackEvent(RestartNativeAudioRestore);
+
+    private void RestartNativeAudioRestore()
+    {
+        if (_channel is null)
+        {
+            return;
+        }
+
+        // A device change can report the previous endpoint's value until the
+        // new session opens. Always send the requested settings on that event.
+        _restoringNativeAudio = true;
+        ApplyNativeAudioSettings(_mediaPlayer, Current);
+    }
+
     private void QueuePlaybackEvent(Action operation, long? capturedGeneration = null)
     {
         if (_disposed)
@@ -545,6 +651,7 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
                     }
                 }
 
+                RestoreNativeAudioSettings();
                 RestoreSelectedTracks();
                 PublishTracks(MediaTrackKind.Audio);
                 PublishTracks(MediaTrackKind.Subtitle);
@@ -662,16 +769,26 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
             cancellationToken);
     }
 
-    private async Task<T> EnqueueAsync<T>(Func<T> operation, CancellationToken cancellationToken)
+    private Task<object?> EnqueueAsync(Func<Task> operation, CancellationToken cancellationToken) =>
+        EnqueueOperationAsync<object?>(async () =>
+        {
+            await operation().ConfigureAwait(false);
+            return null;
+        }, cancellationToken);
+
+    private Task<T> EnqueueAsync<T>(Func<T> operation, CancellationToken cancellationToken) =>
+        EnqueueOperationAsync(() => ValueTask.FromResult(operation()), cancellationToken);
+
+    private async Task<T> EnqueueOperationAsync<T>(Func<ValueTask<T>> operation, CancellationToken cancellationToken)
     {
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
         await _commandQueue.Writer.WriteAsync(
-            () =>
+            async () =>
             {
                 try
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    completion.TrySetResult(operation());
+                    completion.TrySetResult(await operation().ConfigureAwait(false));
                 }
                 catch (OperationCanceledException exception)
                 {
@@ -681,8 +798,6 @@ public sealed partial class LibVlcPlaybackService : IPlaybackService, ILibVlcMed
                 {
                     completion.TrySetException(exception);
                 }
-
-                return Task.CompletedTask;
             },
             cancellationToken).ConfigureAwait(false);
         return await completion.Task.ConfigureAwait(false);

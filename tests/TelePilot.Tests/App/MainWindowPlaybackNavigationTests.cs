@@ -1670,6 +1670,38 @@ public sealed class MainWindowPlaybackNavigationTests
     }
 
     [AvaloniaFact]
+    public async Task SliderCanReturnToPreviousVolumeWhilePlaybackWorkerIsBusy()
+    {
+        var source = new PlaylistSource(PlaylistSourceId.New(), "Test playlist", PlaylistSourceKind.File, "test.m3u");
+        var first = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var second = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var playback = new ControllablePlaybackService
+        {
+            BeforeSetVolume = volume => volume == 70 ? first.Task : second.Task,
+        };
+        using var viewModel = new MainWindowViewModel(
+            new FixedPlaylistService(PlaylistLoadResult.Success(new PlaylistParseResult(new PlaylistHeader(), [], [], "UTF-8", 0))),
+            new FixedPlaylistSourceStore(source), playback, new EmptyEpgSourceManager(), new NoOpWindowService(),
+            new RecordingAccessibleStatusService(), new FocusCoordinator());
+
+        var volumeDown = viewModel.SetVolumeAsync(70);
+        var volumeBackUp = viewModel.SetVolumeAsync(100);
+        Assert.Equal([70, 100], playback.SetVolumeCalls);
+
+        first.SetResult();
+        await volumeDown;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(70, playback.Current.Volume);
+        Assert.Equal(100, viewModel.Volume);
+
+        second.SetResult();
+        await volumeBackUp;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(100, playback.Current.Volume);
+        Assert.Equal(100, viewModel.Volume);
+    }
+
+    [AvaloniaFact]
     public void UnknownNativeVolume_PreservesTheLastAccessibleVolume()
     {
         var source = new PlaylistSource(
@@ -1769,6 +1801,7 @@ public sealed class MainWindowPlaybackNavigationTests
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public List<int> SetVolumeCalls { get; } = [];
+        public Func<int, Task>? BeforeSetVolume { get; init; }
 
         public int StopCallCount { get; private set; }
 
@@ -1822,12 +1855,14 @@ public sealed class MainWindowPlaybackNavigationTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult(PlaybackCommandResult.Success());
 
-        public Task SetVolumeAsync(int volume, CancellationToken cancellationToken = default)
+        public async Task SetVolumeAsync(int volume, CancellationToken cancellationToken = default)
         {
             SetVolumeCalls.Add(volume);
-            Current = Current with { Volume = volume };
-            StateChanged?.Invoke(this, new PlaybackStateChangedEventArgs(Current));
-            return Task.CompletedTask;
+            if (BeforeSetVolume is not null)
+            {
+                await BeforeSetVolume(volume);
+            }
+            PublishVolume(volume);
         }
 
         public Task SetMutedAsync(bool isMuted, CancellationToken cancellationToken = default)

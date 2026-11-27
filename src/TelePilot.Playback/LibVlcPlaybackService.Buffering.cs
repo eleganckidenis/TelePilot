@@ -36,6 +36,7 @@ public sealed partial class LibVlcPlaybackService
     private void PollPlaybackHealth()
     {
         if (_channel is null || _recovery is null || !_nativeResources.IsValueCreated || Current.State == PlaybackState.Stopping) return;
+        RestoreNativeAudioSettings();
         using var media = _mediaPlayer.Media;
         PlaybackProgress? progress = null;
         if (media is not null)
@@ -89,15 +90,14 @@ public sealed partial class LibVlcPlaybackService
         _tracksToRestore.Clear();
         _rememberedTracks.Clear();
         _nativeAttemptSignals.BeginAttempt(Interlocked.Increment(ref _playbackSessionGeneration));
-        var volume = ReadKnownVolume();
-        var muted = _mediaPlayer.Mute;
+        var snapshot = Current;
         _mediaPlayer.Stop();
         _mediaPlayer.Media = null;
         UpdateCurrent(PlaybackSnapshot.Initial with
         {
             State = error is null ? PlaybackState.Idle : PlaybackState.Error,
-            Volume = volume,
-            IsMuted = muted,
+            Volume = snapshot.Volume,
+            IsMuted = snapshot.IsMuted,
             Error = error,
             IsTerminal = true,
             TerminalSequence = Volatile.Read(ref _playbackSessionGeneration),

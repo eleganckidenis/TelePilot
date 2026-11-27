@@ -8,6 +8,7 @@ using TelePilot.App.Services;
 using TelePilot.App.ViewModels;
 using TelePilot.App.Views;
 using TelePilot.Core.Contracts;
+using TelePilot.Core.Models;
 using TelePilot.Epg.Services;
 using TelePilot.Infrastructure;
 using TelePilot.Playback;
@@ -174,6 +175,9 @@ public static class ApplicationBootstrapper
         services.AddSingleton<IEpgSourceManager>(serviceProvider =>
             serviceProvider.GetRequiredService<XmlTvEpgService>());
 
+        services.AddSingleton<IPlaybackAudioSettingsStore>(serviceProvider => new PlaybackAudioSettingsStore(
+            serviceProvider.GetRequiredService<AppDataPaths>().PlaybackAudioSettingsFile,
+            serviceProvider.GetRequiredService<ILogger<JsonSettingsStore<PlaybackAudioSettings>>>()));
         services.AddSingleton<LibVlcPlaybackService>();
         services.AddSingleton<IPlaybackService>(serviceProvider =>
             serviceProvider.GetRequiredService<LibVlcPlaybackService>());

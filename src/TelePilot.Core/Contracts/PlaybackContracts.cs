@@ -3,6 +3,13 @@ using static TelePilot.Core.Localization.Localizer;
 
 namespace TelePilot.Core.Contracts;
 
+public interface IPlaybackAudioSettingsStore
+{
+    Task<PlaybackAudioSettings> LoadAsync(CancellationToken cancellationToken = default);
+
+    Task SaveAsync(PlaybackAudioSettings settings, CancellationToken cancellationToken = default);
+}
+
 public interface IPlaybackService : IAsyncDisposable
 {
     Task PrepareAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;

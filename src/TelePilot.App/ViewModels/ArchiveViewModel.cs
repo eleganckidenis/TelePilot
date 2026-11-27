@@ -33,6 +33,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
     private bool showChannelsWithoutArchive;
     private bool announceChannelSummary;
     private bool disposed;
+    private Task epgConfiguration = Task.CompletedTask;
 
     public ArchiveViewModel(
         IEpgSourceManager epg,
@@ -193,7 +194,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
     public IAsyncRelayCommand PreviousDayCommand => previousDayCommand;
     public IAsyncRelayCommand NextDayCommand => nextDayCommand;
 
-    public void UpdateChannels(IEnumerable<Channel> channels)
+    public void UpdateChannels(IEnumerable<Channel> channels, Task? guideConfiguration = null)
     {
         ArgumentNullException.ThrowIfNull(channels);
         if (disposed)
@@ -204,6 +205,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
         CancelLoad();
         CancelPlay();
         ClearPrograms();
+        epgConfiguration = guideConfiguration ?? Task.CompletedTask;
         allChannels = channels.DistinctBy(channel => channel.Id).ToArray();
         updatingChannels = true;
         try
@@ -358,6 +360,7 @@ public sealed class ArchiveViewModel : ObservableObject, IDisposable
         try
         {
             StatusMessage = refresh ? T("Odświeżanie EPG archiwum…", "Refreshing archive EPG…") : T("Wczytywanie archiwum…", "Loading archive…");
+            await epgConfiguration.WaitAsync(token);
             if (refresh)
             {
                 EpgRefreshResult refreshResult = await epg.RefreshAsync(token);

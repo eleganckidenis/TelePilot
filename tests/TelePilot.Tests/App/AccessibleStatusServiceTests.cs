@@ -22,6 +22,39 @@ public sealed class AccessibleStatusServiceTests
     }
 
     [AvaloniaFact]
+    public async Task ReportError_SupersedesAQueuedPlaybackStatus()
+    {
+        using var service = new AccessibleStatusService();
+        service.ReportStatus("Łączenie.");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Łączenie.", service.StatusMessage);
+
+        service.ReportStatus("Odtwarzanie.");
+        service.ReportError("Utracono połączenie.");
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Utracono połączenie.", service.AlertMessage);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(1050), TestContext.Current.CancellationToken);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Utracono połączenie.", service.StatusMessage);
+    }
+
+    [AvaloniaFact]
+    public async Task ReportStatus_RepeatedLoadingSupersedesAQueuedCompletion()
+    {
+        using var service = new AccessibleStatusService();
+        service.ReportStatus("Wczytywanie playlisty.");
+        Dispatcher.UIThread.RunJobs();
+
+        service.ReportStatus("Playlista jest gotowa.");
+        service.ReportStatus("Wczytywanie playlisty.");
+
+        await Task.Delay(TimeSpan.FromMilliseconds(1050), TestContext.Current.CancellationToken);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("Wczytywanie playlisty.", service.StatusMessage);
+    }
+
+    [AvaloniaFact]
     public void AnnounceStatus_RepublishesTheSameMessageForASecondStop()
     {
         using var service = new AccessibleStatusService();

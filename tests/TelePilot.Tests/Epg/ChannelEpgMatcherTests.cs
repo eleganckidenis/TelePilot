@@ -52,6 +52,33 @@ public sealed class ChannelEpgMatcherTests
     }
 
     [Fact]
+    public void MatchAll_CountsAliasesOnOneGuideChannelAsOneMatch()
+    {
+        Channel channel = CreateChannel("News 24", tvgName: "National News");
+        EpgChannel guideChannel = new("guide", [new("News-24"), new("NEWS 24"), new("National News")]);
+
+        var mapping = Assert.Single(new ChannelEpgMatcher().MatchAll([channel], [guideChannel]));
+
+        Assert.Same(guideChannel, mapping.EpgChannel);
+        Assert.Equal(EpgMatchMethod.ExactNormalizedName, mapping.Method);
+    }
+
+    [Fact]
+    public void MatchAll_DistinctNameMatchesAndDuplicateIdsRemainAmbiguousBeforeManualFallback()
+    {
+        Channel channel = CreateChannel("News 24", tvgId: "duplicate", tvgName: "National News");
+        EpgChannel first = CreateEpgChannel("duplicate", "News-24");
+        EpgChannel second = CreateEpgChannel("duplicate", "National News");
+        EpgChannel manual = CreateEpgChannel("manual", "Other name");
+        Dictionary<ChannelId, string> manualMappings = new() { [channel.Id] = manual.Id };
+
+        var mapping = Assert.Single(new ChannelEpgMatcher().MatchAll([channel], [first, second, manual], manualMappings));
+
+        Assert.Same(manual, mapping.EpgChannel);
+        Assert.Equal(EpgMatchMethod.Manual, mapping.Method);
+    }
+
+    [Fact]
     public void Match_DoesNotUseSubstringSimilarity()
     {
         Channel channel = CreateChannel("TVP 1");

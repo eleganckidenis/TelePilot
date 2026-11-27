@@ -53,7 +53,6 @@ public sealed class AccessibleStatusService : ObservableObject, IAccessibleStatu
 
     private void QueuePoliteAnnouncement(string message, bool forceRepublish)
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
 
         var normalized = message.Trim();
@@ -66,21 +65,22 @@ public sealed class AccessibleStatusService : ObservableObject, IAccessibleStatu
             Dispatcher.UIThread.Post(() => AlertMessage = string.Empty);
         }
 
-        CancellationTokenSource? announcement;
+        CancellationTokenSource announcement;
         TimeSpan delay;
 
         lock (gate)
         {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            pendingAnnouncement?.Cancel();
             var now = DateTimeOffset.UtcNow;
             if (!forceRepublish
                 && string.Equals(normalized, lastPoliteAnnouncement, StringComparison.Ordinal)
                 && now - lastPoliteAnnouncementAt < DuplicateInterval)
             {
+                pendingAnnouncement = null;
                 return;
             }
 
-            pendingAnnouncement?.Cancel();
-            pendingAnnouncement?.Dispose();
             pendingAnnouncement = new CancellationTokenSource();
             announcement = pendingAnnouncement;
             delay = forceRepublish || now - lastPoliteAnnouncementAt >= MinimumPoliteInterval
@@ -93,8 +93,15 @@ public sealed class AccessibleStatusService : ObservableObject, IAccessibleStatu
 
     public void ReportError(string message)
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
+
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            pendingAnnouncement?.Cancel();
+            pendingAnnouncement = null;
+            lastPoliteAnnouncement = string.Empty;
+        }
 
         var normalized = message.Trim();
         Dispatcher.UIThread.Post(() =>
@@ -107,16 +114,10 @@ public sealed class AccessibleStatusService : ObservableObject, IAccessibleStatu
 
     public void Dispose()
     {
-        if (disposed)
-        {
-            return;
-        }
-
         lock (gate)
         {
             disposed = true;
             pendingAnnouncement?.Cancel();
-            pendingAnnouncement?.Dispose();
             pendingAnnouncement = null;
         }
     }
@@ -156,18 +157,13 @@ public sealed class AccessibleStatusService : ObservableObject, IAccessibleStatu
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                StatusMessage = message;
-
                 lock (gate)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     lastPoliteAnnouncement = message;
                     lastPoliteAnnouncementAt = DateTimeOffset.UtcNow;
-                    if (ReferenceEquals(pendingAnnouncement, announcement))
-                    {
-                        pendingAnnouncement = null;
-                    }
                 }
+                StatusMessage = message;
             });
         }
         catch (OperationCanceledException)
@@ -175,6 +171,13 @@ public sealed class AccessibleStatusService : ObservableObject, IAccessibleStatu
         }
         finally
         {
+            lock (gate)
+            {
+                if (ReferenceEquals(pendingAnnouncement, announcement))
+                {
+                    pendingAnnouncement = null;
+                }
+            }
             announcement.Dispose();
         }
     }

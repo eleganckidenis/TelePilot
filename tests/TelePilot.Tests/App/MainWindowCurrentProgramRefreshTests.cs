@@ -82,21 +82,67 @@ public sealed class MainWindowCurrentProgramRefreshTests
     }
 
     [AvaloniaFact]
+    public async Task Startup_PublishesPlayableChannelsWhileGuideAndArchiveWaitForEpg()
+    {
+        using var fixture = new Fixture("Current show", epgUrls: ["embedded.xml"], archiveEnabled: true);
+        var viewModel = fixture.ViewModel;
+        var releaseEpg = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Epg.NextConfigurationWait = releaseEpg;
+
+        await viewModel.InitializeAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        var channel = Assert.Single(viewModel.Channels);
+        Assert.Same(channel, viewModel.SelectedChannel);
+        Assert.True(viewModel.PlaySelectedCommand.CanExecute(null));
+        Assert.False(viewModel.IsLoading);
+        Assert.Empty(channel.CurrentProgram);
+        Assert.Single(viewModel.Archive.Channels);
+        Assert.Empty(viewModel.Archive.Programs);
+
+        await viewModel.OpenProgramGuideCommand.ExecuteAsync(null);
+        var guide = Assert.IsType<ProgramGuideViewModel>(fixture.Window.ProgramGuide);
+        Assert.Empty(guide.Programs);
+        var guideUpdated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        guide.Programs.CollectionChanged += (_, _) =>
+        {
+            if (guide.Programs.Count > 0)
+            {
+                guideUpdated.TrySetResult();
+            }
+        };
+        var archiveUpdated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        viewModel.Archive.Programs.CollectionChanged += (_, _) =>
+        {
+            if (viewModel.Archive.Programs.Count > 0)
+            {
+                archiveUpdated.TrySetResult();
+            }
+        };
+
+        releaseEpg.SetResult();
+        await Task.WhenAll(guideUpdated.Task, archiveUpdated.Task).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal("Current show", channel.CurrentProgram);
+        Assert.Same(channel, viewModel.SelectedChannel);
+        Assert.Single(guide.Programs);
+        Assert.Single(viewModel.Archive.Programs);
+    }
+
+    [AvaloniaFact]
     public async Task ExternalEpgChange_CancelsOlderPlaylistEpgLoadAndKeepsNewConfiguration()
     {
         using var fixture = new Fixture("Initial show", epgUrls: ["embedded.xml"]);
         await fixture.ViewModel.InitializeAsync();
         var item = Assert.Single(fixture.ViewModel.Channels);
         fixture.Epg.NextConfigurationWait = new TaskCompletionSource();
-        var refresh = fixture.ViewModel.RefreshSourceCommand.ExecuteAsync(null);
-        Assert.False(refresh.IsCompleted);
+        await fixture.ViewModel.RefreshSourceCommand.ExecuteAsync(null).WaitAsync(TimeSpan.FromSeconds(5));
         var oldToken = fixture.Epg.ConfigurationToken;
+        Assert.False(oldToken.IsCancellationRequested);
+        Assert.Same(item, Assert.Single(fixture.ViewModel.Channels));
         fixture.Window.SettingsResult = new AppPreferences { ExternalEpgUrl = "https://epg.example.test/replacement.xml" };
         fixture.Epg.ConfiguredTitle = "Replacement show";
 
         await fixture.ViewModel.OpenSettingsCommand.ExecuteAsync(null);
-        await refresh;
-
         Assert.True(oldToken.IsCancellationRequested);
         Assert.Equal(["https://epg.example.test/replacement.xml"], fixture.Epg.ConfiguredSources);
         Assert.Equal("Replacement show", item.CurrentProgram);
@@ -203,7 +249,8 @@ public sealed class MainWindowCurrentProgramRefreshTests
 
     private sealed class Fixture : IDisposable
     {
-        public Fixture(string currentTitle, int channelCount = 1, string[]? epgUrls = null, AppPreferences? preferences = null)
+        public Fixture(string currentTitle, int channelCount = 1, string[]? epgUrls = null, AppPreferences? preferences = null,
+            bool archiveEnabled = false)
         {
             var sourceId = PlaylistSourceId.New();
             var source = new PlaylistSource(sourceId, "Test playlist", PlaylistSourceKind.File, "test.m3u");
@@ -213,7 +260,13 @@ public sealed class MainWindowCurrentProgramRefreshTests
                     sourceId,
                     channelCount == 1 ? "Test channel" : $"Test channel {channelCount - index:D4}",
                     $"https://example.test/live/{index}",
-                    groupTitle: "Test group"))
+                    groupTitle: "Test group",
+                    attributes: archiveEnabled ? new Dictionary<string, string>
+                    {
+                        ["catchup"] = "append",
+                        ["catchup-days"] = "7",
+                        ["catchup-source"] = "?start={utc}",
+                    } : null))
                 .ToArray();
             var playlist = new PlaylistParseResult(
                 new PlaylistHeader(epgUrls: epgUrls),
@@ -222,7 +275,7 @@ public sealed class MainWindowCurrentProgramRefreshTests
                 "UTF-8",
                 0);
 
-            Epg = new MutableEpgSourceManager(currentTitle);
+            Epg = new MutableEpgSourceManager(currentTitle) { UseRecentProgramme = archiveEnabled };
             Window = new CapturingWindowService();
             Status = new RecordingAccessibleStatusService();
             var focusCoordinator = new FocusCoordinator();
@@ -309,6 +362,8 @@ public sealed class MainWindowCurrentProgramRefreshTests
 
         public bool ConfigureFailure { get; set; }
 
+        public bool UseRecentProgramme { get; set; }
+
         public TaskCompletionSource? NextConfigurationWait { get; set; }
 
         public CancellationToken ConfigurationToken { get; private set; }
@@ -364,8 +419,8 @@ public sealed class MainWindowCurrentProgramRefreshTests
         private Programme CreateProgramme(Channel channel) =>
             new(
                 channel.Id.ToString(),
-                DateTimeOffset.MinValue,
-                null,
+                UseRecentProgramme ? DateTimeOffset.Now.AddMinutes(-30) : DateTimeOffset.MinValue,
+                UseRecentProgramme ? DateTimeOffset.Now.AddMinutes(-15) : null,
                 [new EpgLocalizedText(CurrentTitle)]);
     }
 

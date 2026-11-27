@@ -15,6 +15,11 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
     private const string ExtVlcOption = "#EXTVLCOPT:";
     private static readonly string[] ArchiveFlagAttributes = ["catchup-enable", "tvg-rec", "timeshift"];
     private static readonly string[] CatchUpModeAttributes = ["catchup", "catchup-type"];
+    private static readonly string[] InheritedCatchUpAttributes =
+    [
+        "catchup", "catchup-type", "catchup-source", "catchup-days", "catchup-time",
+        "catchup-correction", "timeshift", "tvg-rec", "catchup-enable",
+    ];
 
     public PlaylistParseResult Parse(
         ReadOnlyMemory<byte> content,
@@ -22,12 +27,16 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var decoding = PlaylistTextDecoder.Decode(content, context.DeclaredEncoding);
         var diagnostics = new List<PlaylistDiagnostic>();
         diagnostics.AddRange(decoding.Diagnostics);
 
         var headerAttributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        KeyValuePair<string, string>[] catchUpDefaults = [];
+        string? headerCatchUpMode = null;
+        var usesDispatcharr = false;
         var epgUrls = new List<string>();
         var channels = new List<Channel>();
         var identityOccurrences = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -37,16 +46,23 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
         PendingEntry? pending = null;
         var lineNumber = 0;
 
-        using var reader = new StringReader(decoding.Text);
-        while (reader.ReadLine() is { } rawLine)
+        var remaining = decoding.Text.AsSpan();
+        while (!remaining.IsEmpty)
         {
+            var lineBreak = remaining.IndexOfAny('\r', '\n');
+            var line = (lineBreak < 0 ? remaining : remaining[..lineBreak]).Trim();
+            if (lineBreak >= 0 && remaining[lineBreak..].StartsWith("\r\n", StringComparison.Ordinal))
+            {
+                lineBreak++;
+            }
+
+            remaining = lineBreak < 0 ? [] : remaining[(lineBreak + 1)..];
             lineNumber++;
             if ((lineNumber & 0xFF) == 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
             }
 
-            var line = rawLine.Trim();
             if (line.Length == 0)
             {
                 continue;
@@ -75,6 +91,13 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                     headerAttributes,
                     epgUrls,
                     diagnostics);
+                catchUpDefaults = InheritedCatchUpAttributes
+                    .Where(headerAttributes.ContainsKey)
+                    .Select(key => KeyValuePair.Create(key, headerAttributes[key]))
+                    .ToArray();
+                headerCatchUpMode = CatchUpModeForInheritance(headerAttributes);
+                usesDispatcharr = headerAttributes.TryGetValue("catchup-timezone", out var timezone) &&
+                    !string.IsNullOrWhiteSpace(timezone);
                 continue;
             }
 
@@ -104,7 +127,7 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                     var group = line[ExtGroup.Length..].Trim();
                     if (group.Length > 0 && !pending.Attributes.ContainsKey("group-title"))
                     {
-                        pending.Attributes["group-title"] = group;
+                        pending.Attributes["group-title"] = group.ToString();
                     }
                 }
 
@@ -128,12 +151,12 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
             {
                 if (pending is not null)
                 {
-                    var separator = line.IndexOf(':', StringComparison.Ordinal);
+                    var separator = line.IndexOf(':');
                     if (separator > 1)
                     {
                         PreserveDirective(
                             pending.Attributes,
-                            string.Concat("directive-", line[1..separator].ToLowerInvariant()),
+                            string.Concat("directive-", line[1..separator].ToString().ToLowerInvariant()),
                             line[(separator + 1)..]);
                     }
                 }
@@ -141,7 +164,7 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
                 continue;
             }
 
-            if (!TryResolveLocation(line, context.BaseUri, out var streamUrl, out var failureCode))
+            if (!TryResolveLocation(line.ToString(), context.BaseUri, out var streamUrl, out var failureCode))
             {
                 skippedEntries++;
                 diagnostics.Add(new PlaylistDiagnostic(
@@ -156,50 +179,15 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
             }
 
             var entry = pending ?? PendingEntry.ForPlainUrl(lineNumber);
-            // Only catch-up defaults are inherited; channel metadata and explicit opt-outs win.
-            // Treat both mode spellings as one setting: a header catchup must not shadow
-            // a channel's catchup-type, including an unknown mode or an explicit opt-out.
-            var hasChannelCatchUpMode = CatchUpModeAttributes.Any(key =>
-                entry.Attributes.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value));
-            var changesCatchUpMode = hasChannelCatchUpMode &&
-                CatchUpModeForInheritance(entry.Attributes) != CatchUpModeForInheritance(headerAttributes);
-            var hasChannelRetention = entry.Attributes.ContainsKey("catchup-days") ||
-                entry.Attributes.ContainsKey("catchup-time") || entry.Attributes.ContainsKey("timeshift") ||
-                entry.Attributes.TryGetValue("tvg-rec", out var archiveMarker) && archiveMarker.Trim() != "1";
-            var hasChannelArchiveFlag = entry.Attributes.ContainsKey("catchup-enable") || entry.Attributes.ContainsKey("tvg-rec");
-            var hasChannelArchiveOptOut = ArchiveFlagAttributes.Any(key =>
-                entry.Attributes.TryGetValue(key, out var value) &&
-                value.Trim().ToLowerInvariant() is "0" or "off" or "false" or "none" or "disabled");
-            foreach (var key in new[]
-                { "catchup", "catchup-type", "catchup-source", "catchup-days", "catchup-time", "catchup-correction", "timeshift", "tvg-rec", "catchup-enable" })
+            if (catchUpDefaults.Length > 0)
             {
-                if (hasChannelCatchUpMode && key is ("catchup" or "catchup-type"))
-                {
-                    continue;
-                }
-
-                // A header template belongs to its format, not to a channel selecting another format.
-                if (changesCatchUpMode && key == "catchup-source")
-                {
-                    continue;
-                }
-
-                if ((hasChannelRetention || hasChannelArchiveOptOut) && key is ("catchup-days" or "catchup-time" or "timeshift" or "tvg-rec") ||
-                    hasChannelArchiveFlag && key is ("catchup-enable" or "tvg-rec"))
-                {
-                    continue;
-                }
-
-                var hasChannelValue = entry.Attributes.TryGetValue(key, out var channelValue) &&
-                    (key is not ("catchup" or "catchup-type") || !string.IsNullOrWhiteSpace(channelValue));
-                if (!hasChannelValue && headerAttributes.TryGetValue(key, out var value))
-                {
-                    entry.Attributes[key] = value;
-                }
+                ApplyCatchUpDefaults(entry.Attributes, catchUpDefaults, headerCatchUpMode);
             }
 
-            if (headerAttributes.TryGetValue("catchup-timezone", out var timezone) && !string.IsNullOrWhiteSpace(timezone))
+            if (usesDispatcharr)
+            {
                 entry.Attributes["_dispatcharr"] = "1";
+            }
 
             var channel = CreateChannel(
                 entry,
@@ -240,6 +228,56 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
             skippedEntries);
     }
 
+    private static void ApplyCatchUpDefaults(
+        Dictionary<string, string> attributes,
+        ReadOnlySpan<KeyValuePair<string, string>> defaults,
+        string? headerMode)
+    {
+        // Both mode spellings represent one setting. Explicit channel metadata and opt-outs take precedence.
+        var hasMode = HasAttributeValue(attributes, "catchup") || HasAttributeValue(attributes, "catchup-type");
+        var changesMode = hasMode && CatchUpModeForInheritance(attributes) != headerMode;
+        var hasRetention = attributes.ContainsKey("catchup-days") ||
+            attributes.ContainsKey("catchup-time") || attributes.ContainsKey("timeshift") ||
+            attributes.TryGetValue("tvg-rec", out var archiveMarker) && archiveMarker.Trim() != "1";
+        var hasArchiveFlag = attributes.ContainsKey("catchup-enable") || attributes.ContainsKey("tvg-rec");
+        var hasArchiveOptOut = false;
+        foreach (var key in ArchiveFlagAttributes)
+        {
+            if (attributes.TryGetValue(key, out var value) &&
+                value.Trim().ToLowerInvariant() is "0" or "off" or "false" or "none" or "disabled")
+            {
+                hasArchiveOptOut = true;
+                break;
+            }
+        }
+
+        foreach (var (key, value) in defaults)
+        {
+            // A header template belongs to the format declared by the header.
+            if (changesMode && key == "catchup-source" ||
+                (hasRetention || hasArchiveOptOut) && key is ("catchup-days" or "catchup-time" or "timeshift" or "tvg-rec") ||
+                hasArchiveFlag && key is ("catchup-enable" or "tvg-rec"))
+            {
+                continue;
+            }
+
+            if (key is "catchup" or "catchup-type")
+            {
+                if (!hasMode)
+                {
+                    attributes[key] = value;
+                }
+            }
+            else
+            {
+                attributes.TryAdd(key, value);
+            }
+        }
+    }
+
+    private static bool HasAttributeValue(Dictionary<string, string> attributes, string key) =>
+        attributes.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value);
+
     private static string? CatchUpModeForInheritance(Dictionary<string, string> attributes)
     {
         string? mode = null;
@@ -278,13 +316,13 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
     }
 
     private static PendingEntry ParseExtInf(
-        string payload,
+        ReadOnlySpan<char> payload,
         int lineNumber,
         List<PlaylistDiagnostic> diagnostics)
     {
         var separator = FindUnquotedComma(payload);
         var metadata = separator >= 0 ? payload[..separator] : payload;
-        var name = separator >= 0 ? payload[(separator + 1)..].Trim() : null;
+        var name = separator >= 0 ? payload[(separator + 1)..].Trim().ToString() : null;
 
         if (separator < 0)
         {
@@ -329,7 +367,7 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
     }
 
     private static void ParseHeader(
-        string payload,
+        ReadOnlySpan<char> payload,
         int lineNumber,
         Uri? baseUri,
         Dictionary<string, string> headerAttributes,
@@ -392,8 +430,8 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
         entry.Attributes.TryGetValue("tvg-logo", out var logoUrl);
         entry.Attributes.TryGetValue("group-title", out var groupTitle);
 
-        var name = FirstNonEmpty(entry.Name, tvgName);
-        if (name is null)
+        var name = !string.IsNullOrWhiteSpace(entry.Name) ? entry.Name : tvgName?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
         {
             name = T($"Kanał {generatedNumber.ToString(CultureInfo.InvariantCulture)}", $"Channel {generatedNumber.ToString(CultureInfo.InvariantCulture)}");
             diagnostics.Add(new PlaylistDiagnostic(
@@ -518,9 +556,9 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
     private static void PreserveDirective(
         Dictionary<string, string> attributes,
         string prefix,
-        string payload)
+        ReadOnlySpan<char> payload)
     {
-        var separator = payload.IndexOf('=', StringComparison.Ordinal);
+        var separator = payload.IndexOf('=');
         var suffix = separator > 0 ? payload[..separator].Trim() : "value";
         var value = separator > 0 ? payload[(separator + 1)..].Trim() : payload.Trim();
         var key = string.Concat(prefix, ":", suffix);
@@ -530,16 +568,16 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
             key = string.Concat(
                 prefix,
                 ":",
-                suffix,
+                suffix.ToString(),
                 ":",
                 duplicate.ToString(CultureInfo.InvariantCulture));
             duplicate++;
         }
 
-        attributes[key] = value;
+        attributes[key] = value.ToString();
     }
 
-    private static int FindUnquotedComma(string value)
+    private static int FindUnquotedComma(ReadOnlySpan<char> value)
     {
         char? quote = null;
         var escaped = false;
@@ -581,7 +619,7 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
         return -1;
     }
 
-    private static int IndexOfWhiteSpace(string value)
+    private static int IndexOfWhiteSpace(ReadOnlySpan<char> value)
     {
         for (var index = 0; index < value.Length; index++)
         {
@@ -593,9 +631,6 @@ public sealed class M3uPlaylistParser : IM3uPlaylistParser
 
         return -1;
     }
-
-    private static string? FirstNonEmpty(params string?[] values) =>
-        values.FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value))?.Trim();
 
     private sealed record PendingEntry(
         int LineNumber,
