@@ -273,7 +273,7 @@ public sealed partial class MainWindow : Window
             {
                 ScheduleFocusRecoveryCheckpoint(request, generation, checkpoint + 1);
             }
-            else if (generation == focusRestoreGeneration)
+            else if (generation == focusRestoreGeneration && !MainMenu.IsOpen)
             {
                 preferredFocusTarget = null;
             }
@@ -540,6 +540,13 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        if (preferredFocusTarget is { } previous)
+        {
+            isMainMenuFocusRestorePending = false;
+            BeginFocusRecovery(GetFocusRequestForCurrentView(), forceRequestedTarget: true, previous);
+            return;
+        }
+
         var focused = FocusManager?.GetFocusedElement();
         if (focused is not MenuItem && IsSafeInteractiveFocus(focused))
         {
@@ -547,9 +554,9 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (focusBeforeMainMenu is { } previous
-            && IsSafeInteractiveFocus(previous)
-            && RestoreInteractiveLogicalFocus(previous))
+        if (focusBeforeMainMenu is { } menuOrigin
+            && IsSafeInteractiveFocus(menuOrigin)
+            && RestoreInteractiveLogicalFocus(menuOrigin))
         {
             isMainMenuFocusRestorePending = false;
             return;

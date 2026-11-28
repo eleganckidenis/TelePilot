@@ -5,12 +5,12 @@
 ### Polski
 
 - Na Windows pełny ekran zaczyna od samego obrazu. Tab lub Shift+Tab pokazuje przyciski odtwarzacza i suwak głośności. Kolejne naciśnięcia przechodzą cyklicznie po kontrolkach dostępnych dla NVDA.
-- Escape przywraca poprzedni widok i fokus klawiatury. Można od razu przejść Tabem do kolejnej kontrolki.
+- Escape przywraca poprzedni widok i fokus klawiatury. Można od razu przejść Tabem do kolejnej kontrolki. Gdy pełny ekran kończy się otwarciem menu przez F10, fokus wraca po zamknięciu menu.
 
 ### English
 
 - On Windows, full screen starts with edge-to-edge video. Tab or Shift+Tab reveals the playback buttons and volume slider. Further presses cycle through the controls exposed to NVDA.
-- Escape restores the previous layout and keyboard focus. Press Tab to continue navigating.
+- Escape restores the previous layout and keyboard focus. Press Tab to continue navigating. When F10 opens the menu from full screen, focus returns after the menu closes.
 
 ## 2.1.5
 

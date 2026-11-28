@@ -171,15 +171,16 @@ internal static class Program
 
             WindowsDesktop.Press(handle, WindowsDesktop.L, WindowsDesktop.Control);
             await WaitAsync(() => list.IsKeyboardFocusWithin && tabs.IsEffectivelyVisible, "split view and channel list focus", token);
+            var splitFocus = window.FocusManager?.GetFocusedElement() as Control
+                ?? throw new InvalidOperationException("Missing channel focus before fullscreen.");
             WindowsDesktop.Press(handle, WindowsDesktop.F11);
             await CheckFullscreenAsync("4:3 fullscreen from split view", 4d / 3);
             WindowsDesktop.Press(handle, WindowsDesktop.Tab, WindowsDesktop.Shift);
             await CheckAutomationFocusAsync(volume, UIA.ControlType.Slider, token);
             WindowsDesktop.Press(handle, WindowsDesktop.Escape);
-            await WaitAsync(() => window.WindowState == initialState && list.IsKeyboardFocusWithin && tabs.IsEffectivelyVisible &&
+            await WaitAsync(() => window.WindowState == initialState && splitFocus.IsFocused && tabs.IsEffectivelyVisible &&
                 menu.IsEffectivelyVisible && controls.IsEffectivelyVisible, "Escape restores split view and list focus", token);
-            await CheckAutomationFocusAsync(
-                (Control)window.FocusManager!.GetFocusedElement()!, UIA.ControlType.ListItem, token);
+            await CheckAutomationFocusAsync(splitFocus, UIA.ControlType.ListItem, token);
             await CheckPictureAsync("4:3 split restored", video, handle, 4d / 3, fullscreen: false, token);
             await StopAndCheckAsync();
 

@@ -532,12 +532,31 @@ public sealed class MainWindowPlaybackNavigationTests
             PressTab(moveBackward: false);
             Assert.NotSame(previousFocus, window.FocusManager.GetFocusedElement());
 
+            var focusBeforeOpeningFullscreenMenu = window.FocusManager.GetFocusedElement();
             window.KeyPress(Key.F11, RawInputModifiers.None, PhysicalKey.F11, null);
             window.KeyRelease(Key.F11, RawInputModifiers.None, PhysicalKey.F11, null);
             Dispatcher.UIThread.RunJobs();
-            menu.Open();
+            PressTab(moveBackward: true);
+            Assert.Same(volumeSlider, window.FocusManager.GetFocusedElement());
+
+            if (moveBackwardFirst)
+            {
+                menu.Open();
+            }
+            else
+            {
+                window.KeyPress(Key.F10, RawInputModifiers.None, PhysicalKey.F10, null);
+                window.KeyRelease(Key.F10, RawInputModifiers.None, PhysicalKey.F10, null);
+            }
+
             Assert.Equal(WindowState.Normal, window.WindowState);
             Assert.True(menu.IsVisible && menu.IsOpen);
+            Dispatcher.UIThread.RunJobs();
+            window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            window.KeyRelease(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(menu.IsOpen);
+            Assert.Same(focusBeforeOpeningFullscreenMenu, window.FocusManager.GetFocusedElement());
 
             void PressTab(bool moveBackward)
             {
