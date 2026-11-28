@@ -1,5 +1,9 @@
 # Historia zmian — TelePilot dla Apple Silicon
 
+## 2.1.6
+
+[Release notes in English and Polish / opis zmian po angielsku i po polsku](../CHANGELOG.md#216).
+
 ## 2.1.5
 
 [Release notes in English and Polish / opis zmian po angielsku i po polsku](../CHANGELOG.md#215).

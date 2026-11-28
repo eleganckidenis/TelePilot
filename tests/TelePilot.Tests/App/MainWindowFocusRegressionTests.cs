@@ -661,7 +661,7 @@ public sealed class MainWindowFocusRegressionTests
             Assert.NotEqual(WindowState.FullScreen, window.WindowState);
             Assert.True(staleMenuFocus.Focus());
             Dispatcher.UIThread.RunJobs();
-            Assert.Same(pauseButton, window.FocusManager?.GetFocusedElement());
+            Assert.Same(returnButton, window.FocusManager?.GetFocusedElement());
         }
         finally
         {

@@ -161,7 +161,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
         ScheduleRecordingCommand = new AsyncRelayCommand(ScheduleSelectedRecordingAsync, () => SelectedChannel is not null);
         ShowScheduledRecordingsCommand = new AsyncRelayCommand(ShowScheduledRecordingsAsync);
         ToggleFullscreenCommand = new RelayCommand(() => FullscreenRequested?.Invoke(this, EventArgs.Empty));
-        ExitFullscreenCommand = new RelayCommand(() => ExitFullscreenRequested?.Invoke(this, EventArgs.Empty));
         CloseApplicationCommand = new AsyncRelayCommand(RequestCloseAsync);
 
         playbackService.StateChanged += OnPlaybackStateChanged;
@@ -564,8 +563,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDisposable
     public IAsyncRelayCommand ShowScheduledRecordingsCommand { get; }
 
     public IRelayCommand ToggleFullscreenCommand { get; }
-
-    public IRelayCommand ExitFullscreenCommand { get; }
 
     public IAsyncRelayCommand CloseApplicationCommand { get; }
 

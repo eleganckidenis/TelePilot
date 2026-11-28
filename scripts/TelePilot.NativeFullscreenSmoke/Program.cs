@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -14,6 +15,7 @@ using TelePilot.Epg.Services;
 using TelePilot.Infrastructure;
 using TelePilot.Playback;
 using TelePilot.Playlists;
+using UIA = System.Windows.Automation;
 
 namespace TelePilot.NativeFullscreenSmoke;
 
@@ -129,7 +131,9 @@ internal static class Program
             var menu = ControlByName<Menu>(window, "MainMenu");
             var tabs = ControlByName<TabControl>(window, "SectionTabs");
             var controls = ControlByName<ScrollViewer>(window, "PlaybackControlsScroll");
-            var exit = ControlByName<Button>(window, "FullscreenExitButton");
+            var volume = ControlByName<Slider>(window, "VolumeSlider");
+            var pause = ControlByName<Button>(window, "PauseResumeButton");
+            var stop = ControlByName<Button>(window, "StopPlaybackButton");
             var handle = window.TryGetPlatformHandle()?.Handle ?? throw new InvalidOperationException("Missing main HWND.");
             await WaitAsync(() => model.Channels.Count == 2, "two synthetic channels", token,
                 () => $"Loaded {model.Channels.Count} channels from {model.Sources.Count} sources.");
@@ -142,30 +146,40 @@ internal static class Program
             WindowsDesktop.Press(handle, WindowsDesktop.Enter);
             await WaitAsync(() => playback.Current.State == PlaybackState.Playing && playback.MediaPlayer.VoutCount > 0 &&
                 player.IsKeyboardFocusWithin, "first playback and player focus", token, () => $"Playback state={playback.Current.State}.");
-            var previousFocus = window.FocusManager?.GetFocusedElement();
+            Require(volume.Focus(), "Could not focus the volume slider before entering fullscreen.");
+            var firstPlayerControl = pause.IsEffectivelyEnabled ? pause : stop;
             await CheckPictureAsync("4:3 windowed", video, handle, 4d / 3, fullscreen: false, token);
 
             WindowsDesktop.Press(handle, WindowsDesktop.F11);
             await CheckFullscreenAsync("4:3 fullscreen", 4d / 3);
             Console.WriteLine("Checking fullscreen Tab, Shift+Tab and Escape.");
             WindowsDesktop.Press(handle, WindowsDesktop.Tab);
-            await Task.Delay(100, token);
-            Require(exit.IsFocused, "Tab moved focus away from Exit Full Screen.");
+            await WaitAsync(() => controls.IsEffectivelyVisible && firstPlayerControl.IsFocused,
+                "Tab reveals the player controls and focuses the first button", token);
+            await CheckAutomationFocusAsync(firstPlayerControl, UIA.ControlType.Button, token);
             WindowsDesktop.Press(handle, WindowsDesktop.Tab, WindowsDesktop.Shift);
-            await Task.Delay(100, token);
-            Require(exit.IsFocused, "Shift+Tab moved focus away from Exit Full Screen.");
+            await CheckAutomationFocusAsync(volume, UIA.ControlType.Slider, token);
+            WindowsDesktop.Press(handle, WindowsDesktop.Tab);
+            await CheckAutomationFocusAsync(firstPlayerControl, UIA.ControlType.Button, token);
             WindowsDesktop.Press(handle, WindowsDesktop.Escape);
             await WaitAsync(() => window.WindowState == initialState && menu.IsEffectivelyVisible && controls.IsEffectivelyVisible &&
-                ReferenceEquals(window.FocusManager?.GetFocusedElement(), previousFocus), "Escape restores window and player focus", token);
+                volume.IsFocused, "Escape restores window and the previous volume slider focus", token);
+            await CheckAutomationFocusAsync(volume, UIA.ControlType.Slider, token);
+            WindowsDesktop.Press(handle, WindowsDesktop.Tab);
+            await CheckAutomationFocusAsync(firstPlayerControl, UIA.ControlType.Button, token);
             await CheckPictureAsync("4:3 restored", video, handle, 4d / 3, fullscreen: false, token);
 
             WindowsDesktop.Press(handle, WindowsDesktop.L, WindowsDesktop.Control);
             await WaitAsync(() => list.IsKeyboardFocusWithin && tabs.IsEffectivelyVisible, "split view and channel list focus", token);
             WindowsDesktop.Press(handle, WindowsDesktop.F11);
             await CheckFullscreenAsync("4:3 fullscreen from split view", 4d / 3);
-            WindowsDesktop.Press(handle, WindowsDesktop.F11);
+            WindowsDesktop.Press(handle, WindowsDesktop.Tab, WindowsDesktop.Shift);
+            await CheckAutomationFocusAsync(volume, UIA.ControlType.Slider, token);
+            WindowsDesktop.Press(handle, WindowsDesktop.Escape);
             await WaitAsync(() => window.WindowState == initialState && list.IsKeyboardFocusWithin && tabs.IsEffectivelyVisible &&
-                menu.IsEffectivelyVisible && controls.IsEffectivelyVisible, "F11 restores split view and list focus", token);
+                menu.IsEffectivelyVisible && controls.IsEffectivelyVisible, "Escape restores split view and list focus", token);
+            await CheckAutomationFocusAsync(
+                (Control)window.FocusManager!.GetFocusedElement()!, UIA.ControlType.ListItem, token);
             await CheckPictureAsync("4:3 split restored", video, handle, 4d / 3, fullscreen: false, token);
             await StopAndCheckAsync();
 
@@ -174,7 +188,7 @@ internal static class Program
             WindowsDesktop.Press(handle, WindowsDesktop.Enter);
             await WaitAsync(() => playback.Current.State == PlaybackState.Playing && playback.MediaPlayer.VoutCount > 0 &&
                 player.IsKeyboardFocusWithin, "second playback and player focus", token, () => $"Playback state={playback.Current.State}.");
-            previousFocus = window.FocusManager?.GetFocusedElement();
+            var previousFocus = window.FocusManager?.GetFocusedElement();
             Console.WriteLine("Checking Tab after opening the second channel.");
             WindowsDesktop.Press(handle, WindowsDesktop.Tab);
             await WaitAsync(() => player.IsKeyboardFocusWithin && !ReferenceEquals(window.FocusManager?.GetFocusedElement(), previousFocus),
@@ -188,10 +202,11 @@ internal static class Program
 
             async Task CheckFullscreenAsync(string stage, double aspectRatio)
             {
-                await WaitAsync(() => window.WindowState == WindowState.FullScreen && model.IsPlaybackFullscreen && exit.IsFocused &&
+                await WaitAsync(() => window.WindowState == WindowState.FullScreen && model.IsPlaybackFullscreen && player.IsFocused &&
                     !menu.IsEffectivelyVisible && !tabs.IsEffectivelyVisible && !controls.IsEffectivelyVisible &&
                     !model.IsChannelListViewVisible && !list.IsEffectivelyEnabled,
-                    $"{stage} hides chrome and focuses Exit Full Screen", token);
+                    $"{stage} hides chrome and focuses the full-screen player", token);
+                await CheckAutomationFocusAsync(player, UIA.ControlType.Group, token);
                 await CheckPictureAsync(stage, video, handle, aspectRatio, fullscreen: true, token);
             }
 
@@ -231,10 +246,40 @@ internal static class Program
     private static T ControlByName<T>(Window window, string name) where T : Control =>
         window.FindControl<T>(name) ?? throw new InvalidOperationException($"Missing visual {name}.");
 
-    private static async Task WaitAsync(Func<bool> ready, string description, CancellationToken token, Func<string?>? details = null)
+    private static async Task CheckAutomationFocusAsync(Control control, UIA.ControlType role, CancellationToken token)
+    {
+        var id = AutomationProperties.GetAutomationId(control);
+        var name = AutomationProperties.GetName(control);
+        string? actualFocus = null;
+        // UI Automation calls into the app's window and must run off its UI thread.
+        await WaitAsync(() => Task.Run(() =>
+        {
+            try
+            {
+                if (UIA.AutomationElement.FocusedElement is not { } element)
+                {
+                    return false;
+                }
+
+                var focus = element.Current;
+                actualFocus = $"{focus.AutomationId} ({focus.ControlType?.ProgrammaticName}, {focus.Name})";
+                return focus.ProcessId == Environment.ProcessId && focus.AutomationId == id && focus.Name == name
+                    && focus.ControlType?.Id == role.Id && focus.HasKeyboardFocus && focus.IsControlElement && !focus.IsOffscreen;
+            }
+            catch (UIA.ElementNotAvailableException)
+            {
+                return false;
+            }
+        }, token), $"UI Automation focus on {id}", () => $"Actual focus: {actualFocus}", token);
+    }
+
+    private static Task WaitAsync(Func<bool> ready, string description, CancellationToken token, Func<string?>? details = null) =>
+        WaitAsync(() => Task.FromResult(ready()), description, details, token);
+
+    private static async Task WaitAsync(Func<Task<bool>> ready, string description, Func<string?>? details, CancellationToken token)
     {
         var clock = Stopwatch.StartNew();
-        while (!ready())
+        while (!await ready())
         {
             if (clock.Elapsed > TimeSpan.FromSeconds(12))
             {

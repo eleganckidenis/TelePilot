@@ -9,7 +9,7 @@ namespace TelePilot.Tests.App;
 
 public sealed class AccessibleDatePickerTests
 {
-    [Fact]
+    [AvaloniaFact]
     public void SelectedDateProperty_DefaultsToTwoWayBinding()
     {
         Assert.Equal(

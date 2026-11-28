@@ -217,7 +217,7 @@ public sealed class AccessibleTextBoxTests
         }
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void WindowsNativeHost_CreatesStandardAccessibleMultilineReadOnlyEdit()
     {
         if (!OperatingSystem.IsWindows())

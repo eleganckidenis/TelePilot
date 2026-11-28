@@ -429,8 +429,10 @@ public sealed class MainWindowPlaybackNavigationTests
         }
     }
 
-    [AvaloniaFact]
-    public async Task FullscreenFromSplitFillsTheEntireWindowAndRestoresItsLayoutAndFocus()
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FullscreenFillsTheWindowUntilTabRevealsControlsAndEscapeRestoresFocus(bool moveBackwardFirst)
     {
         var coordinator = new FocusCoordinator();
         var channelName = string.Concat(Enumerable.Repeat("Long synthetic channel name ", 50)).TrimEnd();
@@ -452,7 +454,9 @@ public sealed class MainWindowPlaybackNavigationTests
             var list = window.FindControl<ListBox>("ChannelList")!;
             var video = window.FindControl<AccessibleVideoView>("VideoView")!;
             var fullscreen = window.FindControl<Button>("FullscreenButton")!;
-            var exitFullscreen = window.FindControl<Button>("FullscreenExitButton")!;
+            var pause = window.FindControl<Button>("PauseResumeButton")!;
+            var stop = window.FindControl<Button>("StopPlaybackButton")!;
+            var volumeSlider = window.FindControl<Slider>("VolumeSlider")!;
             var root = Assert.IsType<Grid>(window.Content);
             var menu = window.FindControl<Menu>("MainMenu")!;
             var statusBar = window.FindControl<Border>("StatusBar")!;
@@ -461,6 +465,7 @@ public sealed class MainWindowPlaybackNavigationTests
             var volume = window.FindControl<Grid>("VolumeControls")!;
             var splitWidth = video.Bounds.Width;
             Assert.True(list.IsKeyboardFocusWithin);
+            var previousFocus = window.FocusManager!.GetFocusedElement();
             Assert.True(video.Bounds.Height > 0, $"Video {video.Bounds}, player {player.Bounds}, toolbar {toolbar.Bounds}, volume {volume.Bounds}.");
             Assert.True(volume.Bounds.Y >= toolbar.Bounds.Bottom);
             Assert.True(volume.Bounds.Bottom <= player.Bounds.Height);
@@ -484,15 +489,30 @@ public sealed class MainWindowPlaybackNavigationTests
             Assert.False(volume.IsEffectivelyVisible);
             Assert.Equal(0, statusBar.Bounds.Height);
             Assert.True(statusBar.IsVisible);
-            Assert.Same(exitFullscreen, window.FocusManager!.GetFocusedElement());
+            Assert.Same(player, window.FocusManager.GetFocusedElement());
+            var playerPeer = ControlAutomationPeer.CreatePeerForElement(player);
+            Assert.True(playerPeer.IsControlElement());
+            Assert.True(playerPeer.HasKeyboardFocus());
+            Assert.Equal(AutomationControlType.Group, playerPeer.GetAutomationControlType());
+            Assert.Contains("Tab", playerPeer.GetName(), StringComparison.Ordinal);
             Assert.Equal(fullscreen.Content, AutomationProperties.GetName(fullscreen));
 
-            foreach (var modifiers in new[] { RawInputModifiers.None, RawInputModifiers.Shift })
-            {
-                window.KeyPress(Key.Tab, modifiers, PhysicalKey.Tab, null);
-                window.KeyRelease(Key.Tab, modifiers, PhysicalKey.Tab, null);
-                Assert.Same(exitFullscreen, window.FocusManager.GetFocusedElement());
-            }
+            PressTab(moveBackwardFirst);
+            Assert.True(toolbar.IsEffectivelyVisible);
+            Assert.True(volume.IsEffectivelyVisible);
+            Assert.False(menu.IsEffectivelyVisible);
+            Assert.Equal(WindowState.FullScreen, window.WindowState);
+            Assert.False(player.Focusable);
+            var firstPlayerControl = pause.IsEffectivelyEnabled ? pause : stop;
+            Assert.Same(moveBackwardFirst ? (Control)volumeSlider : firstPlayerControl,
+                window.FocusManager.GetFocusedElement());
+
+            PressTab(!moveBackwardFirst);
+            var wrapped = moveBackwardFirst ? (Control)firstPlayerControl : volumeSlider;
+            Assert.Same(wrapped, window.FocusManager.GetFocusedElement());
+            var wrappedPeer = ControlAutomationPeer.CreatePeerForElement(wrapped);
+            Assert.True(wrappedPeer.HasKeyboardFocus());
+            Assert.False(string.IsNullOrWhiteSpace(wrappedPeer.GetName()));
 
             window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
             window.KeyRelease(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
@@ -507,6 +527,10 @@ public sealed class MainWindowPlaybackNavigationTests
             Assert.True(toolbar.IsEffectivelyVisible);
             Assert.True(volume.IsEffectivelyVisible);
             Assert.True(list.IsKeyboardFocusWithin);
+            Assert.Same(previousFocus, window.FocusManager.GetFocusedElement());
+
+            PressTab(moveBackward: false);
+            Assert.NotSame(previousFocus, window.FocusManager.GetFocusedElement());
 
             window.KeyPress(Key.F11, RawInputModifiers.None, PhysicalKey.F11, null);
             window.KeyRelease(Key.F11, RawInputModifiers.None, PhysicalKey.F11, null);
@@ -514,6 +538,15 @@ public sealed class MainWindowPlaybackNavigationTests
             menu.Open();
             Assert.Equal(WindowState.Normal, window.WindowState);
             Assert.True(menu.IsVisible && menu.IsOpen);
+
+            void PressTab(bool moveBackward)
+            {
+                var modifiers = moveBackward ? RawInputModifiers.Shift : RawInputModifiers.None;
+                window.KeyPress(Key.Tab, modifiers, PhysicalKey.Tab, null);
+                window.KeyRelease(Key.Tab, modifiers, PhysicalKey.Tab, null);
+                Dispatcher.UIThread.RunJobs();
+                window.UpdateLayout();
+            }
         }
         finally
         {

@@ -33,6 +33,9 @@
     <Style Selector="Grid#PlayerView.fullscreen">
       <Setter Property="RowSpacing" Value="0" />
     </Style>
+    <Style Selector="Grid#PlayerView.hide-controls > :is(Control).playback-controls">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
     <Style Selector="Border#StatusBar.fullscreen">
       <Setter Property="MaxHeight" Value="0" />
       <Setter Property="Opacity" Value="0" />
@@ -326,6 +329,12 @@
           Panel.ZIndex="2"
           Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
           IsVisible="{Binding IsPlayerViewVisible}"
+          IsTabStop="False"
+          automation:AutomationProperties.Name="{x:Static loc:ViewText.FullscreenPlayer}"
+          automation:AutomationProperties.HelpText="{x:Static loc:ViewText.F11TogglesFullScreenEscapeExits}"
+          automation:AutomationProperties.AutomationId="fullscreen-player"
+          automation:AutomationProperties.ControlTypeOverride="Group"
+          automation:AutomationProperties.AccessibilityView="Raw"
           RowDefinitions="Auto,*,Auto,Auto,Auto">
         <TextBlock
             Classes="section-heading"
@@ -341,13 +350,6 @@
               automation:AutomationProperties.AutomationId="video-view"
               automation:AutomationProperties.AccessibilityView="Raw" />
         </Border>
-
-        <Button x:Name="FullscreenExitButton" Grid.Row="1" IsVisible="{Binding IsPlaybackFullscreen}"
-                Width="1" Height="1" HorizontalAlignment="Center" VerticalAlignment="Center"
-                Opacity="0" IsHitTestVisible="False" Command="{Binding ExitFullscreenCommand}"
-                automation:AutomationProperties.Name="{x:Static loc:ViewText.ExitFullScreen}"
-                automation:AutomationProperties.HelpText="{x:Static loc:ViewText.F11TogglesFullScreenEscapeExits}"
-                automation:AutomationProperties.AutomationId="exit-fullscreen" />
 
         <StackPanel Grid.Row="2" Spacing="4" IsVisible="{Binding !IsPlaybackFullscreen}">
           <TextBlock
@@ -377,13 +379,12 @@
               automation:AutomationProperties.AutomationId="recording-status" />
         </StackPanel>
 
-        <Border Grid.Row="3" Grid.RowSpan="2" IsHitTestVisible="False" IsVisible="{Binding !IsPlaybackFullscreen}"
+        <Border Grid.Row="3" Grid.RowSpan="2" Classes="playback-controls" IsHitTestVisible="False"
                 Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                 BorderThickness="0,1,0,0" />
 
-        <ScrollViewer x:Name="PlaybackControlsScroll" Grid.Row="3" MaxHeight="136"
-                      IsVisible="{Binding !IsPlaybackFullscreen}"
+        <ScrollViewer x:Name="PlaybackControlsScroll" Grid.Row="3" Classes="playback-controls" MaxHeight="136"
                       Focusable="False" IsTabStop="False"
                       HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
           <WrapPanel HorizontalAlignment="Left" Margin="8,8,0,0">
@@ -461,7 +462,7 @@
           </WrapPanel>
         </ScrollViewer>
 
-        <Grid x:Name="VolumeControls" Grid.Row="4" Margin="8,0,8,8" IsVisible="{Binding !IsPlaybackFullscreen}"
+        <Grid x:Name="VolumeControls" Grid.Row="4" Classes="playback-controls" Margin="8,0,8,8"
               ColumnDefinitions="Auto,160,Auto" ColumnSpacing="8">
             <Label
                 VerticalAlignment="Center"

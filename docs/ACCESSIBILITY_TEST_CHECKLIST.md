@@ -104,6 +104,13 @@ Każdy punkt ma wynik: **zaliczony**, **niezaliczony**, **nie dotyczy**. Dla wyn
 - [ ] Każda zwinięta lista rozwijana ogłasza nazwę pola, wybraną wartość i stan rozwinięcia.
 - [ ] W EPG standardowe pole daty pozwala strzałkami zmienić każdą część daty, F4 otwiera kalendarz, a komunikat po załadowaniu zawiera kanał i pełną datę.
 - [ ] F11/Escape przełącza pełny ekran bez utraty korzenia dostępności i fokusu.
+- [ ] Na Windows po F11 czytnik ogłasza odtwarzacz i podpowiedź o Tab. Pierwszy Tab
+  pokazuje pasek i ustawia fokus na pierwszym dostępnym przycisku. Przy ponownym
+  wejściu pierwszy Shift+Tab ustawia fokus na suwaku głośności. Oba kierunki
+  tworzą cykl, a czytnik odczytuje nazwy i role każdej kontrolki.
+- [ ] Na Windows po Escape fokus wraca do kontrolki sprzed F11. Sprawdź to
+  z suwakiem głośności oraz z zaznaczonym kanałem w widoku dzielonym. Następny
+  Tab przechodzi do kolejnej kontrolki i czytnik ją ogłasza.
 - [ ] Po wejściu i wyjściu z pełnego ekranu czytnik ogłasza stan, a Tab nadal przechodzi po kontrolkach odtwarzacza.
 - [ ] Natywny obraz wideo nie przejmuje fokusu.
 - [ ] W surowym drzewie UIA host obrazu ma co najwyżej nieinteraktywny peer Avalonia

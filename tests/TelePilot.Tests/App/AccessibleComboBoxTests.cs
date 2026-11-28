@@ -240,7 +240,7 @@ public sealed class AccessibleComboBoxTests
         }
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void WindowsNativeHostCreatesStandardDropDownListAndExposesAccessibleName()
     {
         if (!OperatingSystem.IsWindows())

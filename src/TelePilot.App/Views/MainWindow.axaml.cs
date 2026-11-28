@@ -32,6 +32,7 @@ public sealed partial class MainWindow : Window
     private MediaPlayer? mediaPlayer;
     private bool isMediaPlayerAttached;
     private FocusRequest? latestFocusRequest;
+    private IInputElement? preferredFocusTarget;
     private int focusRestoreGeneration;
     private int focusTargetReachedGeneration;
     private int tabFocusRecoveryGeneration;
@@ -180,6 +181,13 @@ public sealed partial class MainWindow : Window
 
     private void OnFocusRequested(object? sender, FocusRequest request)
     {
+        if (request.PreserveExistingFocus && preferredFocusTarget is not null)
+        {
+            // VLC can report a new video output while the window is changing size.
+            // Let the pending keyboard focus restoration finish first.
+            return;
+        }
+
         // Connecting/Playing może nadejść przed wykonaniem żądania z Enter.
         // Zachowanie fokusu nie może wtedy anulować oczekującego przejścia
         // na pierwszą kontrolkę tego samego widoku.
@@ -220,7 +228,10 @@ public sealed partial class MainWindow : Window
 
     private MainWindowViewModel? CurrentViewModel => viewModel ?? DataContext as MainWindowViewModel;
 
-    private void BeginFocusRecovery(FocusRequest request, bool forceRequestedTarget)
+    private void BeginFocusRecovery(
+        FocusRequest request,
+        bool forceRequestedTarget,
+        IInputElement? preferredFocus = null)
     {
         if (forceRequestedTarget && !request.PreserveExistingFocus)
         {
@@ -231,6 +242,7 @@ public sealed partial class MainWindow : Window
         }
 
         latestFocusRequest = request;
+        preferredFocusTarget = preferredFocus;
         var generation = ++focusRestoreGeneration;
         focusTargetReachedGeneration = forceRequestedTarget ? 0 : generation;
         ScheduleFocusRecoveryCheckpoint(request, generation, checkpoint: 0);
@@ -261,6 +273,10 @@ public sealed partial class MainWindow : Window
             {
                 ScheduleFocusRecoveryCheckpoint(request, generation, checkpoint + 1);
             }
+            else if (generation == focusRestoreGeneration)
+            {
+                preferredFocusTarget = null;
+            }
         }
 
         var delay = GetFocusRecoveryDelay(checkpoint);
@@ -276,16 +292,22 @@ public sealed partial class MainWindow : Window
 
     private void RecoverPlatformAndLogicalFocus(FocusRequest request, int generation)
     {
-        if (MainMenu.IsOpen)
+        if (MainMenu.IsOpen || PlayerRecordingMenu.IsOpen)
         {
             return;
         }
 
         if (focusTargetReachedGeneration != generation)
         {
-            if (RestoreRequestedFocus(request))
+            var restored = preferredFocusTarget is Control preferred
+                && TopLevel.GetTopLevel(preferred) == this
+                && IsSafeInteractiveFocus(preferred)
+                ? RestorePlatformAndLogicalFocus(preferred)
+                : RestoreRequestedFocus(request);
+            if (restored)
             {
                 focusTargetReachedGeneration = generation;
+                preferredFocusTarget = null;
             }
 
             return;
@@ -421,8 +443,9 @@ public sealed partial class MainWindow : Window
         }
 
         var focused = FocusManager?.GetFocusedElement();
-        var preserveCurrentFocus = IsSafeInteractiveFocus(focused) && IsPlatformFocusSafe(focused);
-        BeginFocusRecovery(latestFocusRequest, forceRequestedTarget: !preserveCurrentFocus);
+        var preserveCurrentFocus = preferredFocusTarget is null
+            && IsSafeInteractiveFocus(focused) && IsPlatformFocusSafe(focused);
+        BeginFocusRecovery(latestFocusRequest, forceRequestedTarget: !preserveCurrentFocus, preferredFocusTarget);
     }
 
     private void OnDeactivated(object? sender, EventArgs e)
@@ -580,12 +603,12 @@ public sealed partial class MainWindow : Window
                 return selector.FocusSelector();
             }
         }
-        if (SearchBox.IsKeyboardFocusWithin || ReferenceEquals(logicalFocus, SearchBox))
+        if (IsWithinElement(logicalFocus, SearchBox))
         {
             return SearchBox.FocusEditor();
         }
 
-        if (GroupSelector.IsKeyboardFocusWithin || ReferenceEquals(logicalFocus, GroupSelector))
+        if (IsWithinElement(logicalFocus, GroupSelector))
         {
             return GroupSelector.FocusSelector();
         }
@@ -943,14 +966,6 @@ public sealed partial class MainWindow : Window
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
-        if (CurrentViewModel?.IsPlaybackFullscreen == true
-            && e.Key == Key.Tab && (e.KeyModifiers & ~KeyModifiers.Shift) == KeyModifiers.None)
-        {
-            e.Handled = true;
-            RestorePlatformAndLogicalFocus(FullscreenExitButton);
-            return;
-        }
-
         if (CurrentViewModel is { } sectionModel && !MainMenu.IsOpen)
         {
             int? section = null;
@@ -978,6 +993,13 @@ public sealed partial class MainWindow : Window
         if (e.Key == Key.Tab && (e.KeyModifiers & ~KeyModifiers.Shift) == KeyModifiers.None)
         {
             ResetChannelSearch();
+            if (PlayerView.Focusable)
+            {
+                e.Handled = true;
+                RevealFullscreenPlaybackControls(e.KeyModifiers == KeyModifiers.Shift);
+                return;
+            }
+
             SuspendFocusRecoveryForTabNavigation();
             ScheduleFocusRecoveryAfterTabNavigation();
 
@@ -1025,6 +1047,7 @@ public sealed partial class MainWindow : Window
 
         if (e.Key == Key.Escape
             && WindowState == WindowState.FullScreen
+            && !PlayerRecordingMenu.IsOpen
             && (!MainMenu.IsOpen || viewModel.IsPlaybackFullscreen))
         {
             e.Handled = true;
@@ -1082,7 +1105,7 @@ public sealed partial class MainWindow : Window
 
         if (e.Key == Key.Space && e.KeyModifiers == KeyModifiers.None)
         {
-            if (!ReferenceEquals(e.Source, FullscreenExitButton) && IsStandardSpaceTarget(e.Source))
+            if (IsStandardSpaceTarget(e.Source))
             {
                 return;
             }
@@ -1183,11 +1206,10 @@ public sealed partial class MainWindow : Window
             return null;
         }
 
-        return CurrentViewModel?.IsPlaybackFullscreen == true ? FullscreenExitButton
-            : PauseResumeButton.IsEffectivelyEnabled ? PauseResumeButton : StopPlaybackButton;
+        return PauseResumeButton.IsEffectivelyEnabled ? PauseResumeButton : StopPlaybackButton;
     }
 
-    private Button PlayerFocusTarget => CurrentViewModel?.IsPlaybackFullscreen == true ? FullscreenExitButton : PauseResumeButton;
+    private Control PlayerFocusTarget => PlayerView.Focusable ? PlayerView : GetFirstPlayerTabTarget() ?? PauseResumeButton;
 
     private Control? GetLastSectionTabTarget()
     {
@@ -1423,10 +1445,32 @@ public sealed partial class MainWindow : Window
     private void UpdateFullscreenPresentation()
     {
         var fullscreen = WindowState == WindowState.FullScreen;
-        CurrentViewModel?.SetPlaybackFullscreen(fullscreen && PlayerView.IsVisible);
+        if (CurrentViewModel is { } current)
+        {
+            var playbackFullscreen = fullscreen && PlayerView.IsVisible;
+            if (playbackFullscreen != current.IsPlaybackFullscreen)
+            {
+                current.SetPlaybackFullscreen(playbackFullscreen);
+                SetFullscreenControlsHidden(playbackFullscreen);
+            }
+        }
         FullscreenButton.Content = fullscreen ? ViewText.ExitFullScreen : ViewText.FullScreen2;
         AutomationProperties.SetName(FullscreenButton, fullscreen ? ViewText.ExitFullScreen : ViewText.ToggleFullScreen);
         UpdateVideoViewport();
+    }
+
+    private void SetFullscreenControlsHidden(bool hidden)
+    {
+        PlayerView.Classes.Set("hide-controls", hidden);
+        PlayerView.Focusable = hidden;
+        AutomationProperties.SetAccessibilityView(PlayerView, hidden ? AccessibilityView.Control : AccessibilityView.Raw);
+    }
+
+    private void RevealFullscreenPlaybackControls(bool moveBackward)
+    {
+        SetFullscreenControlsHidden(false);
+        Control? target = moveBackward ? VolumeSlider : GetFirstPlayerTabTarget();
+        BeginFocusRecovery(new FocusRequest(FocusTarget.PlayerControls), forceRequestedTarget: true, target);
     }
 
     private void UpdateVideoViewport(bool reapply = false)
@@ -1453,17 +1497,13 @@ public sealed partial class MainWindow : Window
             : GetFocusRequestForCurrentView();
         CurrentViewModel?.AccessibleStatus.ReportStatus(
             isFullscreen ? T("Tryb pełnoekranowy włączony.", "Full screen on.") : T("Tryb pełnoekranowy wyłączony.", "Full screen off."));
-        if (!isFullscreen && focusBeforeFullscreen is { } previous)
+        var previous = isFullscreen ? null : focusBeforeFullscreen;
+        if (!isFullscreen)
         {
             focusBeforeFullscreen = null;
-            if (IsSafeInteractiveFocus(previous) && RestorePlatformAndLogicalFocus(previous))
-            {
-                BeginFocusRecovery(GetFocusRequestForCurrentView() with { PreserveExistingFocus = true }, forceRequestedTarget: false);
-                return;
-            }
         }
-
-        BeginFocusRecovery(request, forceRequestedTarget: true);
+        // The checkpoint runs after layout and retries while Win32 focus is settling.
+        BeginFocusRecovery(request, forceRequestedTarget: true, previous);
     }
 
     private FocusRequest GetFocusRequestForCurrentView()
